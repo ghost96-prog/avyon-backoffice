@@ -1,0 +1,181 @@
+/* src/components/common/DateRangeNav.css */
+.date-range-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+}
+
+.date-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e6eaf0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #5e6f8a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.date-nav-btn:hover {
+  background: #f5f7fa;
+  border-color: #c8d0da;
+  color: #1a2332;
+}
+
+.date-range-label-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #e6eaf0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1a2332;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 160px;
+  justify-content: center;
+}
+
+.date-range-label-btn:hover {
+  background: #f5f7fa;
+  border-color: #c8d0da;
+}
+
+.date-range-icon {
+  color: #8b97a7;
+  flex-shrink: 0;
+}
+
+.date-range-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.date-range-caret {
+  font-size: 10px;
+  color: #8b97a7;
+  margin-left: 2px;
+}
+
+.date-range-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ffffff;
+  border: 1px solid #e6eaf0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(22, 32, 43, 0.15);
+  min-width: 210px;
+  z-index: 100;
+  padding: 6px;
+}
+
+.date-range-popover-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.date-range-popover-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #1a2332;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  width: 100%;
+  text-align: left;
+}
+
+.date-range-popover-option:hover {
+  background: #f0f2f5;
+}
+
+.date-range-popover-option.is-active {
+  background: #e8edf8;
+  color: #2a5c8a;
+}
+
+.date-range-check {
+  color: #2a5c8a;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.date-range-custom {
+  padding: 4px;
+}
+
+.date-range-custom-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.date-range-custom-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.date-range-custom-field label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b97a7;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.date-range-custom-field input {
+  padding: 6px 10px;
+  border: 1px solid #e6eaf0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1a2332;
+  background: #fafbfc;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.date-range-custom-field input:focus {
+  border-color: #2a5c8a;
+  background: #ffffff;
+}
+
+.date-range-custom-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f2f5;
+}
+
+@media (max-width: 640px) {
+  .date-range-label-btn {
+    min-width: 120px;
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  .date-range-popover {
+    left: 0;
+    transform: none;
+    min-width: 180px;
+  }
+}

@@ -1,0 +1,29 @@
+.shell {
+  min-height: 100vh;
+  background: var(--surface-sunken);
+}
+
+.shell-main {
+  margin-left: var(--sidebar-w);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left var(--dur) var(--ease);
+}
+
+.shell-collapsed .shell-main {
+  margin-left: var(--sidebar-w-collapsed);
+}
+
+.shell-content {
+  flex: 1;
+  padding: clamp(16px, 2.4vw, 28px);
+  width: 100%;
+}
+
+@media (max-width: 1023px) {
+  .shell-main,
+  .shell-collapsed .shell-main {
+    margin-left: 0;
+  }
+}

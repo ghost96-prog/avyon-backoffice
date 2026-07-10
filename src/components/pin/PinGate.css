@@ -1,0 +1,236 @@
+/* PinGate.css */
+.pingate-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(22, 32, 43, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: hidden;
+}
+
+/* Background logos container */
+.pingate-bg-logos {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.pingate-bg-logo {
+  position: absolute;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  animation: floatLogo 15s ease-in-out infinite alternate;
+}
+
+@keyframes floatLogo {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+  }
+  25% {
+    transform: translate(-10px, 15px) rotate(90deg) scale(1.1);
+  }
+  50% {
+    transform: translate(15px, -10px) rotate(180deg) scale(0.9);
+  }
+  75% {
+    transform: translate(-5px, -15px) rotate(270deg) scale(1.05);
+  }
+  100% {
+    transform: translate(10px, 10px) rotate(360deg) scale(1);
+  }
+}
+
+.pingate-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 300px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-radius: var(--r-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  padding: 20px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pingate-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 12px rgba(53, 122, 189, 0.3);
+}
+
+.pingate-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+.pingate-subtitle {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.pingate-active {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+}
+
+.pingate-dots {
+  display: flex;
+  gap: 12px;
+  margin: 18px 0 4px;
+}
+
+.pingate-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  transition: all var(--dur-fast) var(--ease);
+}
+.pingate-dot.filled {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.1);
+}
+.pingate-dot.error {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.pingate-error {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  min-height: 14px;
+  margin: 2px 0;
+}
+
+.pingate-verifying {
+  color: var(--ink-faint);
+  font-size: 11px;
+  min-height: 14px;
+  margin: 2px 0;
+}
+
+.pingate-keypad {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 200px;
+}
+
+.pingate-key {
+  aspect-ratio: 1;
+  border: none;
+  border-radius: var(--r-sm);
+  background: rgba(248, 250, 252, 0.8);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  min-height: 44px;
+  backdrop-filter: blur(4px);
+}
+.pingate-key:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+.pingate-key:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.pingate-key:disabled {
+  opacity: 0.45;
+}
+.pingate-key-action {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.pingate-signout {
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  font-size: 11px;
+  font-weight: 600;
+  transition: color var(--dur-fast) var(--ease);
+}
+.pingate-signout:hover {
+  color: var(--danger);
+}
+.pingate-card {
+  position: relative; /* anchor for refresh button */
+}
+
+.pingate-refresh-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(248, 250, 252, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.pingate-refresh-btn:hover:not(:disabled) {
+  color: var(--accent-deep);
+}
+.pingate-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.pingate-spin {
+  animation: pingate-spin 1s linear infinite;
+}
+@keyframes pingate-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.pingate-badge-row {
+  margin-top: 8px;
+}
+
+.pingate-sync-indicator {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--ink-faint);
+}

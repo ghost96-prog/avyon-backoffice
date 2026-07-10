@@ -1,0 +1,73 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Avyon BackOffice — design tokens
+   White is the dominant surface. #357ABD is the working accent (links,
+   primary actions, active nav). #234C6A is a deeper ink-blue used for
+   headings and the sidebar's "selected" depth, echoing the mobile app's
+   primary so BackOffice reads as the same product, just grown up.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* Brand */
+  --accent: #357abd;
+  --accent-dark: #2a629a;
+  --accent-deep: #234c6a;
+  --accent-soft: #eaf1fa;
+  --accent-soft-2: #dce9f7;
+
+  /* Surfaces */
+  --surface: #ffffff;
+  --surface-sunken: #f6f8fb;
+  --surface-raised: #ffffff;
+  --border: #e6eaf0;
+  --border-strong: #d7dee7;
+
+  /* Text */
+  --ink: #16202b;
+  --ink-soft: #57667a;
+  --ink-faint: #8b97a7;
+  --ink-on-accent: #ffffff;
+
+  /* Status */
+  --success: #1c9d6c;
+  --success-soft: #e4f7ef;
+  --warning: #b8720a;
+  --warning-soft: #fdf1de;
+  --danger: #d64545;
+  --danger-soft: #fbe9e9;
+  --info: var(--accent);
+  --info-soft: var(--accent-soft);
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px rgba(22, 32, 43, 0.05);
+  --shadow-2: 0 4px 16px rgba(22, 32, 43, 0.08);
+  --shadow-3: 0 12px 32px rgba(22, 32, 43, 0.14);
+
+  /* Radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* Layout */
+  --sidebar-w: 264px;
+  --sidebar-w-collapsed: 76px;
+  --topbar-h: 64px;
+  --content-max: 1440px;
+
+  /* Type */
+  --font-display: "General Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Motion */
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+  }
+}

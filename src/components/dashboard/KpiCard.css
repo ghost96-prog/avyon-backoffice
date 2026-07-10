@@ -1,0 +1,130 @@
+/* src/components/dashboard/KpiCard.css */
+
+.kpi-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+
+.kpi-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
+}
+
+.kpi-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.kpi-label {
+  font-size: 10px;
+  color: var(--ink-faint);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.kpi-icon-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: transform 0.2s ease;
+}
+
+.kpi-icon-circle svg {
+  width: 13px;
+  height: 13px;
+}
+
+.kpi-card:hover .kpi-icon-circle {
+  transform: scale(1.05);
+}
+
+.kpi-tone-success .kpi-icon-circle {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.kpi-tone-warning .kpi-icon-circle {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.kpi-tone-danger .kpi-icon-circle {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.kpi-tone-default .kpi-icon-circle {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.kpi-value {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 0;
+}
+
+.kpi-skeleton {
+  height: 20px;
+  width: 70%;
+  border-radius: 4px;
+}
+
+.kpi-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 9px;
+  font-weight: 600;
+  width: fit-content;
+  padding: 0;
+}
+
+.kpi-trend.up {
+  color: var(--success);
+}
+
+.kpi-trend.down {
+  color: var(--danger);
+}
+
+/* Skeleton loading animation */
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-sunken) 25%, var(--surface) 50%, var(--surface-sunken) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}

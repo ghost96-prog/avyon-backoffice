@@ -1,0 +1,537 @@
+/* src/styles/ReportsShared.css */
+.reports-page {
+  padding: 0 4px;
+}
+
+.reports-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.reports-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reports-header-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e6eaf0;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #5e6f8a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reports-header-back:hover {
+  background: #f5f7fa;
+  border-color: #c8d0da;
+  color: #1a2332;
+}
+
+.reports-header-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a2332;
+}
+
+.reports-header-sub {
+  font-size: 12px;
+  color: #8b97a7;
+}
+
+.reports-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reports-store-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #e6eaf0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1a2332;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reports-store-selector:hover {
+  background: #f5f7fa;
+  border-color: #c8d0da;
+}
+
+.reports-store-selector svg {
+  color: #8b97a7;
+  flex-shrink: 0;
+}
+
+.reports-stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.reports-stat-card {
+  background: #ffffff;
+  border: 1px solid #f0f2f5;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b97a7;
+}
+
+.reports-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1a2332;
+  margin-top: 2px;
+}
+
+.reports-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.reports-search {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid #e6eaf0;
+  border-radius: 6px;
+  background: #ffffff;
+  transition: border-color 0.15s ease;
+}
+
+.reports-search:focus-within {
+  border-color: #2a5c8a;
+}
+
+.reports-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: #1a2332;
+  background: transparent;
+  padding: 2px 0;
+}
+
+.reports-search input::placeholder {
+  color: #b0b8c4;
+}
+
+.reports-search svg {
+  color: #8b97a7;
+  flex-shrink: 0;
+}
+
+.reports-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border: 1px solid #e6eaf0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1a2332;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.reports-filter-btn:hover {
+  background: #f5f7fa;
+  border-color: #c8d0da;
+}
+
+.reports-filter-btn svg {
+  color: #8b97a7;
+}
+
+.reports-filter-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e6eaf0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(22, 32, 43, 0.12);
+  min-width: 160px;
+  z-index: 50;
+  overflow: hidden;
+}
+
+.reports-filter-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: #1a2332;
+  font-size: 13px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.reports-filter-option:hover {
+  background: #f0f2f5;
+}
+
+.reports-filter-option.is-active {
+  background: #e8edf8;
+  color: #2a5c8a;
+  font-weight: 600;
+}
+
+.reports-list-card {
+  background: #ffffff;
+  border-radius: 10px;
+  border: 1px solid #f0f2f5;
+  overflow: hidden;
+}
+
+.reports-list-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f5f7fa;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  gap: 12px;
+}
+
+.reports-list-item:hover {
+  background: #fafbfc;
+}
+
+.reports-list-item:last-child {
+  border-bottom: none;
+}
+
+.reports-list-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.reports-list-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a2332;
+}
+
+.reports-list-item-sub {
+  font-size: 12px;
+  color: #8b97a7;
+  margin-top: 1px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.reports-list-item-right {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.reports-list-item-amount {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a2332;
+}
+
+.reports-list-item-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.reports-list-item-badge.completed {
+  background: #dcdffc;
+  color: #1f16a3;
+}
+
+.reports-list-item-badge.partially_refunded,
+.reports-list-item-badge.refunded {
+  background: #fef9c3;
+  color: #0891b2;
+}
+
+.reports-list-item-badge.voided {
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.reports-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  color: #8b97a7;
+}
+
+.reports-empty svg {
+  color: #dce0e6;
+  margin-bottom: 8px;
+}
+
+.reports-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #5e6f8a;
+}
+
+.reports-empty-sub {
+  font-size: 13px;
+  color: #b0b8c4;
+}
+
+.reports-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.reports-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.reports-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f2f5;
+  flex-shrink: 0;
+}
+
+.reports-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a2332;
+}
+
+.reports-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8b97a7;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.reports-modal-close:hover {
+  background: #f0f2f5;
+}
+
+.reports-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.reports-modal-section {
+  margin-bottom: 16px;
+}
+
+.reports-modal-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a2332;
+  margin-bottom: 8px;
+}
+
+.reports-modal-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.reports-modal-row-label {
+  color: #8b97a7;
+}
+
+.reports-modal-row-value {
+  color: #1a2332;
+  font-weight: 500;
+}
+
+.reports-modal-row-value.bold {
+  font-weight: 700;
+}
+
+.reports-modal-divider {
+  border: none;
+  border-top: 1px solid #f0f2f5;
+  margin: 8px 0;
+}
+
+.reports-footer {
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #8b97a7;
+}
+/* Add this to src/styles/ReportsShared.css - at the top after .reports-header-right */
+
+.reports-header-right .btn {
+  /* Button component already has its own styles, 
+     but we need to ensure they display inline */
+  display: inline-flex;
+}
+
+.reports-header-right .btn + .btn {
+  margin-left: 6px;
+}
+
+/* If you're not using the Button component and want fallback styles */
+.reports-export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid #e6eaf0;
+  background: #ffffff;
+  color: #1a2332;
+}
+
+.reports-export-btn:hover {
+  background: #f5f7fa;
+  border-color: #c8d0da;
+}
+
+.reports-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reports-export-btn-primary {
+  background: #2a5c8a;
+  border-color: #2a5c8a;
+  color: #ffffff;
+}
+
+.reports-export-btn-primary:hover {
+  background: #1e4a6e;
+  border-color: #1e4a6e;
+  color: #ffffff;
+}
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+/* src/styles/ReportsShared.css - Add at the bottom */
+
+/* ─── Access Denied ────────────────────────────────────────────────────── */
+.reports-access-denied {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 20px;
+}
+
+.reports-access-denied-content {
+  text-align: center;
+  max-width: 400px;
+}
+
+.reports-access-denied-icon {
+  color: #94A3B8;
+  margin-bottom: 16px;
+}
+
+.reports-access-denied h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 8px;
+}
+
+.reports-access-denied p {
+  font-size: 14px;
+  color: #64748B;
+  margin-bottom: 4px;
+}
+
+.reports-access-denied-sub {
+  font-size: 13px !important;
+  color: #94A3B8 !important;
+  margin-bottom: 20px !important;
+}
+
+.reports-access-denied-btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: #234C6A;
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.reports-access-denied-btn:hover {
+  background: #1A3D55;
+}

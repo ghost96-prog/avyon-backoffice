@@ -1,0 +1,31 @@
+/* src/components/pin/SubscriptionBadge.css */
+.subscription-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.subscription-badge.compact {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+.subscription-badge-ok {
+  background: #f0fff4;
+  color: #276749;
+  border-color: #c6f6d5;
+}
+.subscription-badge-trial {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+.subscription-badge-danger {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
