@@ -1,7 +1,7 @@
 {
-  "name": "Avyon Dashboard",
+  "name": "Avyon Backoffice",
   "short_name": "Avyon",
-  "description": "Business dashboard for Avyon POS",
+  "description": "Business backoffice for Avyon POS",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
