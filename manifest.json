@@ -1,0 +1,18 @@
+{
+  "name": "Avyon Dashboard",
+  "short_name": "Avyon",
+  "description": "Business dashboard for Avyon POS",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [
+ 
+    {
+    "src": "./src/assets/dashboard.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
