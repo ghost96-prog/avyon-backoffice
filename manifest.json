@@ -11,7 +11,7 @@
   "icons": [
  
     {
-      "src": "../src/assets/avyonnew.png",
+      "src": "../src/assets/dashboard.png",
       "sizes": "512x512",
       "type": "image/png"
     }
