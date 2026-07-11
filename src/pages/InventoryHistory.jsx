@@ -1,6 +1,6 @@
 // src/pages/Inventory/InventoryHistory.jsx
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Store, Search, X, History, Filter, Download, FileText, ChevronLeft } from 'lucide-react';
+import { Store, Search, X, History, Filter, Download, FileText, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useDateRange } from '../hooks/useDateRange';
 import DateRangeNav from '../components/common/DateRangeNav';
@@ -184,7 +184,7 @@ export default function InventoryHistory() {
     if (isExporting || !filtered.length) return;
     setIsExporting(true);
     try {
-      const header = ['Date', 'Time', 'Product', 'SKU', 'User', 'Type', 'Before', 'Change', 'After', 'Reason'];
+      const header = ['Date', 'Time', 'Product', 'SKU', 'User', 'Type', 'Before', 'Change', 'After', 'Conflict', 'Reason'];
       const rows = filtered.map((m) => [
         m.formattedDate || '',
         m.formattedTime || '',
@@ -195,7 +195,10 @@ export default function InventoryHistory() {
         m.quantityBefore || 0,
         m.quantityChange || 0,
         m.quantityAfter || 0,
-        m.reason || '',
+        m.status === 'conflict'
+          ? `Requested ${m.requestedQty ?? ''} / Fulfilled ${m.fulfilledQty ?? ''} / Short ${m.conflictQty ?? ''}`
+          : '',
+        (m.status === 'conflict' ? (m.conflictReason || m.reason) : m.reason) || '',
       ]);
       const branchTag = selectedBranchName.toLowerCase().replace(/\s+/g, '-');
       downloadCsv(`inventory_history_${branchTag}_${toApiDate(startDate)}_to_${toApiDate(endDate)}.csv`, [header, ...rows]);
@@ -227,11 +230,11 @@ export default function InventoryHistory() {
         m.productName || '',
         m.sku || '',
         m.cashierName || '',
-        m.type || '',
+        m.status === 'conflict' ? `${m.type || ''} (CONFLICT)` : (m.type || ''),
         String(m.quantityBefore || 0),
         String(m.quantityChange || 0),
         String(m.quantityAfter || 0),
-        m.reason || '',
+        (m.status === 'conflict' ? (m.conflictReason || m.reason) : m.reason) || '',
       ]);
 
       autoTable(doc, {
@@ -265,9 +268,11 @@ export default function InventoryHistory() {
         margin: { left: 8, right: 8 },
         didParseCell: function(data) {
           if (data.section === 'body' && data.column.index === 5) {
-            const type = data.cell.raw;
+            const raw = String(data.cell.raw || '');
+            const isConflictRow = raw.includes('(CONFLICT)');
+            const type = raw.replace(' (CONFLICT)', '');
             const style = getTypeStyle(type);
-            data.cell.styles.textColor = style.color;
+            data.cell.styles.textColor = isConflictRow ? '#EF4444' : style.color;
             data.cell.styles.fontStyle = 'bold';
           }
           if (data.section === 'body' && data.column.index === 7) {
@@ -389,7 +394,7 @@ export default function InventoryHistory() {
                   <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', minWidth: 60 }}>Before</th>
                   <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', minWidth: 60 }}>Change</th>
                   <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', minWidth: 60 }}>After</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', minWidth: 120 }}>Reason</th>
+                  <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', minWidth: 160 }}>Reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -408,14 +413,22 @@ export default function InventoryHistory() {
                       <td style={{ padding: '10px 12px', fontSize: 12, color: '#64748B' }}>{m.sku}</td>
                       <td style={{ padding: '10px 12px', fontSize: 12, color: '#64748B' }}>{m.cashierName}</td>
                       <td style={{ padding: '10px 12px' }}>
-                        <span className="reports-list-item-badge" style={{ 
-                          background: style.bg, 
-                          color: style.color,
-                          fontWeight: 700,
-                          fontSize: 11,
-                        }}>
-                          {style.label}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                          <span className="reports-list-item-badge" style={{ 
+                            background: style.bg, 
+                            color: style.color,
+                            fontWeight: 700,
+                            fontSize: 11,
+                          }}>
+                            {style.label}
+                          </span>
+                          {isConflict && (
+                            <span className="reports-list-item-badge reports-badge-conflict">
+                              <AlertTriangle size={10} strokeWidth={2.5} />
+                              CONFLICT
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, color: '#64748B' }}>{m.quantityBefore}</td>
                       <td style={{ 
@@ -428,7 +441,11 @@ export default function InventoryHistory() {
                         {isPositive ? '+' : ''}{m.quantityChange}
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, color: '#64748B' }}>{m.quantityAfter}</td>
-                      <td style={{ padding: '10px 12px', fontSize: 12, color: '#64748B' }}>{m.reason}</td>
+                      <td style={{ padding: '10px 12px', fontSize: 12, color: isConflict ? '#B91C1C' : '#64748B', fontWeight: isConflict ? 600 : 400 }}>
+                        {isConflict
+                          ? (m.conflictReason || `Requested ${m.requestedQty ?? '?'}, fulfilled ${m.fulfilledQty ?? '?'}, short ${m.conflictQty ?? '?'}`)
+                          : m.reason}
+                      </td>
                     </tr>
                   );
                 })}

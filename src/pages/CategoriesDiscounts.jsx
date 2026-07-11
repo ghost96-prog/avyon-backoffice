@@ -12,7 +12,7 @@ const DISCOUNT_TYPES = [
   { value: 'fixed', label: 'Fixed Amount' },
 ];
 
-// ─── Loading Bar Component (Loyverse style) ──────────────────────────────
+// ─── Loading Bar Component ──────────────────────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
   return (
@@ -39,6 +39,22 @@ function LoadingBar({ visible }) {
           50% { transform: translateX(0%) scaleX(0.8); }
           100% { transform: translateX(100%) scaleX(0.3); }
         }
+        @media (max-width: 768px) {
+          .categories-container { padding: 0 8px; }
+          .categories-header { flex-direction: column; align-items: stretch; gap: 12px; }
+          .categories-header-left { flex-wrap: wrap; }
+          .categories-header-right { flex-wrap: wrap; justify-content: flex-start; }
+          .categories-toolbar { flex-wrap: wrap; gap: 8px; }
+          .categories-search { flex: 1; min-width: 140px; }
+          .category-item { padding: 12px; }
+          .category-item-name { font-size: 14px; }
+          .category-item-count { font-size: 12px; }
+        }
+        @media (max-width: 480px) {
+          .category-item { padding: 10px; }
+          .category-item-icon { width: 36px; height: 36px; }
+          .category-item-actions { gap: 8px; }
+        }
       `}</style>
     </div>
   );
@@ -52,7 +68,7 @@ export default function CategoriesDiscounts() {
   const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile } = useAppContext();
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
 
-  const [activeTab, setActiveTab] = useState('categories'); // 'categories' | 'discounts'
+  const [activeTab, setActiveTab] = useState('categories');
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [storeModalOpen, setStoreModalOpen] = useState(false);
 
@@ -61,6 +77,10 @@ export default function CategoriesDiscounts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // ✅ Product counts for categories
+  const [productCounts, setProductCounts] = useState({});
+  const [loadingCounts, setLoadingCounts] = useState(false);
 
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
@@ -72,10 +92,9 @@ export default function CategoriesDiscounts() {
   const [discForm, setDiscForm] = useState({ name: '', type: 'percentage', value: '', active: true });
   const [discSaving, setDiscSaving] = useState(false);
 
-  // Delete modal state
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteItem, setDeleteItem] = useState(null);
-  const [deleteType, setDeleteType] = useState(''); // 'category' | 'discount'
+  const [deleteType, setDeleteType] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
@@ -84,6 +103,7 @@ export default function CategoriesDiscounts() {
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
+  // ── Fetch categories with product counts ──────────────────────────────
   const fetchData = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
     setLoading(true);
@@ -93,13 +113,48 @@ export default function CategoriesDiscounts() {
         apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
         apiFetch(`/business/${businessId}/branches/${selectedBranchId}/discounts`),
       ]);
-      setCategories(Array.isArray(catRes) ? catRes : []);
+      
+      const categoriesData = Array.isArray(catRes) ? catRes : [];
+      setCategories(categoriesData);
       setDiscounts(Array.isArray(discRes) ? discRes : []);
+      
+      // ✅ Fetch product counts for each category
+      await fetchProductCounts(categoriesData);
     } catch (e) {
       console.error('Fetch categories/discounts error:', e);
       setError('Failed to load data');
     } finally {
       setLoading(false);
+    }
+  }, [apiFetch, businessId, selectedBranchId]);
+
+  // ── Fetch product counts per category ──────────────────────────────────
+  const fetchProductCounts = useCallback(async (categoriesData) => {
+    if (!businessId || !selectedBranchId || !categoriesData.length) {
+      setProductCounts({});
+      return;
+    }
+    
+    setLoadingCounts(true);
+    try {
+      // Fetch all products for this branch
+      const products = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=all`);
+      const productsArray = Array.isArray(products) ? products : [];
+      
+      // Count products by category name (since categoryId might not be set)
+      const counts = {};
+      categoriesData.forEach(cat => {
+        // Count by category name (matches the category field in product)
+        const count = productsArray.filter(p => p.category === cat.name && p.status !== 'deleted').length;
+        counts[cat.categoryId || cat.id] = count;
+      });
+      
+      setProductCounts(counts);
+    } catch (e) {
+      console.error('Error fetching product counts:', e);
+      // Don't set error here, just show 0 counts
+    } finally {
+      setLoadingCounts(false);
     }
   }, [apiFetch, businessId, selectedBranchId]);
 
@@ -261,21 +316,21 @@ export default function CategoriesDiscounts() {
     }
   }, []);
 
-  // ─── Show loading bar instead of full screen spinner ──────────────────
-  const showLoadingBar = loading || catSaving || discSaving || isDeleting;
+  // ─── Show loading bar ──────────────────────────────────────────────────
+  const showLoadingBar = loading || catSaving || discSaving || isDeleting || loadingCounts;
 
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
-      <div className="reports-page">
-        <div className="reports-header">
-          <div className="reports-header-left">
+      <div className="reports-page categories-container">
+        <div className="reports-header categories-header">
+          <div className="reports-header-left categories-header-left">
             <div>
               <div className="reports-header-title">Categories & Discounts</div>
               <div className="reports-header-sub">Organize products and manage promotional discounts</div>
             </div>
           </div>
-          <div className="reports-header-right">
+          <div className="reports-header-right categories-header-right">
             <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
               <Store size={14} /> <span>{selectedBranchName}</span>
             </button>
@@ -297,7 +352,7 @@ export default function CategoriesDiscounts() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           <button onClick={() => setActiveTab('categories')}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 8, border: `1px solid ${activeTab === 'categories' ? '#0891B2' : '#E2E8F0'}`, background: activeTab === 'categories' ? '#EFF6FF' : '#fff', color: activeTab === 'categories' ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             <Tag size={14} /> Categories ({categories.length})
@@ -308,8 +363,8 @@ export default function CategoriesDiscounts() {
           </button>
         </div>
 
-        <div className="reports-toolbar">
-          <div className="reports-search">
+        <div className="reports-toolbar categories-toolbar">
+          <div className="reports-search categories-search">
             <Search size={14} />
             <input placeholder={`Search ${activeTab}`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
@@ -325,27 +380,172 @@ export default function CategoriesDiscounts() {
                 <div className="reports-empty-sub">Create your first category to organize products</div>
               </div>
             ) : (
-              filteredCategories.map((c) => (
-                <div 
-                  key={c.categoryId} 
-                  className="reports-list-item" 
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => handleItemClick(c, 'category')}
-                >
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                    <Tag size={15} color="#0891B2" />
-                  </div>
-                  <div className="reports-list-item-info">
-                    <div className="reports-list-item-title">{c.name}</div>
-                  </div>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); openDeleteModal(c, 'category'); }} 
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 8 }}
+              filteredCategories.map((c) => {
+                const count = productCounts[c.categoryId || c.id] || 0;
+                const isNoCategory = c.name === 'No Category';
+                
+                return (
+                  <div 
+                    key={c.categoryId || c.id} 
+                    className="reports-list-item category-item"
+                    style={{ 
+                      cursor: 'pointer',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderBottom: '1px solid #F1F5F9',
+                      backgroundColor: '#fff',
+                      transition: 'background-color 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+                    onClick={() => handleItemClick(c, 'category')}
                   >
-                    <Trash2 size={15} color="#EF4444" />
-                  </button>
-                </div>
-              ))
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                      {/* Category Icon - first letter */}
+                      <div 
+                        className="category-item-icon"
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 20,
+                          backgroundColor: '#EFF6FF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 1,
+                          borderColor: '#BFDBFE',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <span style={{ 
+                          fontSize: 16, 
+                          fontWeight: '700', 
+                          color: '#0891B2',
+                          textTransform: 'uppercase',
+                        }}>
+                          {c.name.charAt(0)}
+                        </span>
+                      </div>
+                      
+                      {/* Category Info */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div 
+                          className="category-item-name"
+                          style={{ 
+                            fontSize: 14, 
+                            fontWeight: '600', 
+                            color: '#0F172A',
+                            marginBottom: 2,
+                          }}
+                        >
+                          {c.name}
+                        </div>
+                        <div 
+                          className="category-item-count"
+                          style={{ 
+                            fontSize: 12, 
+                            color: '#94A3B8',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          {loadingCounts ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ 
+                                display: 'inline-block', 
+                                width: 12, 
+                                height: 12, 
+                                border: '2px solid #E2E8F0', 
+                                borderTopColor: '#0891B2', 
+                                borderRadius: '50%',
+                                animation: 'spin 0.8s linear infinite',
+                              }} />
+                              Loading...
+                            </span>
+                          ) : (
+                            <>
+                              <span>{count}</span>
+                              <span>product{count !== 1 ? 's' : ''}</span>
+                              {isNoCategory && (
+                                <span style={{ 
+                                  fontSize: 10, 
+                                  color: '#94A3B8', 
+                                  background: '#F1F5F9', 
+                                  padding: '1px 8px', 
+                                  borderRadius: 4,
+                                  marginLeft: 4,
+                                }}>
+                                  Default
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div 
+                      className="category-item-actions"
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 12,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {!isNoCategory && (
+                        <>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleItemClick(c, 'category'); }}
+                            style={{
+                              border: 'none',
+                              background: 'none',
+                              cursor: 'pointer',
+                              padding: 4,
+                              color: '#64748B',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            title="Edit category"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9" />
+                              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                            </svg>
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); openDeleteModal(c, 'category'); }} 
+                            style={{ 
+                              border: 'none', 
+                              background: 'none', 
+                              cursor: 'pointer', 
+                              padding: 4,
+                              color: '#EF4444',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            title="Delete category"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M9 18l6-6-6-6" />
+                      </svg>
+                    </div>
+                  </div>
+                );
+              })
             )
           ) : (
             filteredDiscounts.length === 0 ? (
@@ -359,43 +559,107 @@ export default function CategoriesDiscounts() {
                 <div 
                   key={d.discountId} 
                   className="reports-list-item" 
-                  style={{ cursor: 'pointer' }}
+                  style={{ 
+                    cursor: 'pointer',
+                    padding: '12px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: '1px solid #F1F5F9',
+                    backgroundColor: d.active ? '#fff' : '#F8FAFC',
+                    opacity: d.active ? 1 : 0.6,
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = d.active ? '#F8FAFC' : '#F1F5F9'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = d.active ? '#fff' : '#F8FAFC'}
                   onClick={() => handleItemClick(d, 'discount')}
                 >
-                  <div style={{ width: 34, height: 34, borderRadius: 8, background: d.active ? '#DCFCE7' : '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                    <Percent size={15} color={d.active ? '#16A34A' : '#94A3B8'} />
-                  </div>
-                  <div className="reports-list-item-info">
-                    <div className="reports-list-item-title">{d.name}</div>
-                    <div className="reports-list-item-sub">
-                      <span className="reports-list-item-badge" style={{ background: d.active ? '#DCFCE7' : '#F1F5F9', color: d.active ? '#16A34A' : '#94A3B8' }}>
-                        {d.active ? 'Active' : 'Inactive'}
-                      </span>
-                      <span>{d.type === 'percentage' ? `${d.value}%` : `${d.currencySymbol || '$'}${Number(d.value).toFixed(2)}`} off</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                    <div style={{ 
+                      width: 40, 
+                      height: 40, 
+                      borderRadius: 20, 
+                      background: d.active ? '#DCFCE7' : '#F1F5F9',
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <Percent size={16} color={d.active ? '#16A34A' : '#94A3B8'} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ 
+                        fontSize: 14, 
+                        fontWeight: '600', 
+                        color: d.active ? '#0F172A' : '#94A3B8',
+                        marginBottom: 2,
+                      }}>
+                        {d.name}
+                      </div>
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}>
+                        <span style={{ 
+                          fontSize: 11,
+                          color: d.active ? '#64748B' : '#94A3B8',
+                        }}>
+                          {d.type === 'percentage' ? `${d.value}% off` : `${d.currencySymbol || '$'}${Number(d.value).toFixed(2)} off`}
+                        </span>
+                        <span className="reports-list-item-badge" style={{ 
+                          background: d.active ? '#DCFCE7' : '#F1F5F9', 
+                          color: d.active ? '#16A34A' : '#94A3B8',
+                          fontSize: 10,
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontWeight: 600,
+                        }}>
+                          {d.active ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <button 
-                    onClick={(e) => handleToggleDiscountActive(d, e)} 
-                    style={{ 
-                      fontSize: 11, 
-                      fontWeight: 600, 
-                      padding: '4px 10px', 
-                      borderRadius: 6, 
-                      border: '1px solid #E2E8F0', 
-                      background: '#fff', 
-                      cursor: 'pointer', 
-                      color: '#64748B', 
-                      marginRight: 4 
-                    }}
-                  >
-                    {d.active ? 'Deactivate' : 'Activate'}
-                  </button>
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); openDeleteModal(d, 'discount'); }} 
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 8 }}
-                  >
-                    <Trash2 size={15} color="#EF4444" />
-                  </button>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <button 
+                      onClick={(e) => handleToggleDiscountActive(d, e)} 
+                      style={{ 
+                        fontSize: 11, 
+                        fontWeight: 600, 
+                        padding: '4px 10px', 
+                        borderRadius: 6, 
+                        border: '1px solid #E2E8F0', 
+                        background: '#fff', 
+                        cursor: 'pointer', 
+                        color: '#64748B',
+                      }}
+                    >
+                      {d.active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); openDeleteModal(d, 'discount'); }} 
+                      style={{ 
+                        border: 'none', 
+                        background: 'none', 
+                        cursor: 'pointer', 
+                        padding: 4,
+                        color: '#EF4444',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6h18" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  </div>
                 </div>
               ))
             )

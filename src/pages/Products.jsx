@@ -5,6 +5,7 @@ import {
   Store, Search, X, Package, Plus, Filter, Trash2, Edit2,
   AlertTriangle, Download, FileText, RefreshCw, Upload,
   CheckSquare, Square, ChevronLeft, FileDown, Lock,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatMoney, toApiDate, downloadCsv } from '../utils/exportUtils';
@@ -38,9 +39,9 @@ function getStockStatus(product) {
 
 function getStockBadge(status) {
   const map = {
-    in_stock: { label: 'In Stock', bg: '#DCFCE7', color: '#16A34A' },
-    low_stock: { label: 'Low Stock', bg: '#FEF3C7', color: '#0891B2' },
-    out_of_stock: { label: 'Out of Stock', bg: '#FEE2E2', color: '#EF4444' },
+    in_stock: { label: 'In Stock', bg: '#DCFCE7', color: '#16A34A', indicator: '#22C55E' },
+    low_stock: { label: 'Low Stock', bg: '#FEF9C3', color: '#D97706', indicator: '#F59E0B' },
+    out_of_stock: { label: 'Out of Stock', bg: '#FEF2F2', color: '#EF4444', indicator: '#EF4444' },
   };
   return map[status] || map.in_stock;
 }
@@ -71,6 +72,26 @@ function LoadingBar({ visible }) {
           50% { transform: translateX(0%) scaleX(0.8); }
           100% { transform: translateX(100%) scaleX(0.3); }
         }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @media (max-width: 768px) {
+          .products-container { padding: 0 8px; }
+          .products-header { flex-direction: column; align-items: stretch; gap: 12px; }
+          .products-header-left { flex-wrap: wrap; }
+          .products-header-right { flex-wrap: wrap; justify-content: flex-start; }
+          .products-toolbar { flex-wrap: wrap; gap: 8px; }
+          .products-search { flex: 1; min-width: 140px; }
+          .products-stats { display: none; }
+        }
+        @media (max-width: 480px) {
+          .products-mobile-list { padding: 0; }
+          .product-item { padding: 10px 12px; min-height: 72px; }
+          .product-item-image { width: 40px; height: 40px; }
+          .product-item-name { font-size: 13px; }
+          .product-item-price { font-size: 13px; }
+        }
       `}</style>
     </div>
   );
@@ -80,11 +101,9 @@ export default function Products() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile, hasBackofficePermission } = useAppContext();
 
-  // ✅ Check permissions
   const canManageItems = hasBackofficePermission(P.MANAGE_ITEMS);
   const canViewStock = hasBackofficePermission(P.VIEW_STOCK);
 
-  // ✅ If no permission to manage items, show access denied
   if (!canManageItems) {
     return (
       <div className="reports-access-denied">
@@ -101,10 +120,10 @@ export default function Products() {
     );
   }
 
-  const [isTablet, setIsTablet] = useState(window.innerWidth >= 768);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => {
-    const handleResize = () => setIsTablet(window.innerWidth >= 768);
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -288,7 +307,6 @@ export default function Products() {
         p.category || '',
         p.status === 'active' ? 'Active' : 'Inactive',
         getStockStatus(p).replace('_', ' ').toUpperCase(),
-        // ✅ Only show stock if user has view_stock permission
         canViewStock ? (p.trackInventory ? String(p.currentStock || 0) : '—') : '🔒 Restricted',
         formatMoney(p.sellingPrice || 0, baseCurrency),
         formatMoney(p.costPrice || 0, baseCurrency),
@@ -328,7 +346,7 @@ export default function Products() {
               data.cell.styles.textColor = '#16A34A';
               data.cell.styles.fontStyle = 'bold';
             } else if (status === 'LOW STOCK') {
-              data.cell.styles.textColor = '#0891B2';
+              data.cell.styles.textColor = '#D97706';
               data.cell.styles.fontStyle = 'bold';
             } else if (status === 'OUT OF STOCK') {
               data.cell.styles.textColor = '#EF4444';
@@ -354,20 +372,172 @@ export default function Products() {
     }
   }, [filteredProducts, selectedBranchName, baseCurrency, isExporting, canViewStock]);
 
-  // ✅ Determine if stock column should be hidden
   const showStockColumn = canViewStock;
-
-  // ─── Show loading bar instead of full screen spinner ──────────────────
   const showLoadingBar = loading || refreshing;
 
-  // Desktop/Tablet Table View
-  if (isTablet) {
+  // ─── Mobile Product Item ──────────────────────────────────────────────
+  const MobileProductItem = ({ product, isSelected, onToggleSelect, onPress, onDelete }) => {
+    const stockStatus = getStockStatus(product);
+    const statusStyle = getStockBadge(stockStatus);
+    const isActive = product.status === 'active';
+    const stock = product.currentStock || 0;
+    const unit = product.unit || 'each';
+    
+    const stockDisplayText = product.trackInventory 
+      ? `${stock} ${unit !== 'each' ? unit : 'unit'}${stock !== 1 ? 's' : ''} in stock`
+      : 'Not tracked';
+    
+    const priceDisplayText = formatMoney(product.sellingPrice || 0, baseCurrency);
+
+    return (
+      <div
+        className="product-item"
+        style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '10px 12px',
+          borderBottom: '1px solid #F1F5F9',
+          backgroundColor: isSelected ? '#EFF6FF' : '#fff',
+          minHeight: '72px',
+          gap: '10px',
+          cursor: isSelectionMode ? 'default' : 'pointer',
+          opacity: !isActive ? 0.6 : 1,
+        }}
+        onClick={() => onPress(product.productId)}
+      >
+        <div style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button
+            onClick={(e) => onToggleSelect(product.productId, e)}
+            style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            {isSelected ? (
+              <CheckSquare size={18} color="#0891B2" />
+            ) : (
+              <Square size={18} color="#94A3B8" />
+            )}
+          </button>
+        </div>
+
+        <div
+          className="product-item-image"
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 10,
+            overflow: 'hidden',
+            backgroundColor: '#F8FAFC',
+            borderWidth: 1,
+            borderColor: '#F1F5F9',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          {product.imageUrl ? (
+            <img
+              src={product.imageUrl}
+              alt={product.name}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <ImageIcon size={24} color="#CBD5E1" />
+          )}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span
+              className="product-item-name"
+              style={{
+                fontSize: 13,
+                fontWeight: '600',
+                color: !isActive ? '#94A3B8' : '#0F172A',
+                flex: 1,
+              }}
+            >
+              {product.name || 'Unknown'}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2 }}>
+            <span style={{ fontSize: 11, color: '#64748B', fontWeight: '500' }}>
+              {stockDisplayText}
+            </span>
+            <span
+              style={{
+                padding: '2px 8px',
+                borderRadius: 6,
+                fontSize: 10,
+                fontWeight: '700',
+                backgroundColor: statusStyle.bg,
+                color: statusStyle.color,
+              }}
+            >
+              {statusStyle.label}
+            </span>
+            {!isActive && (
+              <span style={{ fontSize: 10, color: '#94A3B8' }}>Inactive</span>
+            )}
+          </div>
+        </div>
+
+        <div style={{ textAlign: 'right', minWidth: 65 }}>
+          <span
+            className="product-item-price"
+            style={{
+              fontSize: 13,
+              fontWeight: '700',
+              color: !isActive ? '#94A3B8' : '#1E293B',
+            }}
+          >
+            {priceDisplayText}
+          </span>
+        </div>
+
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: 12,
+            height: 12,
+            borderTopLeftRadius: 12,
+            borderTopRightRadius: 0,
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+            backgroundColor: statusStyle.indicator,
+            borderWidth: 1.5,
+            borderColor: '#fff',
+          }}
+        />
+
+        {isSelectionMode && isSelected && (
+          <button
+            onClick={(e) => onDelete([product.productId], e)}
+            style={{
+              border: 'none',
+              background: 'none',
+              cursor: 'pointer',
+              padding: 4,
+              marginLeft: 4,
+            }}
+          >
+            <Trash2 size={15} color="#EF4444" />
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // ─── Desktop/Tablet View ─────────────────────────────────────────────
+  if (!isMobile) {
     return (
       <>
         <LoadingBar visible={showLoadingBar} />
-        <div className="reports-page">
-          <div className="reports-header">
-            <div className="reports-header-left">
+        <div className="reports-page products-container">
+          <div className="reports-header products-header">
+            <div className="reports-header-left products-header-left">
               <button className="reports-header-back" onClick={() => navigate('/')}>
                 <ChevronLeft size={18} />
               </button>
@@ -376,7 +546,7 @@ export default function Products() {
                 <div className="reports-header-sub">Manage your product catalog and stock levels</div>
               </div>
             </div>
-            <div className="reports-header-right">
+            <div className="reports-header-right products-header-right">
               <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
                 <Store size={14} /> <span>{selectedBranchName}</span>
               </button>
@@ -385,7 +555,6 @@ export default function Products() {
                 Template
               </Button>
               
-              {/* ✅ Only show Import Stock if user has advanced inventory permission */}
               {hasBackofficePermission(P.ADVANCED_INVENTORY) && (
                 <Button variant="secondary" size="sm" icon={Upload} onClick={() => navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } })}>
                   Import Stock
@@ -398,7 +567,7 @@ export default function Products() {
               <Button variant="secondary" size="sm" icon={Download} onClick={handleExportCsv} disabled={isExporting || !filteredProducts.length}>
                 CSV
               </Button>
-              <Button variant="secondary" size="sm" icon={RefreshCw} onClick={() => fetchProducts(true)} loading={refreshing}>
+              <Button variant="secondary" size="sm" icon={RefreshCw} onClick={() => fetchProducts(true)} disabled={refreshing}>
                 Refresh
               </Button>
               <button
@@ -410,8 +579,8 @@ export default function Products() {
             </div>
           </div>
 
-          <div className="reports-toolbar" style={{ marginTop: 16 }}>
-            <div className="reports-search">
+          <div className="reports-toolbar products-toolbar" style={{ marginTop: 16 }}>
+            <div className="reports-search products-search">
               <Search size={14} />
               <input placeholder="Search by name, SKU or barcode" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
@@ -489,7 +658,6 @@ export default function Products() {
                     <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>SKU</th>
                     <th style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>Category</th>
                     <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>Status</th>
-                    {/* ✅ Only show Stock column if user has view_stock permission */}
                     {showStockColumn && (
                       <th style={{ padding: '10px 12px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase' }}>Stock</th>
                     )}
@@ -536,7 +704,6 @@ export default function Products() {
                             {stockBadge.label}
                           </span>
                         </td>
-                        {/* ✅ Only show stock if user has view_stock permission */}
                         {showStockColumn && (
                           <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 12, color: '#475569' }}>
                             {p.trackInventory ? p.currentStock || 0 : '—'}
@@ -612,13 +779,13 @@ export default function Products() {
     );
   }
 
-  // Mobile List View - same permissions applied
+  // ─── Mobile List View ────────────────────────────────────────────────
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
-      <div className="reports-page">
-        <div className="reports-header">
-          <div className="reports-header-left">
+      <div className="reports-page products-container products-mobile-list">
+        <div className="reports-header products-header">
+          <div className="reports-header-left products-header-left">
             <button className="reports-header-back" onClick={() => navigate('/')}>
               <ChevronLeft size={18} />
             </button>
@@ -627,40 +794,97 @@ export default function Products() {
               <div className="reports-header-sub">Manage your product catalog</div>
             </div>
           </div>
-          <div className="reports-header-right">
+          <div className="reports-header-right products-header-right">
             <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
               <Store size={14} /> <span>{selectedBranchName}</span>
             </button>
           </div>
         </div>
 
-        <div className="reports-toolbar" style={{ marginTop: 16 }}>
-          <div className="reports-search">
-            <Search size={14} />
-            <input placeholder="Search products..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px 12px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="reports-search products-search" style={{ flex: 1, minWidth: 120 }}>
+              <Search size={14} />
+              <input placeholder="Search products..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button onClick={() => navigate('/inventory/products/new', { state: { branchId: selectedBranchId } })}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+              <Plus size={14} /> New Product
+            </button>
+            <button onClick={handleExportCsv} disabled={isExporting || !filteredProducts.length}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: isExporting || !filteredProducts.length ? 0.5 : 1 }}>
+              <Download size={14} /> Export
+            </button>
+            <button 
+              onClick={() => fetchProducts(true)} 
+              disabled={refreshing}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: 6, 
+                padding: '6px 14px', 
+                borderRadius: 8, 
+                border: '1px solid #E2E8F0', 
+                background: refreshing ? '#F1F5F9' : '#F8FAFC', 
+                color: refreshing ? '#94A3B8' : '#475569', 
+                fontWeight: 600, 
+                fontSize: 12, 
+                cursor: refreshing ? 'default' : 'pointer',
+              }}
+            >
+              {refreshing ? (
+                <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span>
+              ) : (
+                <RefreshCw size={14} />
+              )}
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+            {hasBackofficePermission(P.ADVANCED_INVENTORY) && (
+              <button onClick={() => navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } })}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+                <Upload size={14} /> Import Stock
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative' }}>
+              <button className="reports-filter-btn" onClick={() => setStatusPopup(!statusPopup)} style={{ fontSize: 12 }}>
+                <Filter size={13} /> {STOCK_STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label}
+              </button>
+              {statusPopup && (
+                <div className="reports-filter-popover" style={{ maxWidth: 180 }}>
+                  {STOCK_STATUS_OPTIONS.map((opt) => (
+                    <button key={opt.value} className={`reports-filter-option ${statusFilter === opt.value ? 'is-active' : ''}`}
+                      onClick={() => { setStatusFilter(opt.value); setStatusPopup(false); }}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ position: 'relative' }}>
+              <button className="reports-filter-btn" onClick={() => setCategoryPopup(!categoryPopup)} style={{ fontSize: 12 }}>
+                {categoryFilter}
+              </button>
+              {categoryPopup && (
+                <div className="reports-filter-popover" style={{ maxWidth: 180 }}>
+                  <button className={`reports-filter-option ${categoryFilter === 'All' ? 'is-active' : ''}`} onClick={() => { setCategoryFilter('All'); setCategoryPopup(false); }}>All</button>
+                  {categories.map((c) => (
+                    <button key={c.categoryId} className={`reports-filter-option ${categoryFilter === c.name ? 'is-active' : ''}`}
+                      onClick={() => { setCategoryFilter(c.name); setCategoryPopup(false); }}>
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, padding: '0 16px 12px', flexWrap: 'wrap' }}>
-          <button onClick={() => navigate('/inventory/products/new', { state: { branchId: selectedBranchId } })}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-            <Plus size={14} /> New Product
-          </button>
-          {/* ✅ Only show Import Stock if user has advanced inventory permission */}
-          {hasBackofficePermission(P.ADVANCED_INVENTORY) && (
-            <button onClick={() => navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } })}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-              <Upload size={14} /> Import Stock
-            </button>
-          )}
-          <button onClick={handleExportCsv} disabled={isExporting || !filteredProducts.length}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-            <Download size={14} /> Export
-          </button>
-        </div>
-
-        <div className="reports-list-card">
+        <div className="reports-list-card" style={{ padding: 0, overflow: 'hidden' }}>
           {error ? (
             <div className="reports-empty">
               <AlertTriangle size={32} color="#ef4444" />
@@ -675,61 +899,16 @@ export default function Products() {
             </div>
           ) : (
             <>
-              {visibleProducts.map((p) => {
-                const stockStatus = getStockStatus(p);
-                const stockBadge = getStockBadge(stockStatus);
-                const isSelected = selectedIds.has(p.productId);
-                return (
-                  <div 
-                    key={p.productId} 
-                    className="reports-list-item" 
-                    style={{ 
-                      background: isSelected ? '#EFF6FF' : '#fff',
-                      cursor: isSelectionMode ? 'default' : 'pointer',
-                    }}
-                    onClick={() => handleProductClick(p.productId)}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
-                      <button onClick={(e) => handleToggleSelect(p.productId, e)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 4 }}>
-                        {isSelected ? <CheckSquare size={18} color="#0891B2" /> : <Square size={18} color="#94A3B8" />}
-                      </button>
-                      <div style={{ width: 40, height: 40, borderRadius: 8, background: '#F1F5F9', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={18} color="#CBD5E1" />}
-                      </div>
-                      <div className="reports-list-item-info">
-                        <div className="reports-list-item-title">
-                          {p.name} {p.status !== 'active' && <span style={{ fontSize: 10, fontWeight: 600, color: '#94A3B8', marginLeft: 6 }}>(Inactive)</span>}
-                        </div>
-                        <div className="reports-list-item-sub">
-                          <span>SKU: {p.sku}</span>
-                          <span>{p.category}</span>
-                          <span className="reports-list-item-badge" style={{ background: stockBadge.bg, color: stockBadge.color }}>{stockBadge.label}</span>
-                          {/* ✅ Only show stock if user has view_stock permission */}
-                          {showStockColumn && (
-                            <span>{p.trackInventory ? `${p.currentStock ?? 0} in stock` : 'Not tracked'}</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="reports-list-item-right">
-                      <div className="reports-list-item-amount">{formatMoney(p.sellingPrice || 0, baseCurrency)}</div>
-                    </div>
-                    <button 
-                      onClick={(e) => openDeleteModal([p.productId], e)}
-                      style={{ 
-                        border: 'none', 
-                        background: 'none', 
-                        cursor: 'pointer', 
-                        padding: 8,
-                        opacity: isSelectionMode ? 0.5 : 1,
-                      }}
-                      disabled={isSelectionMode}
-                    >
-                      <Trash2 size={15} color="#EF4444" />
-                    </button>
-                  </div>
-                );
-              })}
+              {visibleProducts.map((p) => (
+                <MobileProductItem
+                  key={p.productId}
+                  product={p}
+                  isSelected={selectedIds.has(p.productId)}
+                  onToggleSelect={handleToggleSelect}
+                  onPress={handleProductClick}
+                  onDelete={openDeleteModal}
+                />
+              ))}
               {visibleProducts.length < filteredProducts.length && (
                 <div style={{ padding: '12px 16px', textAlign: 'center' }}>
                   <button onClick={() => setVisibleCount((c) => c + PAGE_SIZE)} style={{ padding: '6px 20px', border: '1px solid #e6eaf0', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 12, color: '#5e6f8a' }}>

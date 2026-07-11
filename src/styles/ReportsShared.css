@@ -299,6 +299,23 @@
   color: #ef4444;
 }
 
+/* ─── Conflict / oversell badge ────────────────────────────────────────── */
+/* Sits alongside the movement-type badge (SALE, STOCK REDUCE, etc.) rather
+   than replacing it, so both "what kind of movement" and "it had a
+   shortfall" are visible at a glance. Solid red fill (vs. the tinted
+   backgrounds other badges use) so it reads as an alert, not just another
+   category label. */
+.reports-badge-conflict {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #EF4444;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
 .reports-empty {
   display: flex;
   flex-direction: column;
@@ -534,4 +551,18 @@
 }
 .reports-access-denied-btn:hover {
   background: #1A3D55;
+}
+/* Add at the bottom of ReportsShared.css */
+
+/* Mobile responsive for transfer products grid */
+@media (max-width: 768px) {
+  .transfer-products-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+/* Mobile responsive for GRV products grid */
+@media (max-width: 768px) {
+  .grv-products-grid {
+    grid-template-columns: 1fr !important;
+  }
 }

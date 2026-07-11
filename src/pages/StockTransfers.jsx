@@ -85,11 +85,6 @@ const Toast = ({ message, type, onClose, onClick }) => {
 };
 
 // Accept/Reject Modal
-// The receiving branch has its own separate product catalog, so accepting
-// a transfer requires telling the backend which of THIS branch's products
-// each incoming line item should add stock to (see productMapping in
-// stockTransferController.acceptTransfer, which rejects with "No receiving
-// product selected" if any item is left unmapped).
 const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch, businessId }) => {
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
@@ -110,8 +105,6 @@ const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch,
         if (cancelled) return;
         setDestProducts(list);
 
-        // Default each item to a same-SKU match in this branch's catalog,
-        // if one exists — the common case for a straightforward restock.
         const initialMapping = {};
         (transfer.items || []).forEach((item) => {
           const match = list.find((p) => p.sku && item.sku && p.sku.toUpperCase() === item.sku.toUpperCase());
@@ -299,9 +292,6 @@ export default function StockTransfers() {
     setToast({ message, type, transfer });
   };
 
-  // Jump straight to a transfer's detail view (switching store context if needed)
-  // and pop the accept/reject modal open, so clicking a notification takes you
-  // right where you need to act.
   const navigateToTransfer = useCallback((t) => {
     if (!t) return;
     setViewBranchId(t.toBranchId);
@@ -346,10 +336,6 @@ export default function StockTransfers() {
     }
   }, [fetchTransfers, view, viewBranchId]);
 
-  // Cross-store watcher: regardless of which store you're currently viewing or
-  // which page/tab you're on within this screen, poll every branch for
-  // pending incoming transfers so a toast + persistent banner can surface
-  // "Store B has a pending transfer" even if you're looking at Store A.
   const checkAllBranchesForIncoming = useCallback(async () => {
     if (!businessId || !branches?.length) return;
     try {
@@ -402,7 +388,6 @@ export default function StockTransfers() {
     setSelectedTransfer(t);
     setView('detail');
     
-    // If incoming and in_transit, show modal
     if (t.toBranchId === viewBranchId && t.status === 'in_transit') {
       setShowModal(true);
     }
@@ -505,8 +490,6 @@ export default function StockTransfers() {
     doc.save(`transfer_${t.transferId}.pdf`);
   }, [selectedTransfer]);
 
-  // Other-store pending transfers (excludes the store currently being viewed,
-  // since those already show an "ACTION NEEDED" tag in the list below).
   const otherStorePending = useMemo(
     () => pendingIncoming.filter((t) => t.toBranchId !== viewBranchId),
     [pendingIncoming, viewBranchId]
@@ -592,7 +575,7 @@ export default function StockTransfers() {
 
       <PendingBanner />
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_OPTIONS.map((opt) => (
           <button key={opt.value} onClick={() => setStatusFilter(opt.value)}
             style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${statusFilter === opt.value ? '#0891B2' : '#E2E8F0'}`, background: statusFilter === opt.value ? '#EFF6FF' : '#fff', color: statusFilter === opt.value ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
@@ -814,7 +797,7 @@ export default function StockTransfers() {
 
       {error && <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>{error}</div>}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
           { n: 1, label: 'Stores', disabled: false },
           { n: 2, label: 'Products', disabled: !canGoToProducts },
@@ -830,7 +813,8 @@ export default function StockTransfers() {
               disabled={isDisabled} 
               onClick={() => !isDisabled && setCreateStep(s.n)}
               style={{
-                flex: 1, 
+                flex: 1,
+                minWidth: '80px',
                 padding: '10px 14px', 
                 borderRadius: 8, 
                 cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -896,7 +880,12 @@ export default function StockTransfers() {
       )}
 
       {createStep === 2 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
+        <div className="transfer-products-grid" style={{ 
+          display: 'grid', 
+          gridTemplateColumns: '1.6fr 1fr', 
+          gap: 16, 
+          alignItems: 'start',
+        }}>
           <div className="reports-list-card" style={{ padding: 16 }}>
             <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
               <div className="reports-search" style={{ flex: 1 }}>
@@ -1186,7 +1175,7 @@ export default function StockTransfers() {
           )}
         </div>
 
-        {/* Items table - always visible */}
+        {/* Items table */}
         <div className="reports-list-card" style={{ padding: 20, maxWidth: 700, marginTop: 16 }}>
           <h4 style={{ marginBottom: 12 }}>Items ({t.items.length})</h4>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>

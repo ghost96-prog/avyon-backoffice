@@ -1,7 +1,7 @@
 // src/pages/Shifts.jsx
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Store, Clock, X, Download, FileText, Lock } from 'lucide-react';
+import { ChevronLeft, Store, Clock, X, Download, FileText, Lock, ChevronRight } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useDateRange } from '../hooks/useDateRange';
 import DateRangeNav from '../components/common/DateRangeNav';
@@ -11,7 +11,7 @@ import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
 import '../styles/ReportsShared.css';
 import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 
-// ─── Loading Bar Component (Loyverse style) ──────────────────────────────
+// ─── Loading Bar Component ──────────────────────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
   return (
@@ -37,6 +37,25 @@ function LoadingBar({ visible }) {
           0% { transform: translateX(-100%) scaleX(0.3); }
           50% { transform: translateX(0%) scaleX(0.8); }
           100% { transform: translateX(100%) scaleX(0.3); }
+        }
+        @media (max-width: 768px) {
+          .shifts-container { padding: 0 8px; }
+          .shifts-header { flex-direction: column; align-items: stretch; gap: 12px; }
+          .shifts-header-left { flex-wrap: wrap; }
+          .shifts-header-right { flex-wrap: wrap; justify-content: flex-start; }
+          .shifts-stats-row { gap: 8px; }
+          .shifts-stat-card { padding: 8px 12px; min-width: 60px; }
+          .shifts-stat-label { font-size: 10px; }
+          .shifts-stat-value { font-size: 14px; }
+          .shift-item { padding: 12px; min-height: 80px; }
+          .shift-item-title { font-size: 13px; }
+          .shift-item-amount { font-size: 13px; }
+        }
+        @media (max-width: 480px) {
+          .shifts-stats-row { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+          .shift-item-sub { flex-wrap: wrap; gap: 4px; }
+          .shift-item-sub span { font-size: 10px; }
+          .shift-item-right { min-width: 60px; }
         }
       `}</style>
     </div>
@@ -66,7 +85,6 @@ export default function Shifts() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency, hasBackofficePermission } = useAppContext();
 
-  // ✅ Check permission
   const canViewShifts = hasBackofficePermission(BACKOFFICE_PERMISSIONS.VIEW_SALES_REPORTS);
 
   const {
@@ -76,7 +94,6 @@ export default function Shifts() {
     handleOptionSelect,
     navigateDate,
     reload: reloadDateRange,
-    loadFromStorage,
   } = useDateRange('today');
 
   const [selectedBranchId, setSelectedBranchId] = useState('all');
@@ -232,7 +249,195 @@ export default function Shifts() {
     }
   }, [businessId, apiFetch, branches, selectedBranchId]);
 
-  // ─── CSV EXPORT (list of shifts) ───────────────────────────────────────────
+  // ─── Shift Item Component ──────────────────────────────────────────────
+  const ShiftItem = useCallback(({ shift }) => {
+    const isOpen = shift.status === 'open';
+    const duration = fmtDuration(shift.openedAt, shift.closedAt);
+    const expectedAmount = shift.expectedAmount || 0;
+    const closingCash = shift.closingCash;
+    
+    let variance = null;
+    if (!isOpen && closingCash != null) {
+      variance = closingCash - expectedAmount;
+    }
+
+    const formatTime = (ts) => {
+      if (!ts) return '';
+      return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const formatDate = (ts) => {
+      if (!ts) return '';
+      return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+
+    return (
+      <div 
+        className="shift-item"
+        onClick={() => handleShiftClick(shift)}
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          backgroundColor: '#fff',
+          borderBottom: '1px solid #F1F5F9',
+          minHeight: '85px',
+          cursor: 'pointer',
+          transition: 'background-color 0.15s ease',
+          padding: '10px 16px',
+          gap: '12px',
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#fff'}
+      >
+        <div style={{ 
+          width: '3px', 
+          borderRadius: '2px', 
+          margin: '10px 0',
+          backgroundColor: isOpen ? '#22C55E' : '#94A3B8',
+          flexShrink: 0
+        }} />
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+          {/* Top Row */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '4px'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ 
+                fontSize: '14px', 
+                fontWeight: '700', 
+                color: '#0F172A'
+              }}>
+                Shift #{shift.shiftNumber}
+              </span>
+              {isOpen && (
+                <span style={{
+                  width: '7px',
+                  height: '7px',
+                  borderRadius: '50%',
+                  backgroundColor: '#22C55E',
+                  display: 'inline-block'
+                }} />
+              )}
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '3px',
+                padding: '2px 6px',
+                borderRadius: '5px',
+                backgroundColor: '#EFF6FF',
+                fontSize: '9px',
+                fontWeight: '700',
+                color: '#234C6A'
+              }}>
+                <Store size={9} />
+                {shift.store}
+              </span>
+            </div>
+            <span style={{
+              padding: '2px 7px',
+              borderRadius: '5px',
+              fontSize: '10px',
+              fontWeight: '700',
+              backgroundColor: isOpen ? '#DCFCE7' : '#F1F5F9',
+              color: isOpen ? '#16A34A' : '#64748B'
+            }}>
+              {isOpen ? 'Active' : 'Closed'}
+            </span>
+          </div>
+
+          {/* Middle Row */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '4px',
+            flexWrap: 'wrap'
+          }}>
+            <span style={{ fontSize: '10px', color: '#64748B' }}>
+              <Clock size={10} style={{ marginRight: '2px', verticalAlign: 'middle' }} />
+              {formatDate(shift.openedAt)} {formatTime(shift.openedAt)}
+            </span>
+            {shift.closedAt && (
+              <>
+                <span style={{ fontSize: '10px', color: '#CBD5E1' }}>→</span>
+                <span style={{ fontSize: '10px', color: '#64748B' }}>
+                  {formatDate(shift.closedAt)} {formatTime(shift.closedAt)}
+                </span>
+              </>
+            )}
+          </div>
+
+          {/* Bottom Row */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: '4px'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              flexWrap: 'wrap'
+            }}>
+              <span style={{ fontSize: '10px', color: '#94A3B8' }}>
+                <span style={{ marginRight: '2px' }}>👤</span>
+                {shift.cashierName || 'Staff'}
+                {isOpen ? ' (Active)' : ''}
+              </span>
+              <span style={{ fontSize: '10px', color: '#64748B' }}>
+                <Clock size={10} style={{ marginRight: '2px', verticalAlign: 'middle' }} />
+                {duration}
+              </span>
+              <span style={{ fontSize: '10px', color: '#94A3B8' }}>
+                {shift.receiptCount} receipts
+              </span>
+            </div>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '9px', color: '#94A3B8', fontWeight: '600' }}>Expected Amount</div>
+                <div style={{ fontSize: '14px', fontWeight: '800', color: '#234C6A' }}>
+                  {baseCurrency || '$'}{Number(expectedAmount).toFixed(2)}
+                </div>
+              </div>
+              {!isOpen && variance !== null && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '8px', color: '#94A3B8' }}>Variance</div>
+                  <div style={{ 
+                    fontSize: '11px', 
+                    fontWeight: '600',
+                    color: variance >= 0 ? '#16A34A' : '#EF4444'
+                  }}>
+                    {baseCurrency || '$'}{Math.abs(variance).toFixed(2)}
+                    {variance >= 0 ? ' ↑' : ' ↓'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <ChevronRight size={14} color="#CBD5E1" style={{ alignSelf: 'center', flexShrink: 0 }} />
+      </div>
+    );
+  }, [handleShiftClick, baseCurrency]);
+
+  // ─── CSV EXPORT ──────────────────────────────────────────────────────────
   const handleExportCsv = useCallback(() => {
     if (isExportingCsv || !allShifts.length) return;
     setIsExportingCsv(true);
@@ -266,7 +471,7 @@ export default function Shifts() {
     }
   }, [allShifts, selectedBranchId, selectedBranchName, startDate, endDate, isExportingCsv]);
 
-  // ─── PDF EXPORT (list of shifts) ────────────────────────────────────────────
+  // ─── PDF EXPORT ─────────────────────────────────────────────────────────
   const handleExportPdf = useCallback(async () => {
     if (exportingPdf || !allShifts.length) return;
     setExportingPdf(true);
@@ -324,7 +529,7 @@ export default function Shifts() {
     }
   }, [allShifts, shiftStats, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf]);
 
-  // ─── PDF EXPORT (single shift detail, matches the popup layout) ───────────
+  // ─── PDF EXPORT (single shift) ─────────────────────────────────────────
   const handleExportSingleShiftPdf = useCallback(async () => {
     if (!selectedShift || exportingShiftPdf) return;
     setExportingShiftPdf(true);
@@ -619,22 +824,22 @@ export default function Shifts() {
     );
   }
 
-  // ─── Show loading bar instead of full screen spinner ──────────────────
+  // ─── Loading states ────────────────────────────────────────────────────
   const showLoadingBar = loading || refreshing || exportingPdf || exportingShiftPdf || isExportingCsv || loadingTransactions;
 
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
-      <div className="reports-page">
-        <div className="reports-header">
-          <div className="reports-header-left">
+      <div className="reports-page shifts-container">
+        <div className="reports-header shifts-header">
+          <div className="reports-header-left shifts-header-left">
             <button className="reports-header-back" onClick={() => navigate('/')}><ChevronLeft size={18} /></button>
             <div>
               <div className="reports-header-title">Shifts</div>
               <div className="reports-header-sub">View completed and active shifts</div>
             </div>
           </div>
-          <div className="reports-header-right">
+          <div className="reports-header-right shifts-header-right">
             <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
               <Store size={14} /> <span>{selectedBranchName}</span>
             </button>
@@ -657,11 +862,23 @@ export default function Shifts() {
           />
         </div>
 
-        <div className="reports-stats-row">
-          <div className="reports-stat-card"><span className="reports-stat-label">Shifts</span><span className="reports-stat-value">{shiftStats.total}</span></div>
-          <div className="reports-stat-card"><span className="reports-stat-label">Active</span><span className="reports-stat-value">{shiftStats.openCount}</span></div>
-          <div className="reports-stat-card"><span className="reports-stat-label">Closed</span><span className="reports-stat-value">{shiftStats.closedCount}</span></div>
-          <div className="reports-stat-card"><span className="reports-stat-label">Total Sales</span><span className="reports-stat-value">{formatMoney(shiftStats.totalSales, baseCurrency)}</span></div>
+        <div className="reports-stats-row shifts-stats-row">
+          <div className="reports-stat-card shifts-stat-card">
+            <span className="reports-stat-label shifts-stat-label">Shifts</span>
+            <span className="reports-stat-value shifts-stat-value">{shiftStats.total}</span>
+          </div>
+          <div className="reports-stat-card shifts-stat-card">
+            <span className="reports-stat-label shifts-stat-label">Active</span>
+            <span className="reports-stat-value shifts-stat-value">{shiftStats.openCount}</span>
+          </div>
+          <div className="reports-stat-card shifts-stat-card">
+            <span className="reports-stat-label shifts-stat-label">Closed</span>
+            <span className="reports-stat-value shifts-stat-value">{shiftStats.closedCount}</span>
+          </div>
+          <div className="reports-stat-card shifts-stat-card">
+            <span className="reports-stat-label shifts-stat-label">Total Sales</span>
+            <span className="reports-stat-value shifts-stat-value">{formatMoney(shiftStats.totalSales, baseCurrency)}</span>
+          </div>
         </div>
 
         <div className="reports-list-card">
@@ -682,27 +899,31 @@ export default function Shifts() {
           ) : (
             <>
               {visibleShifts.map(s => (
-                <div key={s.id} className="reports-list-item" onClick={() => handleShiftClick(s)}>
-                  <div className="reports-list-item-info">
-                    <div className="reports-list-item-title">Shift #{s.shiftNumber}</div>
-                    <div className="reports-list-item-sub">
-                      <span>{s.store}</span>
-                      <span>{s.cashierName}</span>
-                      <span>{fmtDateTime(s.openedAt)}</span>
-                      <span className={`reports-list-item-badge ${s.status === 'open' ? 'completed' : 'voided'}`}>
-                        {s.status === 'open' ? 'Active' : 'Closed'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="reports-list-item-right">
-                    <div className="reports-list-item-amount">{formatMoney(s.expectedAmount, baseCurrency)}</div>
-                    <div style={{ fontSize: 11, color: '#8b97a7' }}>{s.receiptCount} receipts</div>
-                  </div>
-                </div>
+                <ShiftItem key={s.id} shift={s} />
               ))}
               {visibleShifts.length < allShifts.length && (
                 <div style={{ padding: '12px 16px', textAlign: 'center' }}>
-                  <button onClick={handleLoadMore} style={{ padding: '6px 20px', border: '1px solid #e6eaf0', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 12, color: '#5e6f8a' }}>
+                  <button 
+                    onClick={handleLoadMore} 
+                    style={{ 
+                      padding: '6px 20px', 
+                      border: '1px solid #e6eaf0', 
+                      borderRadius: 6, 
+                      background: '#fff', 
+                      cursor: 'pointer', 
+                      fontSize: 12, 
+                      color: '#5e6f8a',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = '#F8FAFC';
+                      e.currentTarget.style.borderColor = '#234C6A';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = '#fff';
+                      e.currentTarget.style.borderColor = '#e6eaf0';
+                    }}
+                  >
                     Load more ({allShifts.length - visibleShifts.length} remaining)
                   </button>
                 </div>

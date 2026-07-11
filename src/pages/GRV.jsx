@@ -19,7 +19,7 @@ function fmtDateTime(ts) {
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// ─── GET HIGHEST SKU FROM SERVER (EXACT same as ProductForm) ──────────────
+// ─── GET HIGHEST SKU FROM SERVER ──────────────────────────────
 async function getHighestSKU(apiFetch, businessId, branchId) {
   if (!businessId || !branchId) return 10000;
   try {
@@ -43,7 +43,7 @@ async function getHighestSKU(apiFetch, businessId, branchId) {
   }
 }
 
-// ─── GENERATE NEXT SKU (EXACT same as ProductForm) ──────────────────────────
+// ─── GENERATE NEXT SKU ──────────────────────────────────────────
 async function generateNextSKU(apiFetch, businessId, branchId) {
   try {
     const highest = await getHighestSKU(apiFetch, businessId, branchId);
@@ -54,7 +54,7 @@ async function generateNextSKU(apiFetch, businessId, branchId) {
   }
 }
 
-// ─── EXACT Android formatPriceInput (same as ProductForm) ──────────────────
+// ─── EXACT Android formatPriceInput ──────────────────────────────────
 const formatPriceInput = (text) => {
   if (!text || text === '') return '0.00';
   const numericOnly = text.replace(/[^0-9]/g, '');
@@ -65,8 +65,6 @@ const formatPriceInput = (text) => {
   return `${dollars}.${remainingCents.toString().padStart(2, '0')}`;
 };
 
-// NOTE: adjust these two getters if your product objects use different field
-// names for current stock / selling price.
 function getCurrentStock(product) {
   return Number(product?.currentStock ?? product?.stock ?? product?.quantityOnHand ?? product?.qty ?? 0);
 }
@@ -75,11 +73,6 @@ function getSellingPrice(product) {
   return Number(product?.sellingPrice ?? product?.price ?? 0);
 }
 
-// For a saved/completed GRV, the backend returns a snapshot of stock/selling
-// price "before" and "after" per item (stockBefore/stockAfter/sellingPrice —
-// see grvController.js). These helpers read those, with a couple of legacy
-// fallback names, and derive "after" from "before" + quantityReceived if the
-// server ever omits it.
 function getItemStockBefore(it) {
   const v = it.stockBefore ?? it.previousStock ?? it.stockBeforeReceipt ?? it.openingStock;
   return v != null ? Number(v) : null;
@@ -97,10 +90,6 @@ function getItemSellingPriceAfter(it) {
   return v != null ? Number(v) : null;
 }
 
-// ── Cart item helpers ────────────────────────────────────────────────────
-// A cart entry is either an existing catalog product (item.product set) or
-// a brand-new item not yet in the catalog (item.isNewProduct + item.newProduct
-// set, item.product null). These helpers read the right place either way.
 function itemName(item) {
   return item.isNewProduct ? (item.newProduct?.name || '(unnamed)') : (item.product?.name || '');
 }
@@ -153,9 +142,6 @@ const Toast = ({ message, type, onClose }) => {
   );
 };
 
-// Simple confirmation modal used before a GRV is actually recorded, since
-// recording it mutates stock levels (and possibly cost/selling price, and
-// possibly creates new products) for every selected line item.
 const ConfirmModal = ({ itemCount, newItemCount, onCancel, onConfirm, submitting }) => (
   <div style={{
     position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.45)',
@@ -191,7 +177,6 @@ const emptyNewItemDraft = {
   sellingPrice: '0.00', costPrice: '0.00',
 };
 
-// Modal for adding a brand-new item straight from the GRV
 const NewItemModal = ({ draft, setDraft, categories, baseCurrency, onCancel, onAdd }) => {
   const canAdd = draft.name.trim().length > 0 && draft.sku.trim().length > 0;
   const currencySymbol = baseCurrency?.symbol || '$';
@@ -251,7 +236,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, onCancel, onA
               </select>
             </div>
           </div>
-          {/* ─── SELLING PRICE + COST PRICE (EXACT same as ProductForm) ────── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Selling Price *</label>
@@ -354,8 +338,6 @@ export default function GRV() {
 
   const openDetail = (g) => {
     setView('detail');
-    // Set selected GRV for detail view
-    // We'll use the g parameter directly
     setSelectedGrv(g);
   };
 
@@ -537,7 +519,6 @@ export default function GRV() {
     });
   };
 
-  // ─── Open New Item Modal with generated SKU ─────────────────────────────
   const openNewItemModal = useCallback(async () => {
     const newSku = await generateNextSKU(apiFetch, businessId, selectedBranchId);
     setNewItemDraft({ ...emptyNewItemDraft, sku: newSku });
@@ -569,15 +550,12 @@ export default function GRV() {
     [cartItems]
   );
 
-  // Current stock + quantity being received = stock level after this GRV posts.
-  // Brand-new items always start from 0.
   const newStockFor = useCallback((item) => {
     const current = itemCurrentStock(item);
     const qty = Number(item.quantityReceived) || 0;
     return current + qty;
   }, []);
 
-  // Step 1: validate + open the "this will update stock" confirmation modal.
   const requestCreateGrv = useCallback(() => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
     if (!supplierName.trim()) {
@@ -606,7 +584,6 @@ export default function GRV() {
     setConfirmOpen(true);
   }, [cartItems, supplierName]);
 
-  // Step 2: actually submit, called once the user confirms the modal.
   const handleCreateGrv = useCallback(async () => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
 
@@ -777,7 +754,7 @@ export default function GRV() {
 
       {error && <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>{error}</div>}
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
           { n: 1, label: 'Details', disabled: false },
           { n: 2, label: 'Products', disabled: !canGoToProducts },
@@ -794,6 +771,7 @@ export default function GRV() {
               onClick={() => !isDisabled && setCreateStep(s.n)}
               style={{
                 flex: 1,
+                minWidth: '80px',
                 padding: '10px 14px',
                 borderRadius: 8,
                 cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -858,10 +836,15 @@ export default function GRV() {
       )}
 
       {createStep === 2 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, alignItems: 'start' }}>
+        <div className="grv-products-grid" style={{ 
+          display: 'grid', 
+          gridTemplateColumns: '1.6fr 1fr', 
+          gap: 16, 
+          alignItems: 'start' 
+        }}>
           <div className="reports-list-card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-              <div className="reports-search" style={{ flex: 1 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+              <div className="reports-search" style={{ flex: 1, minWidth: '150px' }}>
                 <Search size={14} />
                 <input placeholder="Search products or SKU" value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
               </div>
@@ -884,47 +867,52 @@ export default function GRV() {
               <span style={{ fontSize: 12, color: '#64748B', marginLeft: 'auto', alignSelf: 'center' }}>{cartCount} selected</span>
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 6px', width: 30 }}>
-                    <input
-                      type="checkbox"
-                      checked={filteredCreateProducts.length > 0 && filteredCreateProducts.every((p) => cart[`p:${p.productId}`])}
-                      onChange={(e) => {
-                        if (e.target.checked) selectAllFiltered();
-                        else deselectAll();
-                      }}
-                    />
-                  </th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Category</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Current Stock</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Current Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCreateProducts.map((p) => {
-                  const inCart = !!cart[`p:${p.productId}`];
-                  return (
-                    <tr key={p.productId} onClick={() => toggleCart(p)} style={{
-                      cursor: 'pointer',
-                      background: inCart ? '#EFF6FF' : 'transparent',
-                      borderBottom: '1px solid #F1F5F9',
-                    }}>
-                      <td style={{ padding: '8px 6px' }}><input type="checkbox" checked={inCart} readOnly /></td>
-                      <td style={{ padding: '8px 6px', fontWeight: 600 }}>{p.name} <span style={{ color: '#94A3B8', fontWeight: 400, fontSize: 11 }}>{p.sku}</span></td>
-                      <td style={{ padding: '8px 6px', color: '#64748B' }}>{p.category}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B' }}>{getCurrentStock(p)}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatMoney(p.costPrice || 0, baseCurrency)}</td>
-                    </tr>
-                  );
-                })}
-                {filteredCreateProducts.length === 0 && (
-                  <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>No products found</td></tr>
-                )}
-              </tbody>
-            </table>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '400px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
+                    <th style={{ padding: '8px 6px', width: 30 }}>
+                      <input
+                        type="checkbox"
+                        checked={filteredCreateProducts.length > 0 && filteredCreateProducts.every((p) => cart[`p:${p.productId}`])}
+                        onChange={(e) => {
+                          if (e.target.checked) selectAllFiltered();
+                          else deselectAll();
+                        }}
+                      />
+                    </th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Category</th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Stock</th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCreateProducts.map((p) => {
+                    const inCart = !!cart[`p:${p.productId}`];
+                    return (
+                      <tr key={p.productId} onClick={() => toggleCart(p)} style={{
+                        cursor: 'pointer',
+                        background: inCart ? '#EFF6FF' : 'transparent',
+                        borderBottom: '1px solid #F1F5F9',
+                      }}>
+                        <td style={{ padding: '8px 6px' }}><input type="checkbox" checked={inCart} readOnly /></td>
+                        <td style={{ padding: '8px 6px', fontWeight: 600 }}>
+                          <div>{p.name}</div>
+                          <div style={{ color: '#94A3B8', fontWeight: 400, fontSize: 11 }}>{p.sku}</div>
+                        </td>
+                        <td style={{ padding: '8px 6px', color: '#64748B', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{p.category}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B' }}>{getCurrentStock(p)}</td>
+                        <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatMoney(p.costPrice || 0, baseCurrency)}</td>
+                      </tr>
+                    );
+                  })}
+                  {filteredCreateProducts.length === 0 && (
+                    <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>No products found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="reports-list-card" style={{ padding: 16, position: 'sticky', top: 16 }}>
@@ -955,7 +943,7 @@ export default function GRV() {
                         </span>
                         <button onClick={() => removeFromCart(key)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={13} color="#EF4444" /></button>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                         <input
                           type="number"
                           min="1"
@@ -1020,7 +1008,7 @@ export default function GRV() {
           </div>
           {notes && <div style={{ marginBottom: 16, fontSize: 13 }}><strong>Notes:</strong> {notes}</div>}
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 18 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 18, minWidth: '500px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
@@ -1118,7 +1106,6 @@ export default function GRV() {
 
         {error && <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>{error}</div>}
 
-        {/* Overview */}
         <div className="reports-list-card" style={{ padding: 24, maxWidth: 700 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
             <div>
@@ -1146,11 +1133,10 @@ export default function GRV() {
           )}
         </div>
 
-        {/* Items table */}
         <div className="reports-list-card" style={{ padding: 20, maxWidth: 900, marginTop: 16 }}>
           <h4 style={{ marginBottom: 12 }}>Items ({g.items.length})</h4>
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '500px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>

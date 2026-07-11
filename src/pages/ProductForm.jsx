@@ -16,10 +16,8 @@ const UNITS = [
   { value: 'pack', label: 'Pack', requiresQuantityPerUnit: true, placeholder: 'Items per pack' },
 ];
 
-// ✅ Dashboard writes never come from a real POS terminal
 const DASHBOARD_POS_ID = 'web-dashboard';
 
-// ─── EXACT Android formatPriceInput ──────────────────────────────────────────
 const formatPriceInput = (text) => {
   if (!text || text === '') return '0.00';
   const numericOnly = text.replace(/[^0-9]/g, '');
@@ -30,7 +28,6 @@ const formatPriceInput = (text) => {
   return `${dollars}.${remainingCents.toString().padStart(2, '0')}`;
 };
 
-// ─── Loading Bar Component (Loyverse style) ──────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
   return (
@@ -62,6 +59,10 @@ function LoadingBar({ visible }) {
   );
 }
 
+function fieldInput(props) {
+  return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
+}
+
 const emptyForm = {
   sku: '', name: '', barcode: '', categoryId: '', categoryName: 'No Category',
   unit: 'each', itemsPerUnit: '', description: '',
@@ -70,10 +71,6 @@ const emptyForm = {
   status: 'active',
   taxable: false, taxName: '', taxPercent: '0', taxInclusive: false,
 };
-
-function fieldInput(props) {
-  return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
-}
 
 export default function ProductForm() {
   const navigate = useNavigate();
@@ -105,7 +102,6 @@ export default function ProductForm() {
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  // ─── Stock adjustment state (EXACT Android) ──────────────────────────────
   const [stockAdjustType, setStockAdjustType] = useState('add');
   const [adjustmentValue, setAdjustmentValue] = useState('');
   const [calculatedStock, setCalculatedStock] = useState(0);
@@ -114,7 +110,6 @@ export default function ProductForm() {
   const [adjusting, setAdjusting] = useState(false);
   const [recentMovements, setRecentMovements] = useState([]);
 
-  // ─── Conversion state ─────────────────────────────────────────────────────
   const [conversionModalOpen, setConversionModalOpen] = useState(false);
   const [conversionQuantity, setConversionQuantity] = useState('');
   const [selectedReceivingProduct, setSelectedReceivingProduct] = useState(null);
@@ -128,12 +123,10 @@ export default function ProductForm() {
   const selectedUnit = UNITS.find((u) => u.value === form.unit) || UNITS[0];
   const isPackOrBox = selectedUnit?.requiresQuantityPerUnit;
 
-  // ─── GET HIGHEST SKU FROM SERVER (EXACT Android) ──────────────────────────
   const getHighestSKU = useCallback(async () => {
     if (!businessId || !branchId) return 10000;
     try {
       const products = await apiFetch(`/business/${businessId}/branches/${branchId}/products?status=all`);
-      
       let highest = 10000;
       if (Array.isArray(products)) {
         products.forEach((p) => {
@@ -152,7 +145,6 @@ export default function ProductForm() {
     }
   }, [businessId, branchId, apiFetch]);
 
-  // ─── GENERATE NEXT SKU (EXACT Android) ────────────────────────────────────
   const generateNextSKU = useCallback(async () => {
     setLoadingSku(true);
     try {
@@ -167,14 +159,12 @@ export default function ProductForm() {
     }
   }, [getHighestSKU]);
 
-  // ─── Generate SKU on mount (EXACT Android) ──────────────────────────────
   useEffect(() => {
     if (businessId && branchId && !isEdit) {
       generateNextSKU();
     }
   }, [businessId, branchId, generateNextSKU, isEdit]);
 
-  // ─── Load categories ─────────────────────────────────────────────────────
   const loadCategories = useCallback(async () => {
     if (!businessId || !branchId) return;
     try {
@@ -196,7 +186,6 @@ export default function ProductForm() {
     }
   }, [apiFetch, businessId, branchId]);
 
-  // ─── Load product ────────────────────────────────────────────────────────
   const loadProduct = useCallback(async () => {
     if (!isEdit || !businessId || !branchId) return;
     setLoading(true);
@@ -246,7 +235,6 @@ export default function ProductForm() {
   useEffect(() => { loadCategories(); }, [loadCategories]);
   useEffect(() => { loadProduct(); }, [loadProduct]);
 
-  // ─── Calculate stock based on adjustment (EXACT Android) ──────────────
   useEffect(() => {
     const currentStock = parseInt(form.currentStock) || 0;
     if (stockAdjustType === 'override') {
@@ -261,7 +249,6 @@ export default function ProductForm() {
     }
   }, [stockAdjustType, adjustmentValue, form.currentStock]);
 
-  // ─── Update conversion result ────────────────────────────────────────────
   useEffect(() => {
     const qty = parseInt(conversionQuantity);
     const itemsPerUnitNum = parseInt(form.itemsPerUnit);
@@ -317,7 +304,6 @@ export default function ProductForm() {
     }
   }, [apiFetch, businessId, branchId, newCategoryName, staffId, loadCategories]);
 
-  // ─── Search products for conversion ─────────────────────────────────────
   const searchReceivingProducts = useCallback(async (query) => {
     if (!query.trim() || !businessId || !branchId) {
       setReceivingResults([]);
@@ -339,7 +325,6 @@ export default function ProductForm() {
     }
   }, [apiFetch, businessId, branchId, productId]);
 
-  // ─── Handle conversion ──────────────────────────────────────────────────
   const handleConversion = useCallback(async () => {
     if (!conversionResult.toQty || conversionResult.toQty <= 0) {
       setError('Invalid conversion quantity');
@@ -405,7 +390,6 @@ export default function ProductForm() {
     }
   }, [conversionResult, selectedReceivingProduct, apiFetch, businessId, branchId, productId, form, staffId, staffName, loadProduct]);
 
-  // ─── Handle stock adjustment ────────────────────────────────────────────
   const handleAdjustStock = useCallback(async () => {
     const val = parseInt(adjustmentValue, 10);
     if (!val || val <= 0) { setError('Enter a valid quantity'); return; }
@@ -484,7 +468,6 @@ export default function ProductForm() {
     return null;
   };
 
-  // ─── SAVE - EXACT MATCH OF ANDROID ─────────────────────────────────────
   const handleSave = useCallback(async () => {
     if (savingRef.current) return;
 
@@ -501,12 +484,10 @@ export default function ProductForm() {
     try {
       let savedProductId = productId;
 
-      // ─── CREATE PRODUCT (EXACT Android CreateProductScreen) ──────────
       if (!isEdit) {
         const itemsPerUnitValue = selectedUnit?.requiresQuantityPerUnit ? parseInt(form.itemsPerUnit, 10) : 1;
         const finalStock = form.trackInventory ? (parseInt(form.currentStock, 10) || 0) : 0;
 
-        // ✅ SKU uniqueness check (EXACT Android)
         try {
           const skuCheck = await apiFetch(
             `/business/${businessId}/branches/${branchId}/products/sku-check?sku=${encodeURIComponent(form.sku.trim().toUpperCase())}`
@@ -522,7 +503,6 @@ export default function ProductForm() {
           console.error('SKU check error:', error);
         }
 
-        // ✅ Set currentStock to 0 on creation - stock movement will add it
         const payload = {
           posId: DASHBOARD_POS_ID,
           staffId,
@@ -562,7 +542,6 @@ export default function ProductForm() {
 
         savedProductId = created.productId;
 
-        // ✅ If there was initial stock, record it as a proper stock movement
         if (form.trackInventory && finalStock > 0 && created?.productId) {
           try {
             await apiFetch(`/business/${businessId}/branches/${branchId}/stock-movements`, {
@@ -587,7 +566,6 @@ export default function ProductForm() {
           }
         }
 
-        // ✅ Image upload
         if (imageFile && created?.productId) {
           try {
             await uploadProductImage(apiFetch, { businessId, branchId, productId: created.productId, staffId, file: imageFile });
@@ -600,11 +578,9 @@ export default function ProductForm() {
         return;
       }
 
-      // ─── UPDATE PRODUCT (EXACT Android EditProductScreen) ────────────
       const itemsPerUnitValue = selectedUnit?.requiresQuantityPerUnit ? parseInt(form.itemsPerUnit, 10) : 1;
       const finalStock = form.trackInventory ? calculatedStock : 0;
 
-      // ─── Android stock change calculation ────────────────────────────
       const originalStockValue = parseInt(originalStock) || 0;
       const newStockValue = finalStock;
       let stockChanged = form.trackInventory && (newStockValue !== originalStockValue);
@@ -624,7 +600,6 @@ export default function ProductForm() {
         }
       }
 
-      // ─── SKU uniqueness check for edit (EXACT Android) ──────────────
       try {
         const skuCheck = await apiFetch(
           `/business/${businessId}/branches/${branchId}/products/sku-check?sku=${encodeURIComponent(form.sku.trim().toUpperCase())}&excludeId=${productId}`
@@ -639,7 +614,6 @@ export default function ProductForm() {
         console.error('SKU check error:', error);
       }
 
-      // ─── Update product metadata ──────────────────────────────────────
       const payload = {
         staffId,
         cashierName: staffName,
@@ -667,7 +641,6 @@ export default function ProductForm() {
         body: JSON.stringify(payload),
       });
 
-      // ─── Handle stock change (EXACT Android) ─────────────────────────
       if (stockChanged) {
         try {
           let reasonText = '';
@@ -706,7 +679,6 @@ export default function ProductForm() {
         }
       }
 
-      // ─── Handle image upload ──────────────────────────────────────────
       if (imageFile) {
         try {
           await uploadProductImage(apiFetch, { businessId, branchId, productId, staffId, file: imageFile });
@@ -745,30 +717,24 @@ export default function ProductForm() {
     }
   }, [apiFetch, businessId, branchId, productId, staffId, existingImageUrl, isEdit]);
 
-  // ─── Show loading bar instead of full screen spinner ──────────────────
   const showLoadingBar = loading || saving || uploadingImage;
 
+  // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
       <div className="reports-page">
         <div className="reports-header">
           <div className="reports-header-left">
-            <button className="reports-header-back" onClick={() => navigate('/inventory/products')}><ArrowLeft size={18} /></button>
+            <button className="reports-header-back" onClick={() => navigate('/inventory/products')}>
+              <ArrowLeft size={18} />
+            </button>
             <div>
               <div className="reports-header-title">{isEdit ? 'Edit Product' : 'New Product'}</div>
               <div className="reports-header-sub">{branchName}</div>
             </div>
           </div>
-          <div className="reports-header-right">
-            <button
-              onClick={handleSave}
-              disabled={saving || uploadingImage}
-              style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: (saving || uploadingImage) ? 0.7 : 1 }}
-            >
-              {saving ? 'Saving...' : uploadingImage ? 'Uploading image...' : (isEdit ? 'Save Changes' : 'Create Product')}
-            </button>
-          </div>
+        
         </div>
 
         {error && (
@@ -777,23 +743,23 @@ export default function ProductForm() {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 20 }}>
-          {/* ─── LEFT COLUMN: FORM FIELDS ────────────────────────────────────── */}
-          <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+          {/* ─── MAIN FORM ────────────────────────────────────────────────── */}
+          <div style={{ flex: '1 1 300px', minWidth: '280px' }}>
             <div className="reports-list-card" style={{ padding: 20 }}>
-              {/* ─── PRODUCT NAME ────────────────────────────────────────────── */}
+              {/* Product Name */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Product Name *</label>
                 <input style={fieldInput()} value={form.name} onChange={(e) => setField('name', e.target.value)} placeholder="Enter product name" />
               </div>
 
-              {/* ─── CATEGORY + UNIT ────────────────────────────────────────── */}
+              {/* Category + Unit */}
               <div style={{ display: 'grid', gridTemplateColumns: selectedUnit.requiresQuantityPerUnit ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Category</label>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <select
-                      style={fieldInput()}
+                      style={{ ...fieldInput(), flex: 1 }}
                       value={form.categoryId}
                       onChange={(e) => {
                         const cat = categories.find((c) => c.categoryId === e.target.value);
@@ -824,7 +790,7 @@ export default function ProductForm() {
                 )}
               </div>
 
-              {/* ─── SELLING PRICE + COST PRICE (EXACT Android formatPriceInput) ── */}
+              {/* Selling Price + Cost Price */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Selling Price *</label>
@@ -856,7 +822,7 @@ export default function ProductForm() {
                 </div>
               </div>
 
-              {/* ─── SKU + BARCODE ───────────────────────────────────────────── */}
+              {/* SKU + Barcode */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>SKU *</label>
@@ -883,13 +849,13 @@ export default function ProductForm() {
                 </div>
               </div>
 
-              {/* ─── DESCRIPTION ──────────────────────────────────────────────── */}
+              {/* Description */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Description</label>
                 <textarea style={{ ...fieldInput(), minHeight: 70, resize: 'vertical' }} value={form.description} onChange={(e) => setField('description', e.target.value)} placeholder="Optional description" />
               </div>
 
-              {/* ─── TAX ───────────────────────────────────────────────────────── */}
+              {/* Tax */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Tax</label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13, cursor: 'pointer' }}>
@@ -914,7 +880,7 @@ export default function ProductForm() {
                 )}
               </div>
 
-              {/* ─── INVENTORY ────────────────────────────────────────────────── */}
+              {/* Inventory */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Inventory</label>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 13, cursor: 'pointer' }}>
@@ -954,17 +920,17 @@ export default function ProductForm() {
                 )}
               </div>
 
-              {/* ─── STOCK MANAGEMENT (EDIT ONLY) ────────────────────────────── */}
+              {/* Stock Management (Edit Only) */}
               {isEdit && form.trackInventory && (
                 <div style={{ marginBottom: 12, padding: 12, background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Stock Management</div>
                   
                   <div style={{ marginBottom: 10 }}>
                     <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Adjustment Type</label>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" onClick={() => { setStockAdjustType('add'); setAdjustmentValue(''); }} style={{ flex: 1, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${stockAdjustType === 'add' ? '#16A34A' : '#E2E8F0'}`, background: stockAdjustType === 'add' ? '#DCFCE7' : '#F8FAFC', color: stockAdjustType === 'add' ? '#16A34A' : '#64748B', fontWeight: 600, fontSize: 12 }}>+ Add</button>
-                      <button type="button" onClick={() => { setStockAdjustType('subtract'); setAdjustmentValue(''); }} style={{ flex: 1, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${stockAdjustType === 'subtract' ? '#EF4444' : '#E2E8F0'}`, background: stockAdjustType === 'subtract' ? '#FEE2E2' : '#F8FAFC', color: stockAdjustType === 'subtract' ? '#EF4444' : '#64748B', fontWeight: 600, fontSize: 12 }}>- Subtract</button>
-                      <button type="button" onClick={() => { setStockAdjustType('override'); setAdjustmentValue(form.currentStock); }} style={{ flex: 1, padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${stockAdjustType === 'override' ? '#0891B2' : '#E2E8F0'}`, background: stockAdjustType === 'override' ? '#EFF6FF' : '#F8FAFC', color: stockAdjustType === 'override' ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 12 }}>Override</button>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" onClick={() => { setStockAdjustType('add'); setAdjustmentValue(''); }} style={{ flex: 1, minWidth: '60px', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${stockAdjustType === 'add' ? '#16A34A' : '#E2E8F0'}`, background: stockAdjustType === 'add' ? '#DCFCE7' : '#F8FAFC', color: stockAdjustType === 'add' ? '#16A34A' : '#64748B', fontWeight: 600, fontSize: 12 }}>+ Add</button>
+                      <button type="button" onClick={() => { setStockAdjustType('subtract'); setAdjustmentValue(''); }} style={{ flex: 1, minWidth: '60px', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${stockAdjustType === 'subtract' ? '#EF4444' : '#E2E8F0'}`, background: stockAdjustType === 'subtract' ? '#FEE2E2' : '#F8FAFC', color: stockAdjustType === 'subtract' ? '#EF4444' : '#64748B', fontWeight: 600, fontSize: 12 }}>- Subtract</button>
+                      <button type="button" onClick={() => { setStockAdjustType('override'); setAdjustmentValue(form.currentStock); }} style={{ flex: 1, minWidth: '60px', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', border: `1px solid ${stockAdjustType === 'override' ? '#0891B2' : '#E2E8F0'}`, background: stockAdjustType === 'override' ? '#EFF6FF' : '#F8FAFC', color: stockAdjustType === 'override' ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 12 }}>Override</button>
                     </div>
                   </div>
 
@@ -973,8 +939,19 @@ export default function ProductForm() {
                       <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>
                         {stockAdjustType === 'override' ? 'New Stock Quantity' : stockAdjustType === 'add' ? 'Quantity to Add' : 'Quantity to Subtract'}
                       </label>
-                      <input type="number" min="0" style={fieldInput({ padding: '8px 10px' })} value={adjustmentValue} onChange={(e) => setAdjustmentValue(e.target.value)} placeholder={stockAdjustType === 'override' ? 'Enter new quantity' : 'Enter quantity'} />
-                    </div>
+<input 
+  type="number" 
+  min="0" 
+  style={fieldInput({ padding: '8px 10px' })} 
+  value={adjustmentValue} 
+  onChange={(e) => setAdjustmentValue(e.target.value)} 
+  placeholder={
+    stockAdjustType === 'add' ? 'Enter stock to add' :
+    stockAdjustType === 'subtract' ? 'Enter stock to subtract' :
+    stockAdjustType === 'override' ? 'Enter new quantity' :
+    'Enter quantity'
+  } 
+/>                    </div>
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Reason *</label>
                       <input style={fieldInput({ padding: '8px 10px' })} value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder="Why is this adjustment needed?" />
@@ -991,19 +968,16 @@ export default function ProductForm() {
                     </div>
                   )}
 
-               
 
                   {stockAdjustType === 'subtract' && isPackOrBox && form.itemsPerUnit && parseInt(form.itemsPerUnit) > 0 && (
                     <button type="button" onClick={() => { setConversionQuantity(''); setSelectedReceivingProduct(null); setReceivingSearch(''); setReceivingResults([]); setConversionModalOpen(true); }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, padding: '8px', borderRadius: 6, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 12, cursor: 'pointer', width: '100%' }}>
                       <ArrowLeftRight size={14} /> Convert {form.unit}s to Individual Items
                     </button>
                   )}
-
-                 
                 </div>
               )}
 
-              {/* ─── STATUS ────────────────────────────────────────────────────── */}
+              {/* Status */}
               <div style={{ marginBottom: 12 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Status</label>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -1013,17 +987,11 @@ export default function ProductForm() {
               </div>
             </div>
 
-            {/* ─── FOOTER ────────────────────────────────────────────────────── */}
-            <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-              <button onClick={() => navigate('/inventory/products')} style={{ padding: '10px 24px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleSave} disabled={saving || uploadingImage} style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: (saving || uploadingImage) ? 0.7 : 1 }}>
-                {saving ? 'Saving...' : uploadingImage ? 'Uploading image...' : (isEdit ? 'Save Changes' : 'Create Product')}
-              </button>
-            </div>
+         
           </div>
 
-          {/* ─── RIGHT COLUMN: PRODUCT IMAGE ────────────────────────────────── */}
-          <div style={{ width: 200, flexShrink: 0 }}>
+          {/* ─── IMAGE SIDEBAR ────────────────────────────────────────────── */}
+          <div style={{ width: '200px', flexShrink: 0, minWidth: '160px' }}>
             <div className="reports-list-card" style={{ padding: 16 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Product Image</label>
               <div style={{ width: '100%', aspectRatio: '1', borderRadius: 8, background: '#F1F5F9', border: '1px dashed #CBD5E1', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative', marginBottom: 8 }}>
@@ -1042,9 +1010,58 @@ export default function ProductForm() {
               </label>
             </div>
           </div>
+           {/* Footer */}
+<div style={{ 
+  display: 'flex', 
+  gap: 10, 
+  marginTop: 16, 
+  justifyContent: 'flex-end', 
+  flexWrap: 'wrap',
+  width: '100%',
+  maxWidth: '100%'
+}}>
+  <button 
+    onClick={() => navigate('/inventory/products')} 
+    style={{ 
+      padding: '10px 24px', 
+      borderRadius: 8, 
+      border: '1px solid #E2E8F0', 
+      background: '#fff', 
+      color: '#475569', 
+      fontWeight: 600, 
+      fontSize: 14, 
+      cursor: 'pointer',
+      whiteSpace: 'nowrap',
+      flexShrink: 0
+    }}
+  >
+    Cancel
+  </button>
+  <button 
+    onClick={handleSave} 
+    disabled={saving || uploadingImage} 
+    style={{ 
+      padding: '10px 24px', 
+      borderRadius: 8, 
+      border: 'none', 
+      background: '#0891B2', 
+      color: '#fff', 
+      fontWeight: 700, 
+      fontSize: 14, 
+      cursor: 'pointer', 
+      opacity: (saving || uploadingImage) ? 0.7 : 1,
+      whiteSpace: 'nowrap',
+      flexShrink: 0
+    }}
+  >
+    {saving ? 'Saving...' : uploadingImage ? 'Uploading image...' : (isEdit ? 'Save Changes' : 'Create Product')}
+  </button>
+</div>
         </div>
 
-        {/* ─── MODALS ────────────────────────────────────────────────────────── */}
+        {/* ─── MODALS ──────────────────────────────────────────────────────── */}
+
+        {/* Add Category Modal */}
         {addCategoryOpen && (
           <div className="reports-modal-overlay" onClick={() => setAddCategoryOpen(false)}>
             <div className="reports-modal" style={{ maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
@@ -1060,6 +1077,7 @@ export default function ProductForm() {
           </div>
         )}
 
+        {/* Conversion Modal */}
         {conversionModalOpen && (
           <div className="reports-modal-overlay" onClick={() => setConversionModalOpen(false)}>
             <div className="reports-modal" style={{ maxWidth: 520, maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
@@ -1080,7 +1098,7 @@ export default function ProductForm() {
                       {conversionResult.hasEnoughStock ? (
                         <>Remaining {form.unit}s after conversion: <strong>{conversionResult.remainingStock}</strong></>
                       ) : (
-                        <><AlertTriangle size={14} style={{ display: 'inline', marginRight: 4 }} /> Not enough stock! Only {parseInt(form.currentStock)} {form.unit}(s) available.</>
+                        <>Not enough stock! Only {parseInt(form.currentStock)} {form.unit}(s) available.</>
                       )}
                     </div>
                   </div>
@@ -1132,7 +1150,7 @@ export default function ProductForm() {
                   </div>
                 )}
 
-                <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+                <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
                   <button onClick={() => setConversionModalOpen(false)} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                   <button onClick={handleConversion} disabled={!conversionResult.toQty || !conversionResult.hasEnoughStock || !selectedReceivingProduct || adjusting} style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!conversionResult.toQty || !conversionResult.hasEnoughStock || !selectedReceivingProduct || adjusting) ? 0.5 : 1 }}>
                     {adjusting ? 'Processing...' : 'Confirm Conversion'}
