@@ -185,45 +185,50 @@ const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch,
             </div>
           )}
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
-                <th style={{ padding: '6px', textAlign: 'left' }}>Incoming Item</th>
-                <th style={{ padding: '6px', textAlign: 'right' }}>Qty</th>
-                <th style={{ padding: '6px', textAlign: 'left' }}>Receive Into</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transfer?.items?.map((item, i) => {
-                const isMapped = !!mapping[item.productId];
-                return (
-                  <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <td style={{ padding: '6px' }}>{item.productName} <span style={{ color: '#94A3B8', fontSize: 11 }}>{item.sku}</span></td>
-                    <td style={{ padding: '6px', textAlign: 'right' }}>{item.quantity}</td>
-                    <td style={{ padding: '6px' }}>
-                      <select
-                        value={mapping[item.productId] || ''}
-                        onChange={(e) => setMapping((prev) => ({ ...prev, [item.productId]: e.target.value || undefined }))}
-                        disabled={productsLoading}
-                        style={{
-                          width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 12,
-                          border: `1px solid ${isMapped ? '#E2E8F0' : '#FCA5A5'}`,
-                          background: isMapped ? '#fff' : '#FEF2F2',
-                        }}
-                      >
-                        <option value="">{productsLoading ? 'Loading products…' : 'Select a product'}</option>
-                        {destProducts.map((p) => (
-                          <option key={p.productId} value={p.productId}>
-                            {p.name} ({p.sku}) — {p.currentStock ?? 0} in stock
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '280px' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                  <th style={{ padding: '6px', textAlign: 'left' }}>Incoming Item</th>
+                  <th style={{ padding: '6px', textAlign: 'right' }}>Qty</th>
+                  <th style={{ padding: '6px', textAlign: 'left' }}>Receive Into</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transfer?.items?.map((item, i) => {
+                  const isMapped = !!mapping[item.productId];
+                  return (
+                    <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '6px' }}>
+                        <div>{item.productName}</div>
+                        <div style={{ color: '#94A3B8', fontSize: 11 }}>{item.sku}</div>
+                      </td>
+                      <td style={{ padding: '6px', textAlign: 'right' }}>{item.quantity}</td>
+                      <td style={{ padding: '6px' }}>
+                        <select
+                          value={mapping[item.productId] || ''}
+                          onChange={(e) => setMapping((prev) => ({ ...prev, [item.productId]: e.target.value || undefined }))}
+                          disabled={productsLoading}
+                          style={{
+                            width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 12,
+                            border: `1px solid ${isMapped ? '#E2E8F0' : '#FCA5A5'}`,
+                            background: isMapped ? '#fff' : '#FEF2F2',
+                          }}
+                        >
+                          <option value="">{productsLoading ? 'Loading products…' : 'Select a product'}</option>
+                          {destProducts.map((p) => (
+                            <option key={p.productId} value={p.productId}>
+                              {p.name} ({p.sku}) — {p.currentStock ?? 0} in stock
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
           {!allMapped && !productsLoading && (
             <div style={{ color: '#EF4444', fontSize: 12, marginTop: 8 }}>
               Select a receiving product for every item before accepting.
@@ -887,8 +892,8 @@ export default function StockTransfers() {
           alignItems: 'start',
         }}>
           <div className="reports-list-card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-              <div className="reports-search" style={{ flex: 1 }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+              <div className="reports-search" style={{ flex: 1, minWidth: '150px' }}>
                 <Search size={14} />
                 <input placeholder="Search products or SKU" value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
               </div>
@@ -898,7 +903,7 @@ export default function StockTransfers() {
               </select>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               <button onClick={selectAllFiltered} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #0891B2', background: '#EFF6FF', color: '#0891B2', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Check size={14} /> Select All
               </button>
@@ -908,47 +913,63 @@ export default function StockTransfers() {
               <span style={{ fontSize: 12, color: '#64748B', marginLeft: 'auto', alignSelf: 'center' }}>{cartCount} selected</span>
             </div>
 
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 6px', width: 30 }}>
-                    <input 
-                      type="checkbox" 
-                      checked={filteredCreateProducts.length > 0 && filteredCreateProducts.every(p => cart[p.productId])}
-                      onChange={(e) => {
-                        if (e.target.checked) selectAllFiltered();
-                        else deselectAll();
-                      }}
-                    />
-                  </th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Category</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>In Stock</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredCreateProducts.map((p) => {
-                  const inCart = !!cart[p.productId];
-                  const hasStock = (p.currentStock ?? 0) > 0;
-                  return (
-                    <tr key={p.productId} onClick={() => hasStock && toggleCart(p)} style={{ 
-                      cursor: hasStock ? 'pointer' : 'not-allowed', 
-                      background: inCart ? '#EFF6FF' : 'transparent', 
-                      borderBottom: '1px solid #F1F5F9',
-                      opacity: hasStock ? 1 : 0.5
-                    }}>
-                      <td style={{ padding: '8px 6px' }}><input type="checkbox" checked={inCart} readOnly disabled={!hasStock} /></td>
-                      <td style={{ padding: '8px 6px', fontWeight: 600 }}>{p.name} <span style={{ color: '#94A3B8', fontWeight: 400, fontSize: 11 }}>{p.sku}</span></td>
-                      <td style={{ padding: '8px 6px', color: '#64748B' }}>{p.category}</td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right' }}>{p.currentStock ?? 0}</td>
-                    </tr>
-                  );
-                })}
-                {filteredCreateProducts.length === 0 && (
-                  <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>No products found</td></tr>
-                )}
-              </tbody>
-            </table>
+            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '400px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
+                    <th style={{ padding: '8px 6px', width: 30 }}>
+                      <input 
+                        type="checkbox" 
+                        checked={filteredCreateProducts.length > 0 && filteredCreateProducts.every(p => cart[p.productId])}
+                        onChange={(e) => {
+                          if (e.target.checked) selectAllFiltered();
+                          else deselectAll();
+                        }}
+                      />
+                    </th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Category</th>
+                    <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>
+                      In Stock
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCreateProducts.map((p) => {
+                    const inCart = !!cart[p.productId];
+                    const hasStock = (p.currentStock ?? 0) > 0;
+                    const stock = p.currentStock ?? 0;
+                    return (
+                      <tr key={p.productId} onClick={() => hasStock && toggleCart(p)} style={{ 
+                        cursor: hasStock ? 'pointer' : 'not-allowed', 
+                        background: inCart ? '#EFF6FF' : 'transparent', 
+                        borderBottom: '1px solid #F1F5F9',
+                        opacity: hasStock ? 1 : 0.5
+                      }}>
+                        <td style={{ padding: '8px 6px' }}><input type="checkbox" checked={inCart} readOnly disabled={!hasStock} /></td>
+                        <td style={{ padding: '8px 6px', fontWeight: 600 }}>
+                          <div>{p.name}</div>
+                          <div style={{ color: '#94A3B8', fontWeight: 400, fontSize: 11 }}>{p.sku}</div>
+                        </td>
+                        <td style={{ padding: '8px 6px', color: '#64748B', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{p.category}</td>
+                        <td style={{ 
+                          padding: '8px 6px', 
+                          textAlign: 'right',
+                          color: stock === 0 ? '#EF4444' : stock < 5 ? '#D97706' : '#16A34A',
+                          fontWeight: stock === 0 ? 700 : 400
+                        }}>
+                          {stock}
+                          {stock === 0 && <span style={{ marginLeft: 4, fontSize: 10 }}>⚠️</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredCreateProducts.length === 0 && (
+                    <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>No products found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div className="reports-list-card" style={{ padding: 16, position: 'sticky', top: 16 }}>
@@ -963,37 +984,53 @@ export default function StockTransfers() {
             {cartItems.length === 0 ? (
               <div style={{ fontSize: 12, color: '#94A3B8', padding: '20px 0', textAlign: 'center' }}>No items selected yet</div>
             ) : (
-              cartItems.map(({ product, quantity }) => (
-                <div key={product.productId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                  <span style={{ flex: 1, fontSize: 12 }}>{product.name}</span>
-                  <input 
-                    type="number" 
-                    style={{ ...fieldInput(), width: 60, padding: '5px 6px' }}
-                    value={quantity === 0 ? '' : quantity}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        updateCartQty(product.productId, 0);
-                      } else {
-                        const num = Number(val);
-                        if (!isNaN(num) && num >= 0) {
-                          updateCartQty(product.productId, num);
+              cartItems.map(({ product, quantity }) => {
+                const stock = product.currentStock ?? 0;
+                const exceedsStock = quantity > stock;
+                return (
+                  <div key={product.productId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                    <span style={{ flex: 1, fontSize: 12 }}>
+                      {product.name}
+                      {exceedsStock && (
+                        <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700 }}>
+                          ⚠️ Exceeds stock ({stock})
+                        </span>
+                      )}
+                    </span>
+                    <input 
+                      type="number" 
+                      style={{ 
+                        ...fieldInput(), 
+                        width: 60, 
+                        padding: '5px 6px',
+                        borderColor: exceedsStock ? '#EF4444' : '#E2E8F0',
+                      }}
+                      value={quantity === 0 ? '' : quantity}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === '') {
+                          updateCartQty(product.productId, 0);
+                        } else {
+                          const num = Number(val);
+                          if (!isNaN(num) && num >= 0) {
+                            updateCartQty(product.productId, num);
+                          }
                         }
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const val = Number(e.target.value);
-                      if (!val || val <= 0) {
-                        removeFromCart(product.productId);
-                      } else if (val > (product.currentStock ?? 0)) {
-                        showToast(`Only ${product.currentStock ?? 0} of ${product.name} available`, 'error');
-                        updateCartQty(product.productId, product.currentStock ?? 0);
-                      }
-                    }}
-                  />
-                  <button onClick={() => removeFromCart(product.productId)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={13} color="#EF4444" /></button>
-                </div>
-              ))
+                      }}
+                      onBlur={(e) => {
+                        const val = Number(e.target.value);
+                        if (!val || val <= 0) {
+                          removeFromCart(product.productId);
+                        } else if (val > (product.currentStock ?? 0)) {
+                          showToast(`Only ${product.currentStock ?? 0} of ${product.name} available`, 'error');
+                          updateCartQty(product.productId, product.currentStock ?? 0);
+                        }
+                      }}
+                    />
+                    <button onClick={() => removeFromCart(product.productId)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={13} color="#EF4444" /></button>
+                  </div>
+                );
+              })
             )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={() => setCreateStep(1)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 600, cursor: 'pointer' }}>Back</button>
@@ -1016,27 +1053,79 @@ export default function StockTransfers() {
             </div>
           </div>
           {transferNotes && <div style={{ marginBottom: 16, fontSize: 13 }}><strong>Notes:</strong> {transferNotes}</div>}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 18 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>SKU</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {cartItems.filter(item => item.quantity > 0).map(({ product, quantity }) => (
-                <tr key={product.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                  <td style={{ padding: '8px 6px', fontWeight: 600 }}>{product.name}</td>
-                  <td style={{ padding: '8px 6px', color: '#94A3B8' }}>{product.sku}</td>
-                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700 }}>{quantity}</td>
+          
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '280px', marginBottom: 18 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>SKU</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Available</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {cartItems.filter(item => item.quantity > 0).map(({ product, quantity }) => {
+                  const stock = product.currentStock ?? 0;
+                  const exceedsStock = quantity > stock;
+                  return (
+                    <tr key={product.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '8px 6px', fontWeight: 600 }}>{product.name}</td>
+                      <td style={{ padding: '8px 6px', color: '#94A3B8', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{product.sku}</td>
+                      <td style={{ 
+                        padding: '8px 6px', 
+                        textAlign: 'right', 
+                        fontWeight: 700,
+                        color: exceedsStock ? '#EF4444' : '#0F172A'
+                      }}>
+                        {quantity}
+                        {exceedsStock && <span style={{ marginLeft: 4, fontSize: 10 }}>⚠️</span>}
+                      </td>
+                      <td style={{ 
+                        padding: '8px 6px', 
+                        textAlign: 'right',
+                        color: stock === 0 ? '#EF4444' : stock < 5 ? '#D97706' : '#16A34A',
+                      }}>
+                        {stock}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          {cartItems.some(item => item.quantity > (item.product?.currentStock ?? 0)) && (
+            <div style={{ 
+              background: '#FEF2F2', 
+              border: '1px solid #FEE2E2', 
+              color: '#EF4444', 
+              padding: '8px 12px', 
+              borderRadius: 6, 
+              marginBottom: 12,
+              fontSize: 12,
+              fontWeight: 600
+            }}>
+              ⚠️ Some items have quantities exceeding available stock. Please adjust before sending.
+            </div>
+          )}
+          
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={() => setCreateStep(2)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 700, cursor: 'pointer' }}>Back</button>
-            <button onClick={handleSendTransfer} disabled={creating} style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: creating ? 0.7 : 1 }}>
+            <button 
+              onClick={handleSendTransfer} 
+              disabled={creating || cartItems.some(item => item.quantity > (item.product?.currentStock ?? 0))} 
+              style={{ 
+                flex: 2, 
+                padding: 12, 
+                borderRadius: 10, 
+                border: 'none', 
+                background: (creating || cartItems.some(item => item.quantity > (item.product?.currentStock ?? 0))) ? '#CBD5E1' : '#0891B2', 
+                color: '#fff', 
+                fontWeight: 700, 
+                cursor: (creating || cartItems.some(item => item.quantity > (item.product?.currentStock ?? 0))) ? 'not-allowed' : 'pointer', 
+                opacity: (creating || cartItems.some(item => item.quantity > (item.product?.currentStock ?? 0))) ? 0.7 : 1 
+              }}>
               {creating ? 'Sending...' : 'Send Transfer'}
             </button>
           </div>
@@ -1178,26 +1267,31 @@ export default function StockTransfers() {
         {/* Items table */}
         <div className="reports-list-card" style={{ padding: 20, maxWidth: 700, marginTop: 16 }}>
           <h4 style={{ marginBottom: 12 }}>Items ({t.items.length})</h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>SKU</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {t.items.map((it) => (
-                <tr key={it.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                  <td style={{ padding: '8px 6px', fontWeight: 600 }}>{it.productName}</td>
-                  <td style={{ padding: '8px 6px', color: '#94A3B8' }}>{it.sku}</td>
-                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
-                  <td style={{ padding: '8px 6px', color: '#64748B' }}>{it.unit}</td>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '280px' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>SKU</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Unit</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {t.items.map((it) => (
+                  <tr key={it.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                    <td style={{ padding: '8px 6px', fontWeight: 600 }}>
+                      <div>{it.productName}</div>
+                      <div style={{ color: '#94A3B8', fontSize: 11, display: 'inline', '@media (min-width: 481px)': { display: 'none' } }}>{it.sku}</div>
+                    </td>
+                    <td style={{ padding: '8px 6px', color: '#94A3B8', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{it.sku}</td>
+                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
+                    <td style={{ padding: '8px 6px', color: '#64748B' }}>{it.unit}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
