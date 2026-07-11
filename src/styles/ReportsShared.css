@@ -566,3 +566,74 @@
     grid-template-columns: 1fr !important;
   }
 }
+/* Desktop: show table, hide cards */
+.desktop-table-view {
+  display: block;
+}
+
+.mobile-card-view {
+  display: none;
+}
+
+/* Mobile: hide table, show cards */
+@media (max-width: 767px) {
+  .desktop-table-view {
+    display: none;
+  }
+  
+  .mobile-card-view {
+    display: block;
+  }
+}
+
+/* Mobile responsive for transfer products grid */
+@media (max-width: 768px) {
+  .transfer-products-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+/* Desktop: show table, hide cards */
+.desktop-table-view {
+  display: block;
+}
+
+.mobile-card-view {
+  display: none;
+}
+
+/* Mobile: hide table, show cards */
+@media (max-width: 767px) {
+  .desktop-table-view {
+    display: none;
+  }
+  
+  .mobile-card-view {
+    display: block;
+  }
+}
+/* Desktop: show table, hide cards */
+.desktop-table-view {
+  display: block;
+}
+
+.mobile-card-view {
+  display: none;
+}
+
+/* Mobile: hide table, show cards */
+@media (max-width: 767px) {
+  .desktop-table-view {
+    display: none;
+  }
+  
+  .mobile-card-view {
+    display: block;
+  }
+}
+
+/* Mobile responsive for GRV products grid */
+@media (max-width: 768px) {
+  .grv-products-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

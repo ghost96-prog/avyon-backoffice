@@ -333,14 +333,11 @@ export default function StockTransfers() {
     }
   }, [apiFetch, businessId, viewBranchId, statusFilter]);
 
-  useEffect(() => {
-    if (view === 'list' && viewBranchId) {
-      fetchTransfers();
-      const interval = setInterval(fetchTransfers, 30000);
-      return () => clearInterval(interval);
-    }
-  }, [fetchTransfers, view, viewBranchId]);
-
+useEffect(() => {
+  if (view === 'list' && viewBranchId) {
+    fetchTransfers();
+  }
+}, [fetchTransfers, view, viewBranchId]);
   const checkAllBranchesForIncoming = useCallback(async () => {
     if (!businessId || !branches?.length) return;
     try {
@@ -599,30 +596,79 @@ export default function StockTransfers() {
             <div className="reports-empty-sub">Create a transfer to move stock between stores</div>
           </div>
         ) : (
-          transfers.map((t) => {
-            const status = STATUS_CONFIG[t.status] || STATUS_CONFIG.in_transit;
-            const isIncoming = t.toBranchId === viewBranchId;
-            const needsAction = isIncoming && t.status === 'in_transit';
-            return (
-              <div key={t.transferId} className="reports-list-item" onClick={() => openDetail(t)}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: status.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                  <ArrowLeftRight size={16} color={status.color} />
-                </div>
-                <div className="reports-list-item-info">
-                  <div className="reports-list-item-title">
-                    {t.fromBranchName} → {t.toBranchName}
-                    {needsAction && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#0891B2', background: '#EFF6FF', padding: '2px 6px', borderRadius: 4 }}>ACTION NEEDED</span>}
+          <>
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Date</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Transfer</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Items</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Requested By</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transfers.map((t) => {
+                    const status = STATUS_CONFIG[t.status] || STATUS_CONFIG.in_transit;
+                    const isIncoming = t.toBranchId === viewBranchId;
+                    const needsAction = isIncoming && t.status === 'in_transit';
+                    return (
+                      <tr key={t.transferId} onClick={() => openDetail(t)} style={{ cursor: 'pointer', borderBottom: '1px solid #F1F5F9', hover: { background: '#F8FAFC' } }}>
+                        <td style={{ padding: '10px 14px', color: '#64748B' }}>{new Date(t.createdAt).toLocaleString()}</td>
+                        <td style={{ padding: '10px 14px', fontWeight: 600 }}>
+                          {t.fromBranchName} → {t.toBranchName}
+                          {needsAction && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#0891B2', background: '#EFF6FF', padding: '2px 6px', borderRadius: 4 }}>ACTION NEEDED</span>}
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>{t.items.length} item{t.items.length !== 1 ? 's' : ''}</td>
+                        <td style={{ padding: '10px 14px', color: '#64748B' }}>{t.requestedByName}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="mobile-card-view">
+              {transfers.map((t) => {
+                const status = STATUS_CONFIG[t.status] || STATUS_CONFIG.in_transit;
+                const isIncoming = t.toBranchId === viewBranchId;
+                const needsAction = isIncoming && t.status === 'in_transit';
+                return (
+                  <div key={t.transferId} onClick={() => openDetail(t)} style={{ 
+                    padding: '12px 14px', 
+                    borderBottom: '1px solid #F1F5F9',
+                    cursor: 'pointer',
+                    background: '#fff',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                          {t.fromBranchName} → {t.toBranchName}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                          <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                          <span style={{ fontSize: 11, color: '#94A3B8' }}>{t.items.length} item{t.items.length !== 1 ? 's' : ''}</span>
+                          {needsAction && <span style={{ fontSize: 10, fontWeight: 700, color: '#0891B2', background: '#EFF6FF', padding: '2px 6px', borderRadius: 4 }}>ACTION NEEDED</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                          {new Date(t.createdAt).toLocaleString()} • {t.requestedByName}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 11, color: '#64748B' }}>ID: {t.transferId?.slice(-6)}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="reports-list-item-sub">
-                    <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
-                    <span>{t.items.length} item{t.items.length !== 1 ? 's' : ''}</span>
-                    <span>{new Date(t.createdAt).toLocaleString()}</span>
-                    <span>{t.requestedByName}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -1267,31 +1313,26 @@ export default function StockTransfers() {
         {/* Items table */}
         <div className="reports-list-card" style={{ padding: 20, maxWidth: 700, marginTop: 16 }}>
           <h4 style={{ marginBottom: 12 }}>Items ({t.items.length})</h4>
-          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '280px' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>SKU</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Unit</th>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
+                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>SKU</th>
+                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
+                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {t.items.map((it) => (
+                <tr key={it.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={{ padding: '8px 6px', fontWeight: 600 }}>{it.productName}</td>
+                  <td style={{ padding: '8px 6px', color: '#94A3B8' }}>{it.sku}</td>
+                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
+                  <td style={{ padding: '8px 6px', color: '#64748B' }}>{it.unit}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {t.items.map((it) => (
-                  <tr key={it.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                    <td style={{ padding: '8px 6px', fontWeight: 600 }}>
-                      <div>{it.productName}</div>
-                      <div style={{ color: '#94A3B8', fontSize: 11, display: 'inline', '@media (min-width: 481px)': { display: 'none' } }}>{it.sku}</div>
-                    </td>
-                    <td style={{ padding: '8px 6px', color: '#94A3B8', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{it.sku}</td>
-                    <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
-                    <td style={{ padding: '8px 6px', color: '#64748B' }}>{it.unit}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     );

@@ -691,29 +691,78 @@ export default function GRV() {
             <div className="reports-empty-sub">Record your first goods received voucher</div>
           </div>
         ) : (
-          filteredGrvs.map((g) => {
-            const status = GRV_STATUS_CONFIG[g.status] || GRV_STATUS_CONFIG.completed;
-            return (
-              <div key={g.grvId} className="reports-list-item" onClick={() => openDetail(g)}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: status.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                  <FileInput size={16} color={status.color} />
-                </div>
-                <div className="reports-list-item-info">
-                  <div className="reports-list-item-title">{g.grvNumber} — {g.supplierName}</div>
-                  <div className="reports-list-item-sub">
-                    <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
-                    <span>{g.items.length} item{g.items.length !== 1 ? 's' : ''}</span>
-                    {g.supplierInvoiceNumber && <span>Invoice: {g.supplierInvoiceNumber}</span>}
-                    <span>{new Date(g.createdAt).toLocaleString()}</span>
-                    <span>{g.receivedByName}</span>
+          <>
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>GRV Number</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Supplier</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Items</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Date</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Received By</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredGrvs.map((g) => {
+                    const status = GRV_STATUS_CONFIG[g.status] || GRV_STATUS_CONFIG.completed;
+                    return (
+                      <tr key={g.grvId} onClick={() => openDetail(g)} style={{ cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 600 }}>{g.grvNumber}</td>
+                        <td style={{ padding: '10px 14px' }}>{g.supplierName}</td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>{g.items.length} item{g.items.length !== 1 ? 's' : ''}</td>
+                        <td style={{ padding: '10px 14px', color: '#64748B' }}>{new Date(g.createdAt).toLocaleString()}</td>
+                        <td style={{ padding: '10px 14px', color: '#64748B' }}>{g.receivedByName}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{formatMoney(g.totalCost, baseCurrency)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="mobile-card-view">
+              {filteredGrvs.map((g) => {
+                const status = GRV_STATUS_CONFIG[g.status] || GRV_STATUS_CONFIG.completed;
+                return (
+                  <div key={g.grvId} onClick={() => openDetail(g)} style={{ 
+                    padding: '12px 14px', 
+                    borderBottom: '1px solid #F1F5F9',
+                    cursor: 'pointer',
+                    background: '#fff',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                          {g.grvNumber}
+                        </div>
+                        <div style={{ fontWeight: 500, fontSize: 13, color: '#0F172A' }}>{g.supplierName}</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                          <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                          <span style={{ fontSize: 11, color: '#94A3B8' }}>{g.items.length} item{g.items.length !== 1 ? 's' : ''}</span>
+                          {g.supplierInvoiceNumber && <span style={{ fontSize: 11, color: '#94A3B8' }}>Invoice: {g.supplierInvoiceNumber}</span>}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                          {new Date(g.createdAt).toLocaleString()} • {g.receivedByName}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>{formatMoney(g.totalCost, baseCurrency)}</div>
+                        <div style={{ fontSize: 11, color: '#64748B' }}>ID: {g.grvId?.slice(-6)}</div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <div className="reports-list-item-right">
-                  <div className="reports-list-item-amount">{formatMoney(g.totalCost, baseCurrency)}</div>
-                </div>
-              </div>
-            );
-          })
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>

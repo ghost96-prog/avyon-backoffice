@@ -328,12 +328,12 @@ export default function InventoryValue() {
             <span className="reports-stat-value">{stats?.totalItems ?? 0}</span>
           </div>
           <div className="reports-stat-card">
-            <span className="reports-stat-label">Cost Value</span>
-            <span className="reports-stat-value">{formatMoney(stats?.totalCostValue || 0, baseCurrency)}</span>
-          </div>
-          <div className="reports-stat-card">
             <span className="reports-stat-label">Retail Value</span>
             <span className="reports-stat-value">{formatMoney(stats?.totalRetailValue || 0, baseCurrency)}</span>
+          </div>
+          <div className="reports-stat-card">
+            <span className="reports-stat-label">Cost Value</span>
+            <span className="reports-stat-value">{formatMoney(stats?.totalCostValue || 0, baseCurrency)}</span>
           </div>
           <div className="reports-stat-card">
             <span className="reports-stat-label">Profit</span>

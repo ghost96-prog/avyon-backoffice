@@ -99,7 +99,7 @@ export default function StockTake() {
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
   const [toast, setToast] = useState(null);
-  const [view, setView] = useState('list'); // 'list' | 'create' | 'detail'
+  const [view, setView] = useState('list');
   const [selectedBranchId, setSelectedBranchId] = useState('');
   const [storePopoverOpen, setStorePopoverOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -382,7 +382,6 @@ export default function StockTake() {
       if (next.has(productId)) next.delete(productId); else next.add(productId);
       return next;
     });
-    // If we're in "Count All Products" mode and user deselects a product, switch to "Select Specific"
     if (selectAll) {
       setSelectAll(false);
     }
@@ -396,18 +395,14 @@ export default function StockTake() {
     setSelectedProductIds(new Set());
   };
 
-  // Remove a single product from the review list
   const removeProductFromReview = (productId) => {
-    // If in "Count All Products" mode, switching to "Select Specific"
     if (selectAll) {
       setSelectAll(false);
-      // Keep all products except the one being removed
       const allIds = new Set(createProducts.map(p => p.productId));
       allIds.delete(productId);
       setSelectedProductIds(allIds);
       showToast('Product removed. Switching to "Select Specific Products" mode.', 'info');
     } else {
-      // Just remove from selected set
       setSelectedProductIds((prev) => {
         const next = new Set(prev);
         next.delete(productId);
@@ -527,42 +522,89 @@ export default function StockTake() {
             <div className="reports-empty-sub">Start a physical count to reconcile your inventory</div>
           </div>
         ) : (
-          stockTakes.map((st) => {
-            const status = STATUS_CONFIG[st.status] || STATUS_CONFIG.draft;
-            const countedCount = st.items.filter((i) => i.countedQty !== null && i.countedQty !== undefined).length;
-            const hasVariances = st.items.some((i) => {
-              if (i.countedQty === null || i.countedQty === undefined) return false;
-              return i.countedQty !== i.systemQty;
-            });
-            return (
-              <div key={st.stockTakeId} className="reports-list-item" onClick={() => openDetail(st)}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: status.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
-                  <ClipboardCheck size={16} color={status.color} />
-                </div>
-                <div className="reports-list-item-info">
-                  <div className="reports-list-item-title">
-                    {st.stockTakeNumber}
-                    {hasVariances && st.status === 'completed' && (
-                      <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#D97706', background: '#FFFBEB', padding: '2px 6px', borderRadius: 4 }}>VARIANCES</span>
-                    )}
-                  </div>
-                  <div className="reports-list-item-sub">
-                    <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
-                    <span>{countedCount} / {st.items.length} counted</span>
-                    <span>{new Date(st.createdAt).toLocaleString()}</span>
-                    <span>{st.startedByName}</span>
-                  </div>
-                </div>
-                <div className="reports-list-item-right">
-                  {st.status === 'completed' && (
-                    <div style={{ fontSize: 11, color: '#64748B', textAlign: 'right' }}>
-                      {st.completedAt && fmtDateTime(st.completedAt)}
+          <>
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Stock Take</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Progress</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Date</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Started By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockTakes.map((st) => {
+                    const status = STATUS_CONFIG[st.status] || STATUS_CONFIG.draft;
+                    const countedCount = st.items.filter((i) => i.countedQty !== null && i.countedQty !== undefined).length;
+                    const hasVariances = st.items.some((i) => {
+                      if (i.countedQty === null || i.countedQty === undefined) return false;
+                      return i.countedQty !== i.systemQty;
+                    });
+                    return (
+                      <tr key={st.stockTakeId} onClick={() => openDetail(st)} style={{ cursor: 'pointer', borderBottom: '1px solid #F1F5F9' }}>
+                        <td style={{ padding: '10px 14px', fontWeight: 600 }}>
+                          {st.stockTakeNumber}
+                          {hasVariances && st.status === 'completed' && (
+                            <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#D97706', background: '#FFFBEB', padding: '2px 6px', borderRadius: 4 }}>VARIANCES</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>
+                          <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                        </td>
+                        <td style={{ padding: '10px 14px' }}>{countedCount} / {st.items.length}</td>
+                        <td style={{ padding: '10px 14px', color: '#64748B' }}>{new Date(st.createdAt).toLocaleString()}</td>
+                        <td style={{ padding: '10px 14px', color: '#64748B' }}>{st.startedByName}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card View */}
+            <div className="mobile-card-view">
+              {stockTakes.map((st) => {
+                const status = STATUS_CONFIG[st.status] || STATUS_CONFIG.draft;
+                const countedCount = st.items.filter((i) => i.countedQty !== null && i.countedQty !== undefined).length;
+                const hasVariances = st.items.some((i) => {
+                  if (i.countedQty === null || i.countedQty === undefined) return false;
+                  return i.countedQty !== i.systemQty;
+                });
+                return (
+                  <div key={st.stockTakeId} onClick={() => openDetail(st)} style={{ 
+                    padding: '12px 14px', 
+                    borderBottom: '1px solid #F1F5F9',
+                    cursor: 'pointer',
+                    background: '#fff',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>
+                          {st.stockTakeNumber}
+                          {hasVariances && st.status === 'completed' && (
+                            <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#D97706', background: '#FFFBEB', padding: '2px 6px', borderRadius: 4 }}>VARIANCES</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                          <span className="reports-list-item-badge" style={{ background: status.bg, color: status.color }}>{status.label}</span>
+                          <span style={{ fontSize: 11, color: '#94A3B8' }}>{countedCount} / {st.items.length} counted</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>
+                          {new Date(st.createdAt).toLocaleString()} • {st.startedByName}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: 11, color: '#64748B' }}>ID: {st.stockTakeId?.slice(-6)}</div>
+                      </div>
                     </div>
-                  )}
-                </div>
-              </div>
-            );
-          })
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -571,7 +613,6 @@ export default function StockTake() {
   // ── CREATE VIEW ───────────────────────────────────────────────────────────
 
   const renderCreate = () => {
-    // Get the products to display in review
     const reviewProducts = selectAll 
       ? createProducts 
       : createProducts.filter(p => selectedProductIds.has(p.productId));
@@ -592,7 +633,7 @@ export default function StockTake() {
 
         {error && <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>{error}</div>}
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
             { n: 1, label: 'Select Products', disabled: false },
             { n: 2, label: `Review${reviewProducts.length > 0 ? ` (${reviewProducts.length})` : ''}`, disabled: !canGoToReview },
@@ -607,7 +648,8 @@ export default function StockTake() {
                 disabled={isDisabled} 
                 onClick={() => !isDisabled && setCreateStep(s.n)}
                 style={{
-                  flex: 1, 
+                  flex: 1,
+                  minWidth: '80px',
                   padding: '10px 14px', 
                   borderRadius: 8, 
                   cursor: isDisabled ? 'not-allowed' : 'pointer',
@@ -644,21 +686,21 @@ export default function StockTake() {
         {createStep === 1 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
             <div className="reports-list-card" style={{ padding: 16 }}>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 <button onClick={() => setSelectAll(true)}
-                  style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${selectAll ? '#0891B2' : '#E2E8F0'}`, background: selectAll ? '#EFF6FF' : '#fff', color: selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                  style={{ flex: 1, minWidth: '120px', padding: '10px 14px', borderRadius: 8, border: `1px solid ${selectAll ? '#0891B2' : '#E2E8F0'}`, background: selectAll ? '#EFF6FF' : '#fff', color: selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   Count All Products
                 </button>
                 <button onClick={() => setSelectAll(false)}
-                  style={{ flex: 1, padding: '10px 14px', borderRadius: 8, border: `1px solid ${!selectAll ? '#0891B2' : '#E2E8F0'}`, background: !selectAll ? '#EFF6FF' : '#fff', color: !selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                  style={{ flex: 1, minWidth: '120px', padding: '10px 14px', borderRadius: 8, border: `1px solid ${!selectAll ? '#0891B2' : '#E2E8F0'}`, background: !selectAll ? '#EFF6FF' : '#fff', color: !selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   Select Specific Products
                 </button>
               </div>
 
               {!selectAll && (
                 <>
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                    <div className="reports-search" style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                    <div className="reports-search" style={{ flex: 1, minWidth: '150px' }}>
                       <Search size={14} />
                       <input placeholder="Search by name or SKU" value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
                     </div>
@@ -668,7 +710,7 @@ export default function StockTake() {
                     </select>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                     <button onClick={selectAllFiltered} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #0891B2', background: '#EFF6FF', color: '#0891B2', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Check size={14} /> Select All
                     </button>
@@ -730,28 +772,29 @@ export default function StockTake() {
 
             {reviewProducts.length > 0 && (
               <>
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 18 }}>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '500px', marginBottom: 18 }}>
                     <thead>
                       <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
                         <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', width: 30 }}></th>
                         <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>SKU</th>
-                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Current Stock</th>
-                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Cost Price</th>
-                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Sell Price</th>
+                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>SKU</th>
+                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Stock</th>
+                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Cost</th>
+                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Sell</th>
+                        <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {reviewProducts.map((p) => (
                         <tr key={p.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
-                          </td>
+                          <td style={{ padding: '8px 6px', textAlign: 'center' }}></td>
                           <td style={{ padding: '8px 6px', fontWeight: 600 }}>{p.name}</td>
-                          <td style={{ padding: '8px 6px', color: '#94A3B8' }}>{p.sku}</td>
+                          <td style={{ padding: '8px 6px', color: '#94A3B8', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{p.sku}</td>
                           <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B' }}>{p.currentStock ?? 0}</td>
                           <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatMoney(p.costPrice || 0, baseCurrency)}</td>
                           <td style={{ padding: '8px 6px', textAlign: 'right' }}>{formatMoney(p.sellingPrice || 0, baseCurrency)}</td>
+                          <td style={{ padding: '8px 6px', textAlign: 'center' }}>
                             <button 
                               onClick={() => removeProductFromReview(p.productId)}
                               style={{ 
@@ -760,16 +803,16 @@ export default function StockTake() {
                                 cursor: 'pointer',
                                 padding: 4,
                                 borderRadius: 4,
-                                display: 'flex',
+                                display: 'inline-flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 color: '#EF4444',
-                                hover: { background: '#FEF2F2' }
                               }}
                               title="Remove product from stock take"
                             >
                               <Trash2 size={16} />
                             </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -786,7 +829,8 @@ export default function StockTake() {
                     marginBottom: 12,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 8
+                    gap: 8,
+                    flexWrap: 'wrap'
                   }}>
                     <span>💡 Remove a product by clicking the trash icon. This will switch to "Select Specific Products" mode.</span>
                   </div>
@@ -794,12 +838,12 @@ export default function StockTake() {
               </>
             )}
 
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setCreateStep(1)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 700, cursor: 'pointer' }}>Back</button>
+            <div style={{ display: 'flex', gap: 10, flexDirection: 'column', '@media (min-width: 481px)': { flexDirection: 'row' } }}>
+              <button onClick={() => setCreateStep(1)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 700, cursor: 'pointer', width: '100%', '@media (min-width: 481px)': { width: 'auto' } }}>Back</button>
               <button 
                 onClick={handleCreateStockTake} 
                 disabled={creating || reviewProducts.length === 0} 
-                style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (creating || reviewProducts.length === 0) ? '#CBD5E1' : '#0891B2', color: '#fff', fontWeight: 700, cursor: (creating || reviewProducts.length === 0) ? 'not-allowed' : 'pointer', opacity: (creating || reviewProducts.length === 0) ? 0.7 : 1 }}>
+                style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (creating || reviewProducts.length === 0) ? '#CBD5E1' : '#0891B2', color: '#fff', fontWeight: 700, cursor: (creating || reviewProducts.length === 0) ? 'not-allowed' : 'pointer', opacity: (creating || reviewProducts.length === 0) ? 0.7 : 1, width: '100%', '@media (min-width: 481px)': { width: 'auto' } }}>
                 {creating ? 'Creating...' : 'Start Stock Take'}
               </button>
             </div>
@@ -839,7 +883,6 @@ export default function StockTake() {
 
         {error && <div style={{ background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>{error}</div>}
 
-        {/* Overview */}
         <div className="reports-list-card" style={{ padding: 24, maxWidth: 700 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
             <div>
@@ -871,9 +914,8 @@ export default function StockTake() {
           )}
         </div>
 
-        {/* Items table */}
         <div className="reports-list-card" style={{ padding: 20, maxWidth: 820, marginTop: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, '@media (min-width: 481px)': { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' } }}>
             <h4 style={{ margin: 0 }}>Items ({st.items.length})</h4>
             <div style={{ fontSize: 12, color: '#64748B' }}>
               {st.items.filter(i => i.countedQty !== null && i.countedQty !== undefined).length} counted
@@ -882,16 +924,18 @@ export default function StockTake() {
 
           <input style={{ ...fieldInput(), marginBottom: 12 }} value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} placeholder="Search items by name or SKU..." />
 
-          {/* Totals bar */}
           <div style={{ 
             display: 'grid', 
-            gridTemplateColumns: 'repeat(4, 1fr)', 
-            gap: 12, 
+            gridTemplateColumns: '1fr 1fr', 
+            gap: 8, 
             marginBottom: 12, 
             padding: '10px 14px', 
             background: '#F8FAFC', 
             borderRadius: 8,
-            fontSize: 12
+            fontSize: 12,
+            '@media (min-width: 481px)': {
+              gridTemplateColumns: 'repeat(4, 1fr)',
+            }
           }}>
             <div>
               <span style={{ color: '#64748B' }}>System Value:</span>{' '}
@@ -911,17 +955,17 @@ export default function StockTake() {
             </div>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '500px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>System</th>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>Counted</th>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>Variance</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Cost Price</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Variance (Cost)</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Variance (Sell)</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Cost Price</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Variance (Cost)</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Variance (Sell)</th>
                 </tr>
               </thead>
               <tbody>
@@ -941,8 +985,8 @@ export default function StockTake() {
                       background: hasVariance && st.status === 'completed' ? '#FFFBEB' : 'transparent',
                     }}>
                       <td style={{ padding: '8px 6px', fontWeight: 600 }}>
-                        {item.productName}
-                        <span style={{ color: '#94A3B8', fontSize: 10, display: 'block' }}>{item.sku}</span>
+                        <div>{item.productName}</div>
+                        <div style={{ color: '#94A3B8', fontSize: 10 }}>{item.sku}</div>
                       </td>
                       <td style={{ padding: '8px 6px', textAlign: 'center', color: '#64748B' }}>{item.systemQty}</td>
                       <td style={{ padding: '8px 6px', textAlign: 'center' }}>
@@ -952,10 +996,11 @@ export default function StockTake() {
                           style={{ 
                             ...fieldInput(), 
                             padding: '4px 6px', 
-                            width: 70,
+                            width: 60,
                             textAlign: 'center',
                             background: st.status !== 'draft' ? '#F8FAFC' : '#fff',
                             borderColor: st.status !== 'draft' ? '#E2E8F0' : '#E2E8F0',
+                            fontSize: 12,
                           }}
                           value={countedVal}
                           onChange={(e) => setCountedValues((prev) => ({ ...prev, [item.productId]: e.target.value }))}
@@ -971,12 +1016,13 @@ export default function StockTake() {
                       }}>
                         {variance === null ? '—' : (variance > 0 ? `+${variance}` : variance)}
                       </td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B' }}>{formatMoney(costPrice, baseCurrency)}</td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{formatMoney(costPrice, baseCurrency)}</td>
                       <td style={{ 
                         padding: '8px 6px', 
                         textAlign: 'right', 
                         fontWeight: 600,
-                        color: varianceCost === null ? '#CBD5E1' : varianceCost === 0 ? '#64748B' : varianceCost > 0 ? '#16A34A' : '#EF4444'
+                        color: varianceCost === null ? '#CBD5E1' : varianceCost === 0 ? '#64748B' : varianceCost > 0 ? '#16A34A' : '#EF4444',
+                        display: 'none', '@media (min-width: 481px)': { display: 'table-cell' }
                       }}>
                         {varianceCost !== null ? formatMoney(varianceCost, baseCurrency) : '—'}
                       </td>
@@ -984,7 +1030,8 @@ export default function StockTake() {
                         padding: '8px 6px', 
                         textAlign: 'right', 
                         fontWeight: 600,
-                        color: varianceSell === null ? '#CBD5E1' : varianceSell === 0 ? '#64748B' : varianceSell > 0 ? '#16A34A' : '#EF4444'
+                        color: varianceSell === null ? '#CBD5E1' : varianceSell === 0 ? '#64748B' : varianceSell > 0 ? '#16A34A' : '#EF4444',
+                        display: 'none', '@media (min-width: 481px)': { display: 'table-cell' }
                       }}>
                         {varianceSell !== null ? formatMoney(varianceSell, baseCurrency) : '—'}
                       </td>
@@ -996,20 +1043,19 @@ export default function StockTake() {
           </div>
 
           {st.status === 'draft' && (
-            <div style={{ display: 'flex', gap: 10, marginTop: 16, paddingTop: 12, borderTop: '1px solid #E2E8F0' }}>
+            <div style={{ display: 'flex', gap: 10, marginTop: 16, paddingTop: 12, borderTop: '1px solid #E2E8F0', flexDirection: 'column', '@media (min-width: 481px)': { flexDirection: 'row' } }}>
               <button onClick={handleSaveCounts} disabled={saving}
-                style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
+                style={{ flex: 1, padding: 11, borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1, width: '100%', '@media (min-width: 481px)': { width: 'auto' } }}>
                 {saving ? 'Saving...' : 'Save Progress'}
               </button>
               <button onClick={handleComplete} disabled={completing}
-                style={{ flex: 1, padding: 11, borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: completing ? 0.7 : 1 }}>
+                style={{ flex: 1, padding: 11, borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: completing ? 0.7 : 1, width: '100%', '@media (min-width: 481px)': { width: 'auto' } }}>
                 <Check size={15} /> {completing ? 'Completing...' : 'Complete & Reconcile'}
               </button>
             </div>
           )}
         </div>
 
-        {/* Confirm Complete Modal */}
         {confirmCompleteOpen && detailTake && (
           <ConfirmCompleteModal
             itemCount={detailTake.items.length}
@@ -1025,8 +1071,6 @@ export default function StockTake() {
       </div>
     );
   };
-
-  // ── RENDER ────────────────────────────────────────────────────────────────
 
   if (view === 'create') return renderCreate();
   if (view === 'detail') return renderDetail();

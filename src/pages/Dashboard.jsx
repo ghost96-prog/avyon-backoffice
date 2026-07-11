@@ -365,7 +365,7 @@ export default function Dashboard() {
             <div className="dashboard-empty" style={{ height: 100 }}>No sales in this period.</div>
           ) : (
             <div className="ranked-list">
-              {topItems.slice(0, 8).map((item, index) => (
+              {topItems.slice(0, 5).map((item, index) => (
                 <div key={item.productId} className="ranked-row">
                   <span className="ranked-index">{index + 1}</span>
                   {item.imageUrl ? (
