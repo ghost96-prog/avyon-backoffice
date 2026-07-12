@@ -69,7 +69,14 @@ export default function ImportStock() {
       setLoadingProducts(false);
     }
   }, [apiFetch, businessId, selectedBranchId]);
+// In ImportStock.js - Add this useEffect after handleImport
 
+// ─── Auto-navigate to products after successful import ─────────────────────────
+useEffect(() => {
+  if (importResults && !importing && importResults.every(r => r.success)) {
+    navigate('/inventory/products');
+  }
+}, [importResults, importing, navigate]);
   useEffect(() => { fetchBranchData(); }, [fetchBranchData]);
 
   // ─── File handling ──────────────────────────────────────────────────────────
