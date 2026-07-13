@@ -35,7 +35,7 @@ export const NAV_SECTIONS = [
   {
     label: "Overview",
     items: [
-      { id: "dashboard", label: "Sales Dashboard", to: "/", icon: LayoutDashboard, permission: null },
+      { id: "dashboard", label: "Sales Dashboard", to: "/", icon: LayoutDashboard, permission: P.VIEW_SALES_REPORTS },
       { id: "top-items", label: "Top Selling Items", to: "/reports/top-selling-items", icon: TrendingUp, permission: P.VIEW_SALES_REPORTS },
       { id: "receipts", label: "Receipts", to: "/reports/receipts", icon: Receipt, permission: P.VIEW_SALES_REPORTS },
       { id: "shifts", label: "Shifts", to: "/reports/shifts", icon: Clock, permission: P.VIEW_SALES_REPORTS },
@@ -60,35 +60,29 @@ export const NAV_SECTIONS = [
   {
     label: "Analytics",
     items: [
+      { id: "branches", label: "Branch Comparison", to: "/branches", icon: GitCompare, permission: P.VIEW_SALES_REPORTS },
       { id: "sales", label: "Sales Analytics", to: "/sales", icon: TrendingUp, permission: P.VIEW_SALES_REPORTS },
       { id: "profit", label: "Profit Analytics", to: "/profit", icon: LineChart, permission: P.VIEW_SALES_REPORTS },
       { id: "products", label: "Product Performance", to: "/products", icon: Package, permission: P.VIEW_STOCK },
       { id: "inventory", label: "Inventory Intelligence", to: "/inventory", icon: Boxes, permission: P.ADVANCED_INVENTORY },
+      // { id: "financials", label: "Financial Reports", to: "/financials", icon: FileBarChart, permission: P.VIEW_SALES_REPORTS },
+      // { id: "reports", label: "Report Builder", to: "/reports", icon: ClipboardList, permission: P.VIEW_SALES_REPORTS },
+      // { id: "scheduled", label: "Scheduled Reports", to: "/scheduled-reports", icon: Send, permission: P.VIEW_SALES_REPORTS },
+      // { id: "export", label: "Export Centre", to: "/export", icon: Download, permission: P.VIEW_SALES_REPORTS },
     ],
   },
   {
     label: "People",
     items: [
-      { id: "customers", label: "Customer Analytics", to: "/customers", icon: Users, permission: P.MANAGE_CUSTOMERS },
       { id: "staff", label: "Cashier Performance", to: "/staff", icon: UserCog, permission: P.MANAGE_EMPLOYEES },
-    ],
-  },
-  {
-    label: "Business",
-    items: [
-      { id: "branches", label: "Branch Comparison", to: "/branches", icon: GitCompare, permission: null },
-      { id: "financials", label: "Financial Reports", to: "/financials", icon: FileBarChart, permission: P.VIEW_SALES_REPORTS },
-      { id: "reports", label: "Report Builder", to: "/reports", icon: ClipboardList, permission: P.VIEW_SALES_REPORTS },
-      { id: "scheduled", label: "Scheduled Reports", to: "/scheduled-reports", icon: Send, permission: P.VIEW_SALES_REPORTS },
-      { id: "export", label: "Export Centre", to: "/export", icon: Download, permission: P.VIEW_SALES_REPORTS },
+      { id: "customers", label: "Customer Analytics", to: "/customers", icon: Users, permission: P.MANAGE_CUSTOMERS },
     ],
   },
   {
     label: "System",
     items: [
-      { id: "audit", label: "Audit Logs", to: "/audit-logs", icon: ShieldAlert, permission: "*" },
       { id: "business", label: "Business Profile", to: "/business", icon: Building2, permission: "*" },
-      { id: "settings", label: "Settings", to: "/settings", icon: Settings, permission: P.MANAGE_SETTINGS },
+      // { id: "settings", label: "Settings", to: "/settings", icon: Settings, permission: P.MANAGE_SETTINGS },
     ],
   },
 ];

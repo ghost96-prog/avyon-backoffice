@@ -23,11 +23,19 @@ import InventoryValue from "./pages/InventoryValue";
 import StockTransfers from "./pages/StockTransfers";
 import GRV from "./pages/GRV";
 import StockTake from "./pages/StockTake";
+import SalesAnalytics from "./pages/SalesAnalytics";
+import ProfitAnalytics from "./pages/ProfitAnalytics";
+import ProductPerformance from "./pages/ProductPerformance";
+import InventoryAnalytics from "./pages/InventoryAnalytics";
 import { NAV_SECTIONS } from "./utils/navConfig";
 import { BACKOFFICE_PERMISSIONS as P } from "./utils/permissions";
-
+import BranchComparison from "./pages/BranchComparison";
+import StaffPerformance from "./pages/StaffPerformance";
+import BusinessProfile from "./pages/BusinessProfile";
 const REAL_PAGES = {
   '/': Dashboard,
+    '/sales': SalesAnalytics,           // ← add this line
+'/profit': ProfitAnalytics,         // ← add this line
   '/reports/top-selling-items': TopSellingItems,
   '/reports/receipts': Receipts,
   '/reports/shifts': Shifts,
@@ -42,6 +50,13 @@ const REAL_PAGES = {
   '/inventory/transfers': StockTransfers,
   '/inventory/grv': GRV,
   '/inventory/stock-take': StockTake,
+  '/products': ProductPerformance,
+'/inventory': InventoryAnalytics,
+  '/branches': BranchComparison,
+  '/staff': StaffPerformance,
+  '/business': BusinessProfile,
+  // Add more real pages here as needed
+
 };
 
 // All nav items except dashboard - will use either real page or ComingSoon
