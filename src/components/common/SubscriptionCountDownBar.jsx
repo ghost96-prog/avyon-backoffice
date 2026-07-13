@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { AlertTriangle, Clock, MessageCircle, Mail, X } from "lucide-react";
 import { useBranchSubscriptions } from "../../hooks/useBranchSubscription";
 import { useAppContext } from "../../context/AppContext";
-import "./SubscriptionCountdownBar.css";
+import "./SubscriptionCountDownBar.css";
 
 const SUPPORT_WHATSAPP_NUMBER = "263783556354";
 const SUPPORT_EMAIL = "gkmangezi09@gmail.com";
