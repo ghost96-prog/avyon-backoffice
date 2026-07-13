@@ -9,8 +9,8 @@ import { useAppContext } from '../context/AppContext';
 import Button from '../components/common/Button';
 import '../styles/ReportsShared.css';
 
-const SUPPORT_WHATSAPP_NUMBER = '263712345678';
-const SUPPORT_EMAIL = 'support@yourpos.com';
+const SUPPORT_WHATSAPP_NUMBER = '263783556354';
+const SUPPORT_EMAIL = 'gkmangezi09@gmail.com';
 
 const STATUS_META = {
   trial: { label: 'Free Trial', color: '#357abd', bg: '#e6eef9', icon: Clock },
