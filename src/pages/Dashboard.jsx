@@ -74,7 +74,17 @@ function formatPercent(change) {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const { apiFetch, businessId, branches, baseCurrency, hasBackofficePermission } = useAppContext();
+  const {
+    apiFetch, businessId, branches, baseCurrency, hasBackofficePermission,
+    // ✅ Shared, persisted "currently selected branch" (see AppContext /
+    // useModuleSubscriptions). Dashboard's own filter below still supports
+    // an "All Stores" option that the shared value can't represent, but we
+    // read/write through to it whenever a single real branch is chosen, so
+    // switching stores here is remembered on Products (and vice-versa) and
+    // module gating always tracks whichever branch was picked last.
+    selectedBranchId: sharedSelectedBranchId,
+    setSelectedBranchId: setSharedSelectedBranchId,
+  } = useAppContext();
 
   const {
     startDate,
@@ -86,7 +96,19 @@ export default function Dashboard() {
     loadFromStorage,
   } = useDateRange('today');
 
-  const [selectedBranchId, setSelectedBranchId] = useState("all");
+  const [selectedBranchId, setLocalSelectedBranchId] = useState(sharedSelectedBranchId || "all");
+
+  // Picking a specific store here also becomes the app-wide selected
+  // branch; picking "All Stores" only affects this report view (module
+  // gating elsewhere keeps using whatever branch was last picked for real).
+  const setSelectedBranchId = useCallback(
+    (value) => {
+      setLocalSelectedBranchId(value);
+      if (value !== "all") setSharedSelectedBranchId(value);
+    },
+    [setSharedSelectedBranchId]
+  );
+
   const branchOptions = useMemo(
     () => [{ value: "all", label: "All Stores" }, ...(branches || []).map((b) => ({ value: b.branchId, label: b.name }))],
     [branches]

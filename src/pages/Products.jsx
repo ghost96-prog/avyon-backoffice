@@ -16,6 +16,8 @@ import '../styles/ReportsShared.css';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { downloadProductTemplate, downloadProductsForReimport } from '../utils/csvUtils';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 
 const STOCK_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
@@ -99,8 +101,17 @@ function LoadingBar({ visible }) {
 
 export default function Products() {
   const navigate = useNavigate();
-  const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile, hasBackofficePermission } = useAppContext();
-
+  const {
+    apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile, hasBackofficePermission,
+    // ✅ Shared, persisted "currently selected branch" — lives in AppContext
+    // now (not local state) so switching stores here is remembered across
+    // screens AND so useModuleGate/useModuleSubscriptions (which read the
+    // same selectedBranchId) immediately re-check module access for
+    // whichever branch is actually selected, instead of the login branch.
+    selectedBranchId, setSelectedBranchId,
+  } = useAppContext();
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const canWriteInventory = hasModuleAccess('inventory_mgmt');
   const canManageItems = hasBackofficePermission(P.MANAGE_ITEMS);
   const canViewStock = hasBackofficePermission(P.VIEW_STOCK);
 
@@ -130,7 +141,6 @@ export default function Products() {
 
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
 
-  const [selectedBranchId, setSelectedBranchId] = useState('');
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -153,12 +163,6 @@ export default function Products() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteIds, setDeleteIds] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    if (!selectedBranchId && branches?.length) {
-      setSelectedBranchId(branches[0].branchId);
-    }
-  }, [branches, selectedBranchId]);
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
@@ -218,11 +222,18 @@ export default function Products() {
 
   const openDeleteModal = useCallback((ids, e) => {
     if (e) e.stopPropagation();
+    // ✅ Guard delete action
+    if (!guardAction('inventory_mgmt')) return;
     setDeleteIds(Array.isArray(ids) ? ids : [ids]);
     setDeleteModalOpen(true);
-  }, []);
+  }, [guardAction]);
 
   const handleConfirmDelete = useCallback(async () => {
+    // ✅ Already guarded, but double-check
+    if (!guardAction('inventory_mgmt')) {
+      setDeleteModalOpen(false);
+      return;
+    }
     setIsDeleting(true);
     try {
       await Promise.all(deleteIds.map(id => 
@@ -245,7 +256,7 @@ export default function Products() {
       setIsDeleting(false);
       setDeleteIds([]);
     }
-  }, [apiFetch, businessId, selectedBranchId, staffId, activeStaff, userProfile, fetchProducts, deleteIds]);
+  }, [apiFetch, businessId, selectedBranchId, staffId, activeStaff, userProfile, fetchProducts, deleteIds, guardAction]);
 
   const handleToggleSelect = useCallback((id, e) => {
     if (e) e.stopPropagation();
@@ -271,11 +282,15 @@ export default function Products() {
 
   const handleProductClick = useCallback((productId) => {
     if (isSelectionMode) return;
+    if (!guardAction('inventory_mgmt')) return; // opens modal, blocks navigation to the edit screen
     navigate(`/inventory/products/${productId}/edit`, { state: { branchId: selectedBranchId } });
-  }, [navigate, selectedBranchId, isSelectionMode]);
+  }, [navigate, selectedBranchId, isSelectionMode, guardAction]);
 
+  // ✅ Guarded export functions
   const handleExportCsv = useCallback(() => {
     if (isExporting || !filteredProducts.length) return;
+    // ✅ Guard export action
+    if (!guardAction('inventory_mgmt')) return;
     setIsExporting(true);
     try {
       const branchTag = selectedBranchName.toLowerCase().replace(/\s+/g, '-');
@@ -283,10 +298,12 @@ export default function Products() {
     } finally {
       setIsExporting(false);
     }
-  }, [filteredProducts, selectedBranchName, isExporting]);
+  }, [filteredProducts, selectedBranchName, isExporting, guardAction]);
 
   const handleExportPdf = useCallback(() => {
     if (isExporting || !filteredProducts.length) return;
+    // ✅ Guard export action
+    if (!guardAction('inventory_mgmt')) return;
     setIsExporting(true);
 
     try {
@@ -370,7 +387,13 @@ export default function Products() {
     } finally {
       setIsExporting(false);
     }
-  }, [filteredProducts, selectedBranchName, baseCurrency, isExporting, canViewStock]);
+  }, [filteredProducts, selectedBranchName, baseCurrency, isExporting, canViewStock, guardAction]);
+
+  // ✅ Guarded template download
+  const handleDownloadTemplate = useCallback(() => {
+    if (!guardAction('inventory_mgmt')) return;
+    downloadProductTemplate();
+  }, [guardAction]);
 
   const showStockColumn = canViewStock;
   const showLoadingBar = loading || refreshing;
@@ -551,12 +574,16 @@ export default function Products() {
                 <Store size={14} /> <span>{selectedBranchName}</span>
               </button>
 
-              <Button variant="secondary" size="sm" icon={FileDown} onClick={downloadProductTemplate}>
+              <Button variant="secondary" size="sm" icon={FileDown} onClick={handleDownloadTemplate}>
                 Template
               </Button>
               
               {hasBackofficePermission(P.ADVANCED_INVENTORY) && (
-                <Button variant="secondary" size="sm" icon={Upload} onClick={() => navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } })}>
+                <Button variant="secondary" size="sm" icon={Upload} 
+                onClick={() => {
+                  if (!guardAction('inventory_mgmt')) return;
+                  navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } });
+                }}>
                   Import Stock
                 </Button>
               )}
@@ -571,7 +598,10 @@ export default function Products() {
                 Refresh
               </Button>
               <button
-                onClick={() => navigate('/inventory/products/new', { state: { branchId: selectedBranchId } })}
+                onClick={() => {
+                  if (!guardAction('inventory_mgmt')) return;
+                  navigate('/inventory/products/new', { state: { branchId: selectedBranchId } });
+                }}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
               >
                 <Plus size={15} /> New Product
@@ -717,7 +747,10 @@ export default function Products() {
                         </td>
                         <td style={{ padding: '10px 12px', textAlign: 'center' }}>
                           <button 
-                            onClick={(e) => openDeleteModal([p.productId], e)}
+                            onClick={(e) => {
+                              if (!guardAction('inventory_mgmt')) return;
+                              openDeleteModal([p.productId], e);
+                            }}
                             style={{ 
                               border: 'none', 
                               background: 'none', 
@@ -775,6 +808,15 @@ export default function Products() {
             </div>
           )}
         </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
       </>
     );
   }
@@ -810,12 +852,20 @@ export default function Products() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button onClick={() => navigate('/inventory/products/new', { state: { branchId: selectedBranchId } })}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+            <button 
+              onClick={() => {
+                if (!guardAction('inventory_mgmt')) return;
+                navigate('/inventory/products/new', { state: { branchId: selectedBranchId } });
+              }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}
+            >
               <Plus size={14} /> New Product
             </button>
-            <button onClick={handleExportCsv} disabled={isExporting || !filteredProducts.length}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: isExporting || !filteredProducts.length ? 0.5 : 1 }}>
+            <button 
+              onClick={handleExportCsv} 
+              disabled={isExporting || !filteredProducts.length}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer', opacity: isExporting || !filteredProducts.length ? 0.5 : 1 }}
+            >
               <Download size={14} /> Export
             </button>
             <button 
@@ -843,10 +893,15 @@ export default function Products() {
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
             {hasBackofficePermission(P.ADVANCED_INVENTORY) && (
-              <button onClick={() => navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } })}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-                <Upload size={14} /> Import Stock
-              </button>
+              <Button
+                variant="secondary" size="sm" icon={Upload}
+                onClick={() => {
+                  if (!guardAction('inventory_mgmt')) return;
+                  navigate('/inventory/import-stock', { state: { branchId: selectedBranchId } });
+                }}
+              >
+                Import Stock
+              </Button>
             )}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -919,6 +974,15 @@ export default function Products() {
             </>
           )}
         </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
 
         <ConfirmDeleteModal
           isOpen={deleteModalOpen}

@@ -9,6 +9,10 @@ import { formatMoney } from '../utils/exportUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import '../styles/ReportsShared.css';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
+import { getModuleInfo } from '../utils/moduleCatalog';
 
 function fieldInput(props) {
   return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
@@ -292,14 +296,20 @@ export default function GRV() {
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
+  // ─── MODULE GATING ───────────────────────────────────────────────────
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+
   const [toast, setToast] = useState(null);
   const [view, setView] = useState('list');
-  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const [storePopoverOpen, setStorePopoverOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [grvs, setGrvs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Check access for the CURRENTLY SELECTED branch
+  const hasAccess = hasModuleAccess('advanced_inventory');
 
   const showToast = (message, type = 'error') => {
     setToast({ message, type });
@@ -327,8 +337,13 @@ export default function GRV() {
   }, [apiFetch, businessId, selectedBranchId]);
 
   useEffect(() => {
-    if (view === 'list') fetchGrvs();
-  }, [fetchGrvs, view]);
+    if (view === 'list' && hasAccess) {
+      fetchGrvs();
+    } else if (view === 'list' && !hasAccess) {
+      setLoading(false);
+      setGrvs([]);
+    }
+  }, [fetchGrvs, view, hasAccess]);
 
   const filteredGrvs = useMemo(() => {
     if (!searchQuery.trim()) return grvs;
@@ -418,6 +433,8 @@ export default function GRV() {
   };
 
   const openCreateFlow = () => {
+    // ✅ Guard the action
+    if (!guardAction('advanced_inventory')) return;
     setCreateStep(1);
     setSupplierName('');
     setInvoiceNumber('');
@@ -557,6 +574,9 @@ export default function GRV() {
   }, []);
 
   const requestCreateGrv = useCallback(() => {
+    // ✅ Guard the action
+    if (!guardAction('advanced_inventory')) return;
+    
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
     if (!supplierName.trim()) {
       showToast('Supplier name is required', 'error');
@@ -582,7 +602,7 @@ export default function GRV() {
       }
     }
     setConfirmOpen(true);
-  }, [cartItems, supplierName]);
+  }, [cartItems, supplierName, guardAction]);
 
   const handleCreateGrv = useCallback(async () => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
@@ -638,7 +658,71 @@ export default function GRV() {
     }
   }, [apiFetch, businessId, selectedBranchId, supplierName, invoiceNumber, notes, updateCostPrice, updateSellingPrice, cartItems, staffId, staffName, fetchGrvs]);
 
-  // ── LIST VIEW ─────────────────────────────────────────────────────────────
+  // ─── ACCESS DENIED ──────────────────────────────────────────────────
+  if (!hasAccess) {
+    const moduleInfo = getModuleInfo('advanced_inventory');
+    return (
+      <div className="reports-page">
+        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <div>
+              <div className="reports-header-title">GRV (Goods Received)</div>
+              <div className="reports-header-sub">Record stock deliveries from suppliers</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <div style={{ position: 'relative' }}>
+              <button className="reports-store-selector" onClick={() => setStorePopoverOpen((v) => !v)}>
+                <Store size={14} /> <span>{selectedBranchName}</span>
+              </button>
+              {storePopoverOpen && (
+                <div className="reports-filter-popover" style={{ right: 0, left: 'auto', top: '110%' }}>
+                  {(branches || []).map((b) => (
+                    <button key={b.branchId} className={`reports-filter-option ${selectedBranchId === b.branchId ? 'is-active' : ''}`}
+                      onClick={() => { setSelectedBranchId(b.branchId); setStorePopoverOpen(false); }}>
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <AlertTriangle size={32} color="#EF4444" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              {moduleInfo?.label || 'Module'} Required
+            </h2>
+            <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
+              You need the <strong>{moduleInfo?.label || 'Advanced Inventory Management'}</strong> module to access GRV features for <strong>{selectedBranchName}</strong>.
+              Please subscribe to unlock this functionality.
+            </p>
+            <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
+              {moduleInfo?.price && (
+                <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ─── LIST VIEW ─────────────────────────────────────────────────────────────
   const renderList = () => (
     <div className="reports-page">
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
@@ -765,10 +849,19 @@ export default function GRV() {
           </>
         )}
       </div>
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 
-  // ── CREATE VIEW ───────────────────────────────────────────────────────────
+  // ─── CREATE VIEW ───────────────────────────────────────────────────────────
   const renderCreate = () => (
     <div className="reports-page">
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
@@ -1124,10 +1217,19 @@ export default function GRV() {
           </div>
         </div>
       )}
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 
-  // ── DETAIL VIEW ───────────────────────────────────────────────────────────
+  // ─── DETAIL VIEW ───────────────────────────────────────────────────────────
   const renderDetail = () => {
     if (!selectedGrv) return null;
     const g = selectedGrv;
@@ -1231,6 +1333,15 @@ export default function GRV() {
             </table>
           </div>
         </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
       </div>
     );
   };

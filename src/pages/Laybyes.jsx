@@ -13,7 +13,7 @@ import { formatMoney, toApiDate, downloadCsv } from '../utils/exportUtils';
 import '../styles/ReportsShared.css';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 // ─── Loading Bar Component (Loyverse style) ──────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
@@ -105,7 +105,7 @@ export default function Laybyes() {
     startDate, endDate, selectedOption, handleOptionSelect, navigateDate, reload: reloadDateRange,
   } = useDateRange('today');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
+const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

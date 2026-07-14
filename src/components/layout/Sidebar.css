@@ -39,7 +39,95 @@
   overflow: hidden;
   background: white; /* Remove background if logo has its own */
 }
+/* src/components/layout/Sidebar.css — ADD */
 
+.sidebar-link.is-locked {
+  opacity: 0.72;
+}
+/* Sidebar.css - Add these styles */
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-brand-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.sidebar-brand-text {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+
+.sidebar-brand-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 2px;
+  min-width: 0;
+}
+
+.sidebar-brand-company {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-brand-email {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* When sidebar is collapsed, hide the company and email */
+.sidebar.is-expanded .sidebar-brand-details {
+  display: flex;
+}
+
+.sidebar:not(.is-expanded) .sidebar-brand-details {
+  display: none;
+}
+
+/* Adjust the sidebar-top to accommodate the new layout */
+.sidebar-top {
+  display: flex;
+  align-items: flex-start;
+  padding: 16px 16px 12px;
+  gap: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Make sure the toggle button aligns properly */
+.sidebar-toggle-btn {
+  flex-shrink: 0;
+  margin-top: 8px;
+}
+.sidebar-link-lock {
+  margin-left: auto;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+
+.sidebar-link.is-active.is-locked {
+  /* keep the active-route highlight but still show the lock is honest */
+  opacity: 0.85;
+}
 .sidebar-logo-img {
   display: block;
   width: 100%;

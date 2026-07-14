@@ -15,6 +15,37 @@ import { BACKOFFICE_PERMISSIONS } from "../utils/permissions";
 
 const AppContext = createContext(null);
 
+// ── Shared "currently selected branch" ──────────────────────────────────
+// Distinct from `branchId` below (the staff's home/login branch, fixed at
+// login time from the profile). `selectedBranchId` is whatever branch the
+// user is *actively viewing/acting on* right now via any in-page store
+// switcher (Products, Dashboard, etc). It's shared across every screen and
+// persisted per-business so it survives navigation and page reloads.
+//
+// Module-gating (useModuleSubscriptions) reads THIS instead of the static
+// login `branchId`, so switching branches anywhere immediately re-checks
+// module access for the branch actually on screen — not whichever branch
+// the user happened to log in under.
+const SELECTED_BRANCH_KEY_PREFIX = "bo_selected_branch:";
+
+function readStoredBranch(businessId) {
+  if (!businessId) return null;
+  try {
+    return localStorage.getItem(`${SELECTED_BRANCH_KEY_PREFIX}${businessId}`);
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredBranch(businessId, selectedBranchId) {
+  if (!businessId || !selectedBranchId) return;
+  try {
+    localStorage.setItem(`${SELECTED_BRANCH_KEY_PREFIX}${businessId}`, selectedBranchId);
+  } catch {
+    // storage full/unavailable — non-fatal, selection just won't persist across reloads
+  }
+}
+
 // Stages of the post-login flow:
 //   idle -> checking -> pin (PIN gate required) -> ready
 //   idle -> checking -> ready (no PIN required, e.g. solo owner account)
@@ -34,6 +65,9 @@ export function AppProvider({ children }) {
   const [activeStaff, setActiveStaff] = useState(null);
   const [branches, setBranches] = useState([]);
   const [profileError, setProfileError] = useState(null);
+
+  // Shared, persisted "currently selected branch" — see helpers above.
+  const [selectedBranchId, setSelectedBranchIdState] = useState(null);
 
   const getFreshTokenRef = useRef(async () => null);
 
@@ -157,6 +191,7 @@ export function AppProvider({ children }) {
         setRequiresPin(false);
         setActiveStaff(null);
         setBranches([]);
+        setSelectedBranchIdState(null);
         backofficeSessionManager.clearAll();
       }
       setIsLoading(false);
@@ -164,6 +199,36 @@ export function AppProvider({ children }) {
     return unsubscribe;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Resolve the shared selected branch once we know the business and its
+  // branch list: prefer a still-valid stored choice (from a previous
+  // session/screen), else the staff's home branch, else just the first
+  // branch. Re-validates whenever the branch list changes (e.g. a branch
+  // gets removed out from under a stale stored id).
+  useEffect(() => {
+    if (!businessId || !branches.length) return;
+    setSelectedBranchIdState((prev) => {
+      if (prev && branches.some((b) => b.branchId === prev)) return prev; // already resolved this session
+      const stored = readStoredBranch(businessId);
+      const validStored = stored && branches.some((b) => b.branchId === stored) ? stored : null;
+      const validHome = branchId && branches.some((b) => b.branchId === branchId) ? branchId : null;
+      const resolved = validStored || validHome || branches[0].branchId;
+      writeStoredBranch(businessId, resolved);
+      return resolved;
+    });
+  }, [businessId, branches, branchId]);
+
+  // Switch the branch currently being viewed/acted on. Updates state AND
+  // localStorage synchronously so every consumer (module gating included)
+  // reflects the new branch immediately, and the choice survives navigating
+  // to another screen or reloading the page.
+  const setSelectedBranchId = useCallback(
+    (newBranchId) => {
+      setSelectedBranchIdState(newBranchId);
+      writeStoredBranch(businessId, newBranchId);
+    },
+    [businessId]
+  );
 
   const switchActiveStaff = useCallback((staff) => {
     backofficeSessionManager.setActiveStaff(staff);
@@ -230,6 +295,10 @@ export function AppProvider({ children }) {
     userProfile,
     branches,
     profileError,
+
+    // shared, persisted "currently viewed" branch — see helpers above
+    selectedBranchId,
+    setSelectedBranchId,
 
     // PIN gate / active staff
     postLoginStage,

@@ -21,8 +21,12 @@ import DateRangeNav from '../components/common/DateRangeNav';
 import Button from '../components/common/Button';
 import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
+import { getModuleInfo } from '../utils/moduleCatalog';
 import '../styles/ReportsShared.css';
 import './Dashboard.css';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -58,6 +62,10 @@ export default function ProfitAnalytics() {
 
   const canView = hasBackofficePermission(BACKOFFICE_PERMISSIONS.VIEW_SALES_REPORTS);
 
+  // ✅ Module gate for Analytics
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const hasAnalytics = hasModuleAccess('analytics');
+
   const {
     startDate,
     endDate,
@@ -67,7 +75,7 @@ export default function ProfitAnalytics() {
     reload: reloadDateRange,
   } = useDateRange('today');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
+const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [dimension, setDimension] = useState('branch');
 
@@ -177,9 +185,9 @@ export default function ProfitAnalytics() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [reloadDateRange]);
 
-  useEffect(() => { if (businessId) loadOverview(); }, [businessId, startDate, endDate, selectedBranchId, loadOverview]);
-  useEffect(() => { if (businessId) loadDimension(); }, [businessId, startDate, endDate, selectedBranchId, dimension, loadDimension]);
-  useEffect(() => { if (businessId) loadBranchComparison(); }, [businessId, startDate, endDate, loadBranchComparison]);
+  useEffect(() => { if (businessId && hasAnalytics) loadOverview(); }, [businessId, startDate, endDate, selectedBranchId, loadOverview, hasAnalytics]);
+  useEffect(() => { if (businessId && hasAnalytics) loadDimension(); }, [businessId, startDate, endDate, selectedBranchId, dimension, loadDimension, hasAnalytics]);
+  useEffect(() => { if (businessId && hasAnalytics) loadBranchComparison(); }, [businessId, startDate, endDate, loadBranchComparison, hasAnalytics]);
 
   const rowLabel = useCallback((row) => {
     if (dimension === 'branch') return branchNameMap[row.id] || row.name || row.id;
@@ -309,6 +317,79 @@ export default function ProfitAnalytics() {
     );
   };
 
+  // ─── ACCESS DENIED (module not subscribed) ───────────────────────────────
+  if (!hasAnalytics) {
+    const moduleInfo = getModuleInfo('analytics');
+    return (
+      <div className="reports-page">
+        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <button className="reports-header-back" onClick={() => navigate('/')}><ChevronLeft size={18} /></button>
+            <div>
+              <div className="reports-header-title">Profit Analytics</div>
+              <div className="reports-header-sub">Margin, trend, and where your profit is coming from</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
+              <Store size={14} /><span>{selectedBranchName}</span>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Lock size={32} color="#EF4444" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              {moduleInfo?.label || 'Analytics'} Required
+            </h2>
+            <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
+              You need the <strong>{moduleInfo?.label || 'Analytics'}</strong> module to view profit analytics for <strong>{selectedBranchName}</strong>.
+              Please subscribe to unlock this functionality.
+            </p>
+            <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
+              {moduleInfo?.price && (
+                <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
+              )}
+            </div>
+            <button
+              onClick={() => guardAction('analytics')}
+              style={{
+                marginTop: 20,
+                padding: '10px 24px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#0891B2',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              Subscribe Now
+            </button>
+          </div>
+        </div>
+
+        {/* Store selector modal */}
+        {renderStoreModal()}
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ─── PERMISSION CHECK ─────────────────────────────────────────────────────
   if (!canView) {
     return (
       <div className="reports-access-denied">
@@ -562,6 +643,15 @@ export default function ProfitAnalytics() {
       )}
 
       {renderStoreModal()}
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 }

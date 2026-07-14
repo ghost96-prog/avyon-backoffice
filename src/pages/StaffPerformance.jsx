@@ -11,7 +11,11 @@ import DateRangeNav from '../components/common/DateRangeNav';
 import Button from '../components/common/Button';
 import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
+import { getModuleInfo } from '../utils/moduleCatalog';
 import '../styles/ReportsShared.css';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 
 const SORT_OPTIONS = [
   { id: 'sales', label: 'Sales' },
@@ -62,9 +66,13 @@ export default function StaffPerformance() {
   const { apiFetch, businessId, branches, baseCurrency, hasBackofficePermission } = useAppContext();
   const canView = hasBackofficePermission(BACKOFFICE_PERMISSIONS.MANAGE_EMPLOYEES);
 
+  // ✅ Module gate for Analytics
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const hasAnalytics = hasModuleAccess('analytics');
+
   const { startDate, endDate, selectedOption, handleOptionSelect, navigateDate, reload: reloadDateRange } = useDateRange('last30days');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [sortBy, setSortBy] = useState('sales');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -133,7 +141,11 @@ export default function StaffPerformance() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [reloadDateRange]);
 
-  useEffect(() => { if (businessId) load(); }, [businessId, startDate, endDate, selectedBranchId, load]);
+  useEffect(() => { 
+    if (businessId && hasAnalytics) {
+      load(); 
+    }
+  }, [businessId, startDate, endDate, selectedBranchId, load, hasAnalytics]);
 
   const availableRoles = useMemo(() => {
     const set = new Set(rows.map((r) => r.role).filter(Boolean));
@@ -168,6 +180,7 @@ export default function StaffPerformance() {
   }, [filteredRows]);
 
   const handleExportCsv = useCallback(() => {
+    if (!guardAction('analytics')) return;
     if (isExportingCsv || !sortedRows.length) return;
     setIsExportingCsv(true);
     try {
@@ -181,9 +194,10 @@ export default function StaffPerformance() {
     } finally {
       setIsExportingCsv(false);
     }
-  }, [sortedRows, selectedBranchId, selectedBranchName, startDate, endDate, isExportingCsv]);
+  }, [sortedRows, selectedBranchId, selectedBranchName, startDate, endDate, isExportingCsv, guardAction]);
 
   const handleExportPdf = useCallback(async () => {
+    if (!guardAction('analytics')) return;
     if (exportingPdf || !sortedRows.length) return;
     setExportingPdf(true);
     try {
@@ -235,7 +249,7 @@ export default function StaffPerformance() {
     } finally {
       setExportingPdf(false);
     }
-  }, [sortedRows, totals, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf]);
+  }, [sortedRows, totals, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf, guardAction]);
 
   const renderStoreModal = () => {
     if (!storeModalOpen) return null;
@@ -256,6 +270,7 @@ export default function StaffPerformance() {
     );
   };
 
+  // ─── PERMISSION CHECK ────────────────────────────────────────────────────────
   if (!canView) {
     return (
       <div className="reports-access-denied">
@@ -266,6 +281,80 @@ export default function StaffPerformance() {
           <p className="reports-access-denied-sub">Contact your administrator to request access.</p>
           <button className="reports-access-denied-btn" onClick={() => navigate('/')}>Go Back</button>
         </div>
+      </div>
+    );
+  }
+
+  // ─── MODULE ACCESS DENIED ────────────────────────────────────────────────────
+  if (!hasAnalytics) {
+    const moduleInfo = getModuleInfo('analytics');
+    return (
+      <div className="reports-page">
+        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <button className="reports-header-back" onClick={() => navigate('/')}><ChevronLeft size={18} /></button>
+            <div>
+              <div className="reports-header-title">Cashier Performance</div>
+              <div className="reports-header-sub">Sales, volume, and growth by staff member</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            {hasMultipleBranches && (
+              <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
+                <Store size={14} /><span>{selectedBranchName}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Lock size={32} color="#EF4444" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              {moduleInfo?.label || 'Analytics'} Required
+            </h2>
+            <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
+              You need the <strong>{moduleInfo?.label || 'Analytics'}</strong> module to view cashier performance for <strong>{selectedBranchName}</strong>.
+              Please subscribe to unlock this functionality.
+            </p>
+            <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
+              {moduleInfo?.price && (
+                <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
+              )}
+            </div>
+            <button 
+              onClick={() => guardAction('analytics')}
+              style={{ 
+                marginTop: 20,
+                padding: '10px 24px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#0891B2',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              Subscribe Now
+            </button>
+          </div>
+        </div>
+
+        {/* Store selector modal */}
+        {renderStoreModal()}
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
       </div>
     );
   }
@@ -395,6 +484,15 @@ export default function StaffPerformance() {
       </div>
 
       {renderStoreModal()}
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 }

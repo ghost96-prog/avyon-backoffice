@@ -9,11 +9,15 @@ import {
   AlertTriangle, PackageX, Clock, ArrowLeftRight,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import DateRangeNav from '../components/common/DateRangeNav';
 import { useDateRange } from '../hooks/useDateRange';
 import Button from '../components/common/Button';
 import { formatMoney, formatNumber, toApiDate } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
+import { getModuleInfo } from '../utils/moduleCatalog';
 import '../styles/ReportsShared.css';
 import './Dashboard.css';
 
@@ -45,9 +49,15 @@ export default function InventoryAnalytics() {
   const { apiFetch, businessId, branches, baseCurrency, hasBackofficePermission } = useAppContext();
   const canView = hasBackofficePermission(BACKOFFICE_PERMISSIONS.ADVANCED_INVENTORY);
 
+  // ✅ Module gate for Analytics
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const hasAnalytics = hasModuleAccess('analytics');
+
+  // ✅ Use the shared selected branch hook with "All Stores" option
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
+
   const { startDate, endDate, selectedOption, handleOptionSelect, navigateDate, reload: reloadDateRange } = useDateRange('last30days');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [leadTimeDays, setLeadTimeDays] = useState(7);
   const [urgencyFilter, setUrgencyFilter] = useState('all');
@@ -109,7 +119,11 @@ export default function InventoryAnalytics() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [reloadDateRange]);
 
-  useEffect(() => { if (businessId) load(); }, [businessId, startDate, endDate, selectedBranchId, leadTimeDays, load]);
+  useEffect(() => { 
+    if (businessId && hasAnalytics) {
+      load(); 
+    }
+  }, [businessId, startDate, endDate, selectedBranchId, leadTimeDays, load, hasAnalytics]);
 
   const filteredRecs = useMemo(() => {
     const recs = reorder?.recommendations || [];
@@ -135,6 +149,79 @@ export default function InventoryAnalytics() {
     );
   };
 
+  // ─── ACCESS DENIED ────────────────────────────────────────────────────────
+  if (!hasAnalytics) {
+    const moduleInfo = getModuleInfo('analytics');
+    return (
+      <div className="reports-page">
+        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <button className="reports-header-back" onClick={() => navigate('/')}><ChevronLeft size={18} /></button>
+            <div>
+              <div className="reports-header-title">Inventory Intelligence</div>
+              <div className="reports-header-sub">Turnover, demand forecasting, and reorder guidance</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
+              <Store size={14} /><span>{selectedBranchName}</span>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Lock size={32} color="#EF4444" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              {moduleInfo?.label || 'Analytics'} Required
+            </h2>
+            <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
+              You need the <strong>{moduleInfo?.label || 'Analytics'}</strong> module to view inventory intelligence for <strong>{selectedBranchName}</strong>.
+              Please subscribe to unlock this functionality.
+            </p>
+            <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
+              {moduleInfo?.price && (
+                <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
+              )}
+            </div>
+            <button 
+              onClick={() => guardAction('analytics')}
+              style={{ 
+                marginTop: 20,
+                padding: '10px 24px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#0891B2',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              Subscribe Now
+            </button>
+          </div>
+        </div>
+
+        {/* Store selector modal */}
+        {renderStoreModal()}
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // ─── PERMISSION CHECK ────────────────────────────────────────────────────────
   if (!canView) {
     return (
       <div className="reports-access-denied">
@@ -397,6 +484,15 @@ export default function InventoryAnalytics() {
       </div>
 
       {renderStoreModal()}
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 }

@@ -1,11 +1,15 @@
 // src/pages/Inventory/StockTake.jsx
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Store, Plus, X, ClipboardCheck, Search, Check, ChevronLeft, FileText, Clock, User, MessageSquare, AlertTriangle, Trash2, Package } from 'lucide-react';
+import { Store, Plus, X, ClipboardCheck, Search, Check, ChevronLeft, FileText, Clock, User, MessageSquare, AlertTriangle, Trash2, Package, Lock } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatMoney } from '../utils/exportUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import '../styles/ReportsShared.css';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
+import { getModuleInfo } from '../utils/moduleCatalog';
 
 const STATUS_CONFIG = {
   draft: { label: 'In Progress', bg: '#FEF3C7', color: '#0891B2' },
@@ -98,9 +102,13 @@ export default function StockTake() {
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
+  // ✅ Module gate for Advanced Inventory Management
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const hasAdvancedInventory = hasModuleAccess('advanced_inventory');
+
   const [toast, setToast] = useState(null);
   const [view, setView] = useState('list');
-  const [selectedBranchId, setSelectedBranchId] = useState('');
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch();
   const [storePopoverOpen, setStorePopoverOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -151,8 +159,10 @@ export default function StockTake() {
   }, [apiFetch, businessId, selectedBranchId]);
 
   useEffect(() => {
-    if (view === 'list') fetchStockTakes();
-  }, [fetchStockTakes, view]);
+    if (view === 'list' && hasAdvancedInventory) {
+      fetchStockTakes();
+    }
+  }, [fetchStockTakes, view, hasAdvancedInventory]);
 
   const openDetail = (st) => {
     setDetailTake(st);
@@ -180,6 +190,7 @@ export default function StockTake() {
   }, [detailTake, itemSearch]);
 
   const handleSaveCounts = useCallback(async () => {
+    if (!guardAction('advanced_inventory')) return;
     if (!detailTake) return;
     setSaving(true);
     setError(null);
@@ -202,9 +213,10 @@ export default function StockTake() {
     } finally {
       setSaving(false);
     }
-  }, [apiFetch, businessId, selectedBranchId, detailTake, countedValues, staffId, fetchStockTakes]);
+  }, [apiFetch, businessId, selectedBranchId, detailTake, countedValues, staffId, fetchStockTakes, guardAction]);
 
   const handleComplete = useCallback(async () => {
+    if (!guardAction('advanced_inventory')) return;
     if (!detailTake) return;
     const uncounted = detailTake.items.filter((i) => {
       const val = countedValues[i.productId];
@@ -217,7 +229,7 @@ export default function StockTake() {
     }
     
     await doComplete();
-  }, [detailTake, countedValues]);
+  }, [detailTake, countedValues, guardAction]);
 
   const doComplete = useCallback(async () => {
     if (!detailTake) return;
@@ -255,6 +267,7 @@ export default function StockTake() {
   }, [apiFetch, businessId, selectedBranchId, detailTake, countedValues, staffId, staffName, fetchStockTakes]);
 
   const handleExportPdf = useCallback(() => {
+    if (!guardAction('advanced_inventory')) return;
     if (!detailTake) return;
     const st = detailTake;
     const doc = new jsPDF('landscape', 'mm', 'a4');
@@ -332,11 +345,12 @@ export default function StockTake() {
     doc.text(`Generated on ${new Date().toLocaleString()}`, 14, finalY + 10);
 
     doc.save(`stock_take_${st.stockTakeNumber}.pdf`);
-  }, [detailTake, baseCurrency]);
+  }, [detailTake, baseCurrency, guardAction]);
 
   // ── CREATE FLOW ────────────────────────────────────────────────────────────
 
   const openCreateFlow = () => {
+    if (!guardAction('advanced_inventory')) return;
     setCreateStep(1);
     setSelectAll(true);
     setSelectedProductIds(new Set());
@@ -423,6 +437,7 @@ export default function StockTake() {
   const canGoToReview = isStepComplete(1);
 
   const handleCreateStockTake = useCallback(async () => {
+    if (!guardAction('advanced_inventory')) return;
     setCreating(true);
     setError(null);
     try {
@@ -447,7 +462,7 @@ export default function StockTake() {
     } finally {
       setCreating(false);
     }
-  }, [apiFetch, businessId, selectedBranchId, selectAll, selectedProductIds, createNotes, staffId, staffName, fetchStockTakes]);
+  }, [apiFetch, businessId, selectedBranchId, selectAll, selectedProductIds, createNotes, staffId, staffName, fetchStockTakes, guardAction]);
 
   const detailTotals = useMemo(() => {
     if (!detailTake) return { totalVarianceCost: 0, totalVarianceSell: 0, totalSystemValue: 0, totalCountedValue: 0 };
@@ -474,6 +489,86 @@ export default function StockTake() {
     
     return { totalVarianceCost, totalVarianceSell, totalSystemValue, totalCountedValue };
   }, [detailTake]);
+
+  // ─── ACCESS DENIED ────────────────────────────────────────────────────────
+  if (!hasAdvancedInventory) {
+    const moduleInfo = getModuleInfo('advanced_inventory');
+    return (
+      <div className="reports-page">
+        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <div>
+              <div className="reports-header-title">Stock Take</div>
+              <div className="reports-header-sub">Physical counts and stock reconciliation</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <div style={{ position: 'relative' }}>
+              <button className="reports-store-selector" onClick={() => setStorePopoverOpen((v) => !v)}>
+                <Store size={14} /> <span>{selectedBranchName}</span>
+              </button>
+              {storePopoverOpen && (
+                <div className="reports-filter-popover" style={{ right: 0, left: 'auto', top: '110%' }}>
+                  {(branches || []).map((b) => (
+                    <button key={b.branchId} className={`reports-filter-option ${selectedBranchId === b.branchId ? 'is-active' : ''}`}
+                      onClick={() => { setSelectedBranchId(b.branchId); setStorePopoverOpen(false); }}>
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Lock size={32} color="#EF4444" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              {moduleInfo?.label || 'Advanced Inventory Management'} Required
+            </h2>
+            <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
+              You need the <strong>{moduleInfo?.label || 'Advanced Inventory Management'}</strong> module to perform stock takes for <strong>{selectedBranchName}</strong>.
+              Please subscribe to unlock this functionality.
+            </p>
+            <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
+              {moduleInfo?.price && (
+                <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
+              )}
+            </div>
+            <button 
+              onClick={() => guardAction('advanced_inventory')}
+              style={{ 
+                marginTop: 20,
+                padding: '10px 24px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#0891B2',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              Subscribe Now
+            </button>
+          </div>
+        </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
+      </div>
+    );
+  }
 
   // ── LIST VIEW ─────────────────────────────────────────────────────────────
 
@@ -607,6 +702,15 @@ export default function StockTake() {
           </>
         )}
       </div>
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 
@@ -849,6 +953,15 @@ export default function StockTake() {
             </div>
           </div>
         )}
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
       </div>
     );
   };
@@ -1066,6 +1179,15 @@ export default function StockTake() {
             onCancel={() => setConfirmCompleteOpen(false)}
             onConfirm={doComplete}
             completing={completing}
+          />
+        )}
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
           />
         )}
       </div>

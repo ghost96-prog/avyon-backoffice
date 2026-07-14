@@ -9,7 +9,7 @@ import Button from '../components/common/Button';
 import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
 import '../styles/ReportsShared.css';
-
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 // ─── Loading Bar Component ──────────────────────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
@@ -86,7 +86,7 @@ export default function Receipts() {
     loadFromStorage,
   } = useDateRange('today');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);

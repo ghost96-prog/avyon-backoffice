@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useDateRange } from '../hooks/useDateRange';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import DateRangeNav from '../components/common/DateRangeNav';
 import Button from '../components/common/Button';
 import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/exportUtils';
@@ -59,6 +60,9 @@ export default function BranchComparison() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency } = useAppContext();
 
+  // ✅ Use the shared selected branch hook with "All Stores" option
+  const { selectedBranchId } = useSelectedBranch({ allowAll: true });
+
   const { startDate, endDate, selectedOption, handleOptionSelect, navigateDate, reload: reloadDateRange } = useDateRange('last30days');
 
   const [sortBy, setSortBy] = useState('sales');
@@ -76,7 +80,12 @@ export default function BranchComparison() {
     isRefresh ? setRefreshing(true) : setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
+      const params = new URLSearchParams({ 
+        startDate: toApiDate(startDate), 
+        endDate: toApiDate(endDate) 
+      });
+      if (selectedBranchId !== 'all') params.set('branchId', selectedBranchId);
+      
       const res = await apiFetch(`/business/${businessId}/reports/branch-comparison?${params.toString()}`);
       setData(res);
     } catch (e) {
@@ -86,7 +95,7 @@ export default function BranchComparison() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiFetch, businessId, startDate, endDate]);
+  }, [apiFetch, businessId, startDate, endDate, selectedBranchId]);
 
   useEffect(() => {
     const handleVisibilityChange = () => { if (document.visibilityState === 'visible') reloadDateRange(); };
@@ -109,7 +118,6 @@ export default function BranchComparison() {
     }
   }, [rows, sortBy]);
 
-  // ─── Merge each branch's dailyTrend into one dataset keyed by date ────────
   const trendData = useMemo(() => {
     if (!rows.length) return [];
     const byDate = {};

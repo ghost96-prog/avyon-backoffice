@@ -2,10 +2,10 @@
 
 .sub-countdown-bar {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 18px;
+  padding: 10px 14px;
   font-size: 13px;
   border-bottom: 1px solid transparent;
   position: relative;
@@ -24,38 +24,62 @@
   border-bottom-color: #fbcaca;
 }
 
+/* ── Stacked list of expiring items inside the one bar ─────────────── */
+
+.sub-countdown-bar-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.sub-countdown-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.sub-countdown-bar-row + .sub-countdown-bar-row {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
 .sub-countdown-bar-main {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1;
 }
 
-.sub-countdown-bar--warning .sub-countdown-bar-icon {
+.sub-countdown-bar-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* Per-row tone — independent of the bar's overall background, since a
+   critical bar can still contain a merely-warning row and vice versa. */
+.sub-countdown-bar-icon--warning {
   color: #d97706;
-  display: flex;
 }
 
-.sub-countdown-bar--critical .sub-countdown-bar-icon {
+.sub-countdown-bar-icon--critical {
   color: #ef4444;
-  display: flex;
 }
 
 .sub-countdown-bar-text {
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.sub-countdown-bar-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
+/* ── Per-row "Contact Support" + its popover ───────────────────────── */
 
 .sub-countdown-bar-support-wrap {
   position: relative;
+  flex-shrink: 0;
 }
 
 .sub-countdown-bar-btn {
@@ -86,6 +110,7 @@
   display: flex;
   flex-direction: column;
   min-width: 150px;
+  z-index: 6;
 }
 
 .sub-countdown-bar-popover-item {
@@ -104,6 +129,8 @@
   background: #f0f2f5;
 }
 
+/* ── One dismiss button for the whole bar ──────────────────────────── */
+
 .sub-countdown-bar-close {
   border: none;
   background: transparent;
@@ -113,6 +140,7 @@
   display: flex;
   align-items: center;
   padding: 4px;
+  flex-shrink: 0;
 }
 
 .sub-countdown-bar-close:hover {
@@ -120,7 +148,7 @@
 }
 
 @media (max-width: 640px) {
-  .sub-countdown-bar {
+  .sub-countdown-bar-row {
     flex-wrap: wrap;
   }
   .sub-countdown-bar-text {

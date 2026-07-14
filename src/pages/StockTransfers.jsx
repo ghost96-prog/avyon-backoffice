@@ -2,13 +2,17 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Store, Plus, X, ArrowLeftRight, Package, Trash2, Check, XCircle, Ban,
-  ChevronLeft, Search, FileText, Clock, User, MessageSquare, Bell,
+  ChevronLeft, Search, FileText, Clock, User, MessageSquare, Bell, Lock,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import { formatMoney } from '../utils/exportUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import '../styles/ReportsShared.css';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
+import { getModuleInfo } from '../utils/moduleCatalog';
 
 const STATUS_CONFIG = {
   in_transit: { label: 'In Transit', bg: '#FEF3C7', color: '#0891B2' },
@@ -279,9 +283,17 @@ export default function StockTransfers() {
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
+  // ✅ Module gate for Advanced Inventory Management
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const hasAdvancedInventory = hasModuleAccess('advanced_inventory');
+
+  // ✅ Use the shared selected branch hook
+  const { selectedBranchId: viewBranchId, setSelectedBranchId: setViewBranchId } = useSelectedBranch();
+
+  // ─── ALL STATE HOOKS FIRST ──────────────────────────────────────────────
+  
   const [toast, setToast] = useState(null);
   const [view, setView] = useState('list');
-  const [viewBranchId, setViewBranchId] = useState('');
   const [storePopoverOpen, setStorePopoverOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -293,9 +305,23 @@ export default function StockTransfers() {
   const [notifiedIds, setNotifiedIds] = useState(new Set());
   const [pendingIncoming, setPendingIncoming] = useState([]);
 
-  const showToast = (message, type = 'error', transfer = null) => {
+  // ── CREATE TRANSFER STATE ──────────────────────────────────────────────
+  const [createStep, setCreateStep] = useState(1);
+  const [fromBranchId, setFromBranchId] = useState('');
+  const [toBranchId, setToBranchId] = useState('');
+  const [transferNotes, setTransferNotes] = useState('');
+  const [createProducts, setCreateProducts] = useState([]);
+  const [createCategories, setCreateCategories] = useState([]);
+  const [createCategoryFilter, setCreateCategoryFilter] = useState('All');
+  const [createSearch, setCreateSearch] = useState('');
+  const [cart, setCart] = useState({});
+  const [creating, setCreating] = useState(false);
+
+  // ─── ALL useCallbacks NEXT ──────────────────────────────────────────────
+  
+  const showToast = useCallback((message, type = 'error', transfer = null) => {
     setToast({ message, type, transfer });
-  };
+  }, []);
 
   const navigateToTransfer = useCallback((t) => {
     if (!t) return;
@@ -304,14 +330,7 @@ export default function StockTransfers() {
     setView('detail');
     setShowModal(t.status === 'in_transit');
     setToast(null);
-  }, []);
-
-  useEffect(() => {
-    if (branches?.length > 0 && !viewBranchId) {
-      const initialBranchId = contextBranchId || branches[0].branchId;
-      setViewBranchId(initialBranchId);
-    }
-  }, [branches, contextBranchId, viewBranchId]);
+  }, [setViewBranchId]);
 
   const viewBranchName = branches?.find((b) => b.branchId === viewBranchId)?.name || 'Select Store';
 
@@ -333,11 +352,6 @@ export default function StockTransfers() {
     }
   }, [apiFetch, businessId, viewBranchId, statusFilter]);
 
-useEffect(() => {
-  if (view === 'list' && viewBranchId) {
-    fetchTransfers();
-  }
-}, [fetchTransfers, view, viewBranchId]);
   const checkAllBranchesForIncoming = useCallback(async () => {
     if (!businessId || !branches?.length) return;
     try {
@@ -376,126 +390,44 @@ useEffect(() => {
     } catch (e) {
       console.error('Cross-branch transfer check error:', e);
     }
-  }, [apiFetch, businessId, branches, notifiedIds]);
+  }, [apiFetch, businessId, branches, notifiedIds, showToast]);
+
+  // ─── ALL useEffects NEXT ──────────────────────────────────────────────
+  
+  useEffect(() => {
+    if (view === 'list' && viewBranchId && hasAdvancedInventory) {
+      fetchTransfers();
+    }
+  }, [fetchTransfers, view, viewBranchId, hasAdvancedInventory]);
 
   useEffect(() => {
-    if (!businessId || !branches?.length) return;
+    if (!businessId || !branches?.length || !hasAdvancedInventory) return;
     checkAllBranchesForIncoming();
     const interval = setInterval(checkAllBranchesForIncoming, 30000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [businessId, branches]);
+  }, [businessId, branches, hasAdvancedInventory, checkAllBranchesForIncoming]);
 
-  const openDetail = (t) => {
-    setSelectedTransfer(t);
-    setView('detail');
-    
-    if (t.toBranchId === viewBranchId && t.status === 'in_transit') {
-      setShowModal(true);
-    }
-  };
-
-  const handleAccept = async (productMapping) => {
-    if (!selectedTransfer) return;
-    setActionLoading(true);
-    try {
-      await apiFetch(`/business/${businessId}/stock-transfers/${selectedTransfer.transferId}/accept`, {
-        method: 'POST',
-        body: JSON.stringify({ staffId, staffName, posId: 'web-dashboard', productMapping: productMapping || {} }),
-      });
-      showToast('Transfer accepted successfully!', 'success');
-      setShowModal(false);
-      setView('list');
-      setPendingIncoming((prev) => prev.filter((p) => p.transferId !== selectedTransfer.transferId));
-      await fetchTransfers();
-    } catch (e) {
-      showToast(e.message || 'Failed to accept transfer', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleReject = async (reason) => {
-    if (!selectedTransfer) return;
-    setActionLoading(true);
-    try {
-      await apiFetch(`/business/${businessId}/stock-transfers/${selectedTransfer.transferId}/reject`, {
-        method: 'POST',
-        body: JSON.stringify({ staffId, staffName, posId: 'web-dashboard', reason: reason.trim() || null }),
-      });
-      showToast('Transfer rejected', 'warning');
-      setShowModal(false);
-      setView('list');
-      setPendingIncoming((prev) => prev.filter((p) => p.transferId !== selectedTransfer.transferId));
-      await fetchTransfers();
-    } catch (e) {
-      showToast(e.message || 'Failed to reject transfer', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!selectedTransfer) return;
-    if (!window.confirm('Cancel this transfer?')) return;
-    setActionLoading(true);
-    try {
-      await apiFetch(`/business/${businessId}/stock-transfers/${selectedTransfer.transferId}/cancel`, {
-        method: 'POST',
-        body: JSON.stringify({ staffId, staffName, posId: 'web-dashboard' }),
-      });
-      showToast('Transfer cancelled', 'warning');
-      setView('list');
-      await fetchTransfers();
-    } catch (e) {
-      showToast(e.message || 'Failed to cancel transfer', 'error');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleExportPdf = useCallback(() => {
-    if (!selectedTransfer) return;
-    const t = selectedTransfer;
-    const doc = new jsPDF('portrait', 'mm', 'a4');
-    const pageWidth = doc.internal.pageSize.getWidth();
-
-    doc.setFontSize(16);
-    doc.setTextColor('#0F172A');
-    doc.text('Stock Transfer Record', pageWidth / 2, 16, { align: 'center' });
-    doc.setFontSize(10);
-    doc.setTextColor('#64748B');
-    doc.text(`Transfer ID: ${t.transferId}`, pageWidth / 2, 23, { align: 'center' });
-
-    doc.setFontSize(10);
-    doc.setTextColor('#0F172A');
-    let y = 34;
-    const line = (label, value) => { doc.setTextColor('#64748B'); doc.text(label, 14, y); doc.setTextColor('#0F172A'); doc.text(String(value ?? '—'), 60, y); y += 7; };
-    line('From Store:', t.fromBranchName);
-    line('To Store:', t.toBranchName);
-    line('Status:', (STATUS_CONFIG[t.status] || {}).label || t.status);
-    line('Requested By:', t.requestedByName);
-    line('Requested At:', fmtDateTime(t.requestedAt));
-    if (t.respondedByName) line('Responded By:', t.respondedByName);
-    if (t.respondedAt) line('Responded At:', fmtDateTime(t.respondedAt));
-    if (t.notes) line('Notes:', t.notes);
-    if (t.rejectionReason) line('Rejection Reason:', t.rejectionReason);
-
-    autoTable(doc, {
-      startY: y + 4,
-      head: [['Product', 'SKU', 'Quantity', 'Unit']],
-      body: t.items.map((it) => [it.productName, it.sku, String(it.quantity), it.unit]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: '#F1F5F9', textColor: '#0F172A', fontStyle: 'bold' },
-    });
-
-    doc.save(`transfer_${t.transferId}.pdf`);
-  }, [selectedTransfer]);
-
+  // ─── useMemo hooks ──────────────────────────────────────────────────────
+  
   const otherStorePending = useMemo(
     () => pendingIncoming.filter((t) => t.toBranchId !== viewBranchId),
     [pendingIncoming, viewBranchId]
   );
+
+  const cartItems = useMemo(() => Object.values(cart), [cart]);
+  const cartCount = cartItems.filter(item => item.quantity > 0).length;
+
+
+  // ─── REST OF THE COMPONENT (functions and renders) ────────────────────
+
+  const isStepComplete = (step) => {
+    if (step === 1) return fromBranchId && toBranchId && fromBranchId !== toBranchId;
+    if (step === 2) return cartItems.some(item => item.quantity > 0);
+    return false;
+  };
+
+  const canGoToProducts = fromBranchId && toBranchId && fromBranchId !== toBranchId;
+  const canGoToReview = cartItems.some(item => item.quantity > 0);
 
   const PendingBanner = () => {
     if (otherStorePending.length === 0) return null;
@@ -541,6 +473,116 @@ useEffect(() => {
     );
   };
 
+  const openDetail = (t) => {
+    setSelectedTransfer(t);
+    setView('detail');
+    
+    if (t.toBranchId === viewBranchId && t.status === 'in_transit') {
+      setShowModal(true);
+    }
+  };
+
+  const handleAccept = async (productMapping) => {
+    if (!guardAction('advanced_inventory')) return;
+    if (!selectedTransfer) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(`/business/${businessId}/stock-transfers/${selectedTransfer.transferId}/accept`, {
+        method: 'POST',
+        body: JSON.stringify({ staffId, staffName, posId: 'web-dashboard', productMapping: productMapping || {} }),
+      });
+      showToast('Transfer accepted successfully!', 'success');
+      setShowModal(false);
+      setView('list');
+      setPendingIncoming((prev) => prev.filter((p) => p.transferId !== selectedTransfer.transferId));
+      await fetchTransfers();
+    } catch (e) {
+      showToast(e.message || 'Failed to accept transfer', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = async (reason) => {
+    if (!guardAction('advanced_inventory')) return;
+    if (!selectedTransfer) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(`/business/${businessId}/stock-transfers/${selectedTransfer.transferId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ staffId, staffName, posId: 'web-dashboard', reason: reason.trim() || null }),
+      });
+      showToast('Transfer rejected', 'warning');
+      setShowModal(false);
+      setView('list');
+      setPendingIncoming((prev) => prev.filter((p) => p.transferId !== selectedTransfer.transferId));
+      await fetchTransfers();
+    } catch (e) {
+      showToast(e.message || 'Failed to reject transfer', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!guardAction('advanced_inventory')) return;
+    if (!selectedTransfer) return;
+    if (!window.confirm('Cancel this transfer?')) return;
+    setActionLoading(true);
+    try {
+      await apiFetch(`/business/${businessId}/stock-transfers/${selectedTransfer.transferId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ staffId, staffName, posId: 'web-dashboard' }),
+      });
+      showToast('Transfer cancelled', 'warning');
+      setView('list');
+      await fetchTransfers();
+    } catch (e) {
+      showToast(e.message || 'Failed to cancel transfer', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleExportPdf = useCallback(() => {
+    if (!guardAction('advanced_inventory')) return;
+    if (!selectedTransfer) return;
+    const t = selectedTransfer;
+    const doc = new jsPDF('portrait', 'mm', 'a4');
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    doc.setFontSize(16);
+    doc.setTextColor('#0F172A');
+    doc.text('Stock Transfer Record', pageWidth / 2, 16, { align: 'center' });
+    doc.setFontSize(10);
+    doc.setTextColor('#64748B');
+    doc.text(`Transfer ID: ${t.transferId}`, pageWidth / 2, 23, { align: 'center' });
+
+    doc.setFontSize(10);
+    doc.setTextColor('#0F172A');
+    let y = 34;
+    const line = (label, value) => { doc.setTextColor('#64748B'); doc.text(label, 14, y); doc.setTextColor('#0F172A'); doc.text(String(value ?? '—'), 60, y); y += 7; };
+    line('From Store:', t.fromBranchName);
+    line('To Store:', t.toBranchName);
+    line('Status:', (STATUS_CONFIG[t.status] || {}).label || t.status);
+    line('Requested By:', t.requestedByName);
+    line('Requested At:', fmtDateTime(t.requestedAt));
+    if (t.respondedByName) line('Responded By:', t.respondedByName);
+    if (t.respondedAt) line('Responded At:', fmtDateTime(t.respondedAt));
+    if (t.notes) line('Notes:', t.notes);
+    if (t.rejectionReason) line('Rejection Reason:', t.rejectionReason);
+
+    autoTable(doc, {
+      startY: y + 4,
+      head: [['Product', 'SKU', 'Quantity', 'Unit']],
+      body: t.items.map((it) => [it.productName, it.sku, String(it.quantity), it.unit]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: '#F1F5F9', textColor: '#0F172A', fontStyle: 'bold' },
+    });
+
+    doc.save(`transfer_${t.transferId}.pdf`);
+  }, [selectedTransfer, guardAction]);
+
   const renderList = () => (
     <div className="reports-page">
       {toast && <Toast {...toast} onClose={() => setToast(null)} onClick={toast.transfer ? () => navigateToTransfer(toast.transfer) : undefined} />}
@@ -567,7 +609,18 @@ useEffect(() => {
               </div>
             )}
           </div>
-          <button onClick={() => setView('create')} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={() => {
+            if (!guardAction('advanced_inventory')) return;
+            setCreateStep(1);
+            const sourceBranchId = viewBranchId || (branches?.length > 0 ? branches[0].branchId : '');
+            setFromBranchId(sourceBranchId);
+            setToBranchId('');
+            setTransferNotes('');
+            setCart({});
+            setCreateSearch('');
+            setCreateCategoryFilter('All');
+            setView('create');
+          }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             <Plus size={15} /> New Transfer
           </button>
         </div>
@@ -597,7 +650,6 @@ useEffect(() => {
           </div>
         ) : (
           <>
-            {/* Desktop Table View */}
             <div className="desktop-table-view">
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
@@ -633,7 +685,6 @@ useEffect(() => {
               </table>
             </div>
 
-            {/* Mobile Card View */}
             <div className="mobile-card-view">
               {transfers.map((t) => {
                 const status = STATUS_CONFIG[t.status] || STATUS_CONFIG.in_transit;
@@ -671,28 +722,20 @@ useEffect(() => {
           </>
         )}
       </div>
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 
-  // ── CREATE TRANSFER ──────────────────────────────────────────────────────
-  const [createStep, setCreateStep] = useState(1);
-  const [fromBranchId, setFromBranchId] = useState('');
-  const [toBranchId, setToBranchId] = useState('');
-  const [transferNotes, setTransferNotes] = useState('');
-  const [createProducts, setCreateProducts] = useState([]);
-  const [createCategories, setCreateCategories] = useState([]);
-  const [createCategoryFilter, setCreateCategoryFilter] = useState('All');
-  const [createSearch, setCreateSearch] = useState('');
-  const [cart, setCart] = useState({});
-  const [creating, setCreating] = useState(false);
-
-  const isStepComplete = (step) => {
-    if (step === 1) return fromBranchId && toBranchId && fromBranchId !== toBranchId;
-    if (step === 2) return cartItems.some(item => item.quantity > 0);
-    return false;
-  };
-
   const openCreateFlow = () => {
+    if (!guardAction('advanced_inventory')) return;
     setCreateStep(1);
     const sourceBranchId = viewBranchId || (branches?.length > 0 ? branches[0].branchId : '');
     setFromBranchId(sourceBranchId);
@@ -735,9 +778,6 @@ useEffect(() => {
     }
     return result;
   }, [createProducts, createCategoryFilter, createSearch]);
-
-  const cartItems = useMemo(() => Object.values(cart), [cart]);
-  const cartCount = cartItems.filter(item => item.quantity > 0).length;
 
   const toggleCart = (product) => {
     if (!cart[product.productId] && (product.currentStock ?? 0) <= 0) {
@@ -792,10 +832,8 @@ useEffect(() => {
     });
   };
 
-  const canGoToProducts = fromBranchId && toBranchId && fromBranchId !== toBranchId;
-  const canGoToReview = cartItems.some(item => item.quantity > 0);
-
   const handleSendTransfer = useCallback(async () => {
+    if (!guardAction('advanced_inventory')) return;
     const validItems = cartItems.filter(({ quantity }) => quantity > 0);
     if (validItems.length === 0) {
       showToast('Please add at least one item with a valid quantity', 'error');
@@ -831,8 +869,89 @@ useEffect(() => {
     } finally {
       setCreating(false);
     }
-  }, [apiFetch, businessId, fromBranchId, toBranchId, cartItems, staffId, staffName, transferNotes, fetchTransfers, checkAllBranchesForIncoming]);
+  }, [apiFetch, businessId, fromBranchId, toBranchId, cartItems, staffId, staffName, transferNotes, fetchTransfers, checkAllBranchesForIncoming, guardAction]);
 
+  // ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ──
+  // ─── ACCESS DENIED CHECK ── MUST BE AFTER ALL HOOKS ──────────────────
+  // ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ─── ──
+  
+  if (!hasAdvancedInventory) {
+    const moduleInfo = getModuleInfo('advanced_inventory');
+    return (
+      <div className="reports-page">
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <div>
+              <div className="reports-header-title">Stock Transfers</div>
+              <div className="reports-header-sub">Move stock between stores</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <div style={{ position: 'relative' }}>
+              <button className="reports-store-selector" onClick={() => setStorePopoverOpen((v) => !v)}>
+                <Store size={14} /> <span>{viewBranchName}</span>
+              </button>
+              {storePopoverOpen && (
+                <div className="reports-filter-popover" style={{ right: 0, left: 'auto', top: '110%' }}>
+                  {(branches || []).map((b) => (
+                    <button key={b.branchId} className={`reports-filter-option ${viewBranchId === b.branchId ? 'is-active' : ''}`}
+                      onClick={() => { setViewBranchId(b.branchId); setStorePopoverOpen(false); }}>
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+          <div style={{ textAlign: 'center', maxWidth: 400, padding: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: '#FEF2F2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+              <Lock size={32} color="#EF4444" />
+            </div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>
+              {moduleInfo?.label || 'Advanced Inventory Management'} Required
+            </h2>
+            <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
+              You need the <strong>{moduleInfo?.label || 'Advanced Inventory Management'}</strong> module to create and manage stock transfers for <strong>{viewBranchName}</strong>.
+              Please subscribe to unlock this functionality.
+            </p>
+            <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
+              {moduleInfo?.price && (
+                <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
+              )}
+            </div>
+            <button 
+              onClick={() => guardAction('advanced_inventory')}
+              style={{ 
+                marginTop: 20,
+                padding: '10px 24px',
+                borderRadius: 8,
+                border: 'none',
+                background: '#0891B2',
+                color: '#fff',
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              Subscribe Now
+            </button>
+          </div>
+        </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
+      </div>
+    );
+  }
   const renderCreate = () => (
     <div className="reports-page">
       {toast && <Toast {...toast} onClose={() => setToast(null)} onClick={toast.transfer ? () => navigateToTransfer(toast.transfer) : undefined} />}
@@ -1177,6 +1296,15 @@ useEffect(() => {
           </div>
         </div>
       )}
+
+      {/* ✅ Module gate modal */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
+      )}
     </div>
   );
 
@@ -1334,6 +1462,15 @@ useEffect(() => {
             </tbody>
           </table>
         </div>
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
       </div>
     );
   };

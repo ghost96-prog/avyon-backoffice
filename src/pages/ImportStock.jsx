@@ -3,9 +3,12 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft, Store, X, UploadCloud, FileSpreadsheet, Download, FileDown,
-  CheckCircle2, AlertTriangle, Trash2, RefreshCw, Loader2,
+  CheckCircle2, AlertTriangle, Trash2, RefreshCw, Loader2, Lock,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
+import { useModuleGate } from '../hooks/useModuleGate';
+import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import {
   UNITS, parseCsvText, parseBool, downloadProductTemplate,
   downloadProductsForReimport, evaluateImportRow, triggerCsvDownload,
@@ -29,19 +32,25 @@ export default function ImportStock() {
   const location = useLocation();
   const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile } = useAppContext();
 
+  // ✅ Use the shared selected branch hook
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch();
+
+  // ✅ Module gate for Inventory Management
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const hasInventoryMgmt = hasModuleAccess('inventory_mgmt');
+
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
-  const [selectedBranchId, setSelectedBranchId] = useState(location.state?.branchId || branches?.[0]?.branchId || '');
   const [storeModalOpen, setStoreModalOpen] = useState(false);
-  const branchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || '';
+  const branchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
   const [allProducts, setAllProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
 
   const [fileName, setFileName] = useState(null);
-  const [parsedRows, setParsedRows] = useState([]); // raw editable string fields
+  const [parsedRows, setParsedRows] = useState([]);
   const [dragActive, setDragActive] = useState(false);
   const [skipErrors, setSkipErrors] = useState(true);
   const [excludedIndexes, setExcludedIndexes] = useState(new Set());
@@ -69,14 +78,13 @@ export default function ImportStock() {
       setLoadingProducts(false);
     }
   }, [apiFetch, businessId, selectedBranchId]);
-// In ImportStock.js - Add this useEffect after handleImport
 
-// ─── Auto-navigate to products after successful import ─────────────────────────
-useEffect(() => {
-  if (importResults && !importing && importResults.every(r => r.success)) {
-    navigate('/inventory/products');
-  }
-}, [importResults, importing, navigate]);
+  useEffect(() => {
+    if (importResults && !importing && importResults.every(r => r.success)) {
+      navigate('/inventory/products');
+    }
+  }, [importResults, importing, navigate]);
+
   useEffect(() => { fetchBranchData(); }, [fetchBranchData]);
 
   // ─── File handling ──────────────────────────────────────────────────────────
@@ -144,7 +152,7 @@ useEffect(() => {
   const rowsToImport = useMemo(() => {
     return evaluatedRows.filter((r) => {
       if (excludedIndexes.has(r._index)) return false;
-      if (r.errors.length > 0) return false; // errored rows never get imported
+      if (r.errors.length > 0) return false;
       return true;
     });
   }, [evaluatedRows, excludedIndexes]);
@@ -298,7 +306,10 @@ useEffect(() => {
 
   // ─── Run the import ───────────────────────────────────────────────────────────
   const handleImport = useCallback(async () => {
+    // ✅ Guard: Check if user has inventory management module access
+    if (!guardAction('inventory_mgmt')) return;
     if (!canImport) return;
+    
     setImporting(true);
     setImportResults(null);
     const results = [];
@@ -318,7 +329,7 @@ useEffect(() => {
     setImportResults(results);
     setImporting(false);
     await fetchBranchData();
-  }, [canImport, rowsToImport, createProductFromRow, updateProductFromRow, fetchBranchData]);
+  }, [canImport, rowsToImport, createProductFromRow, updateProductFromRow, fetchBranchData, guardAction]);
 
   const handleDownloadFailedRows = useCallback(() => {
     if (!importResults) return;
@@ -332,232 +343,332 @@ useEffect(() => {
   const successCount = importResults?.filter((r) => r.success).length || 0;
   const failCount = importResults?.filter((r) => !r.success).length || 0;
 
-  return (
-    <div className="reports-page">
-      <div className="reports-header">
-        <div className="reports-header-left">
-          <button className="reports-header-back" onClick={() => navigate('/inventory/products')}><ArrowLeft size={18} /></button>
-          <div>
-            <div className="reports-header-title">Import Products</div>
-            <div className="reports-header-sub">{branchName}</div>
+  // ─── ACCESS DENIED ────────────────────────────────────────────────────────
+  if (!hasInventoryMgmt) {
+    return (
+      <div className="reports-page">
+        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <button className="reports-header-back" onClick={() => navigate('/inventory/products')}><ArrowLeft size={18} /></button>
+            <div>
+              <div className="reports-header-title">Import Products</div>
+              <div className="reports-header-sub">{branchName}</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
+              <Store size={14} /> <span>{branchName || 'Select Store'}</span>
+            </button>
           </div>
         </div>
-        <div className="reports-header-right">
-          <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
-            <Store size={14} /> <span>{branchName || 'Select Store'}</span>
+
+        <div className="reports-access-denied" style={{ minHeight: '50vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="reports-access-denied-content">
+            <Lock size={48} className="reports-access-denied-icon" />
+            <h2>Access Denied</h2>
+            <p>You need the Inventory Management module to import stock for <strong>{branchName}</strong>.</p>
+            <p className="reports-access-denied-sub">Contact your administrator to subscribe.</p>
+            <button 
+              className="reports-access-denied-btn" 
+              onClick={() => {
+                // ✅ Open the subscription modal instead of going back
+                guardAction('inventory_mgmt');
+              }}
+            >
+              Subscribe Now
+            </button>
+          </div>
+        </div>
+
+        {/* Store selector modal */}
+        {storeModalOpen && (
+          <div className="reports-modal-overlay" onClick={() => setStoreModalOpen(false)}>
+            <div className="reports-modal" style={{ maxWidth: 320 }} onClick={(e) => e.stopPropagation()}>
+              <div className="reports-modal-header">
+                <span className="reports-modal-title">Select Store</span>
+                <button className="reports-modal-close" onClick={() => setStoreModalOpen(false)}><X size={18} /></button>
+              </div>
+              <div className="reports-modal-body" style={{ padding: '8px 4px' }}>
+                {(branches || []).map((b) => (
+                  <button key={b.branchId} className={`reports-filter-option ${selectedBranchId === b.branchId ? 'is-active' : ''}`}
+                    onClick={() => { setSelectedBranchId(b.branchId); setStoreModalOpen(false); handleClearFile(); }}>
+                    {b.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ Module gate modal */}
+        {gateModalModuleId && (
+          <ModuleSubscriptionModal
+            moduleId={gateModalModuleId}
+            moduleState={getModuleState(gateModalModuleId)}
+            onClose={closeGateModal}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="reports-page">
+        <div className="reports-header">
+          <div className="reports-header-left">
+            <button className="reports-header-back" onClick={() => navigate('/inventory/products')}><ArrowLeft size={18} /></button>
+            <div>
+              <div className="reports-header-title">Import Products</div>
+              <div className="reports-header-sub">{branchName}</div>
+            </div>
+          </div>
+          <div className="reports-header-right">
+            <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
+              <Store size={14} /> <span>{branchName || 'Select Store'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* ─── Toolbar ─────────────────────────────────────────────────────────── */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0' }}>
+          <button onClick={() => {
+            if (!guardAction('inventory_mgmt')) return;
+            downloadProductTemplate();
+          }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            <FileDown size={15} /> Download Template
+          </button>
+          <button
+            onClick={() => {
+              if (!guardAction('inventory_mgmt')) return;
+              downloadProductsForReimport(allProducts, (branchName || 'branch').toLowerCase().replace(/\s+/g, '-'));
+            }}
+            disabled={!allProducts.length}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: allProducts.length ? 1 : 0.5 }}>
+            <Download size={15} /> Export Current Products (re-importable)
+          </button>
+          <button onClick={() => {
+            if (!guardAction('inventory_mgmt')) return;
+            fetchBranchData();
+          }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            <RefreshCw size={15} className={loadingProducts ? 'animate-spin' : ''} /> Refresh Product List
           </button>
         </div>
-      </div>
 
-      {/* ─── Toolbar ─────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0' }}>
-        <button onClick={downloadProductTemplate}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-          <FileDown size={15} /> Download Template
-        </button>
-        <button
-          onClick={() => downloadProductsForReimport(allProducts, (branchName || 'branch').toLowerCase().replace(/\s+/g, '-'))}
-          disabled={!allProducts.length}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: allProducts.length ? 1 : 0.5 }}>
-          <Download size={15} /> Export Current Products (re-importable)
-        </button>
-        <button onClick={fetchBranchData}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-          <RefreshCw size={15} className={loadingProducts ? 'animate-spin' : ''} /> Refresh Product List
-        </button>
-      </div>
-
-      {/* ─── Dropzone ────────────────────────────────────────────────────────── */}
-      {!fileName ? (
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-          onDragLeave={() => setDragActive(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            border: `2px dashed ${dragActive ? '#0891B2' : '#CBD5E1'}`,
-            background: dragActive ? '#EFF6FF' : '#F8FAFC',
-            borderRadius: 12, padding: '48px 24px', textAlign: 'center', cursor: 'pointer',
-            transition: 'all 0.15s',
-          }}
-        >
-          <UploadCloud size={36} color={dragActive ? '#0891B2' : '#94A3B8'} style={{ marginBottom: 10 }} />
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>
-            Drag & drop a CSV file here
-          </div>
-          <div style={{ fontSize: 13, color: '#64748B' }}>or click to browse — use the template above for the correct format</div>
-          <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
-            onChange={(e) => handleFile(e.target.files?.[0])} />
-        </div>
-      ) : (
-        <>
-          {/* ─── File summary bar ──────────────────────────────────────────── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-            <FileSpreadsheet size={20} color="#0891B2" />
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#0F172A' }}>{fileName}</div>
-            <div style={{ display: 'flex', gap: 8, marginLeft: 8, flexWrap: 'wrap' }}>
-              <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#DCFCE7', color: '#16A34A' }}>{summary.creates} new</span>
-              <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#FEF3C7', color: '#B45309' }}>{summary.updates} update</span>
-              <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#FEE2E2', color: '#EF4444' }}>{summary.errors} errors</span>
-              {summary.excluded > 0 && <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#F1F5F9', color: '#64748B' }}>{summary.excluded} excluded</span>}
+        {/* ─── Dropzone ────────────────────────────────────────────────────────── */}
+        {!fileName ? (
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={handleDrop}
+            onClick={() => {
+              if (!guardAction('inventory_mgmt')) return;
+              fileInputRef.current?.click();
+            }}
+            style={{
+              border: `2px dashed ${dragActive ? '#0891B2' : '#CBD5E1'}`,
+              background: dragActive ? '#EFF6FF' : '#F8FAFC',
+              borderRadius: 12, padding: '48px 24px', textAlign: 'center', cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            <UploadCloud size={36} color={dragActive ? '#0891B2' : '#94A3B8'} style={{ marginBottom: 10 }} />
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>
+              Drag & drop a CSV file here
             </div>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', cursor: 'pointer' }}>
-                <input type="checkbox" checked={skipErrors} onChange={(e) => setSkipErrors(e.target.checked)} />
-                Skip rows with errors
-              </label>
-              <button onClick={handleClearFile} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
-                <X size={14} /> Remove file
-              </button>
-            </div>
+            <div style={{ fontSize: 13, color: '#64748B' }}>or click to browse — use the template above for the correct format</div>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }}
+              onChange={(e) => {
+                if (!guardAction('inventory_mgmt')) return;
+                handleFile(e.target.files?.[0]);
+              }} />
           </div>
-
-          {blockingErrors && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
-              <AlertTriangle size={16} /> Fix the errors below or enable "Skip rows with errors" to continue.
+        ) : (
+          <>
+            {/* ─── File summary bar ──────────────────────────────────────────── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+              <FileSpreadsheet size={20} color="#0891B2" />
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#0F172A' }}>{fileName}</div>
+              <div style={{ display: 'flex', gap: 8, marginLeft: 8, flexWrap: 'wrap' }}>
+                <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#DCFCE7', color: '#16A34A' }}>{summary.creates} new</span>
+                <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#FEF3C7', color: '#B45309' }}>{summary.updates} update</span>
+                <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#FEE2E2', color: '#EF4444' }}>{summary.errors} errors</span>
+                {summary.excluded > 0 && <span style={{ padding: '2px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, background: '#F1F5F9', color: '#64748B' }}>{summary.excluded} excluded</span>}
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={skipErrors} onChange={(e) => setSkipErrors(e.target.checked)} />
+                  Skip rows with errors
+                </label>
+                <button onClick={() => {
+                  if (!guardAction('inventory_mgmt')) return;
+                  handleClearFile();
+                }} style={{ display: 'flex', alignItems: 'center', gap: 4, border: 'none', background: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+                  <X size={14} /> Remove file
+                </button>
+              </div>
             </div>
-          )}
 
-          {/* ─── Table preview ──────────────────────────────────────────────── */}
-          <div className="reports-list-card" style={{ overflowX: 'auto', marginBottom: 16 }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>
-                  {['', 'Status', 'SKU', 'Name', 'Category', 'Unit', 'Items/Unit', 'Price', 'Cost', 'Stock', 'Low Alert', 'Status', 'Notes'].map((h) => (
-                    <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {evaluatedRows.map((row) => {
-                  const excluded = excludedIndexes.has(row._index);
-                  const unitDef = UNITS.find((u) => u.value === (row.unit || 'each').trim().toLowerCase());
-                  return (
-                    <tr key={row._index} style={{ borderBottom: '1px solid #F1F5F9', opacity: excluded ? 0.4 : 1, background: row.errors.length ? '#FFF9F9' : '#fff' }}>
-                      <td style={{ padding: '6px 8px' }}>
-                        <button onClick={() => toggleExcludeRow(row._index)} title={excluded ? 'Include row' : 'Exclude row'}
-                          style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                          <Trash2 size={14} color={excluded ? '#CBD5E1' : '#EF4444'} />
-                        </button>
-                      </td>
-                      <td style={{ padding: '6px 8px' }}><StatusBadge action={row.action} hasErrors={row.errors.length > 0} /></td>
-                      <td style={{ padding: '6px 8px', minWidth: 110 }}>
-                        <input style={fieldInput()} value={row.sku || ''} onChange={(e) => updateRowField(row._index, 'sku', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 150 }}>
-                        <input style={fieldInput()} value={row.name || ''} onChange={(e) => updateRowField(row._index, 'name', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 120 }}>
-                        <input style={fieldInput()} value={row.category || ''} onChange={(e) => updateRowField(row._index, 'category', e.target.value)} placeholder="No Category" />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 90 }}>
-                        <select style={fieldInput()} value={(row.unit || 'each').toLowerCase()} onChange={(e) => updateRowField(row._index, 'unit', e.target.value)}>
-                          {UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 70 }}>
-                        {unitDef?.requiresQuantityPerUnit ? (
-                          <input type="number" style={fieldInput()} value={row.itemsPerUnit || ''} onChange={(e) => updateRowField(row._index, 'itemsPerUnit', e.target.value)} />
-                        ) : <span style={{ color: '#CBD5E1', fontSize: 12 }}>—</span>}
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 80 }}>
-                        <input style={fieldInput()} value={row.sellingPrice || ''} onChange={(e) => updateRowField(row._index, 'sellingPrice', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 80 }}>
-                        <input style={fieldInput()} value={row.costPrice || ''} onChange={(e) => updateRowField(row._index, 'costPrice', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 70 }}>
-                        <input type="number" style={fieldInput()} value={row.currentStock || ''} onChange={(e) => updateRowField(row._index, 'currentStock', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 70 }}>
-                        <input type="number" style={fieldInput()} value={row.lowStockThreshold || ''} onChange={(e) => updateRowField(row._index, 'lowStockThreshold', e.target.value)} />
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 90 }}>
-                        <select style={fieldInput()} value={(row.status || 'active').toLowerCase()} onChange={(e) => updateRowField(row._index, 'status', e.target.value)}>
-                          <option value="active">Active</option>
-                          <option value="inactive">Inactive</option>
-                        </select>
-                      </td>
-                      <td style={{ padding: '6px 8px', minWidth: 220, fontSize: 11, color: '#EF4444' }}>
-                        {row.errors.map((err, i) => <div key={i}>• {err}</div>)}
-                        {row.action === 'update' && row.errors.length === 0 && (
-                          <div style={{ color: '#B45309' }}>Updating: {row.targetProductId}</div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* ─── Import controls ────────────────────────────────────────────── */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <button
-              onClick={handleImport}
-              disabled={!canImport}
-              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 14, cursor: canImport ? 'pointer' : 'not-allowed', opacity: canImport ? 1 : 0.5 }}
-            >
-              {importing ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
-              {importing ? `Importing ${importProgress.current}/${importProgress.total}...` : `Import ${rowsToImport.length} Product${rowsToImport.length === 1 ? '' : 's'}`}
-            </button>
-            {importing && (
-              <span style={{ fontSize: 12, color: '#64748B' }}>Processing: {importProgress.label}</span>
+            {blockingErrors && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>
+                <AlertTriangle size={16} /> Fix the errors below or enable "Skip rows with errors" to continue.
+              </div>
             )}
-          </div>
 
-          {/* ─── Results ─────────────────────────────────────────────────────── */}
-          {importResults && (
-            <div className="reports-list-card" style={{ padding: 16, marginBottom: 24 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <CheckCircle2 size={20} color="#16A34A" />
-                <div style={{ fontWeight: 700, fontSize: 14 }}>
-                  Import complete — {successCount} succeeded, {failCount} failed
+            {/* ─── Table preview ──────────────────────────────────────────────── */}
+            <div className="reports-list-card" style={{ overflowX: 'auto', marginBottom: 16 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>
+                    {['', 'Status', 'SKU', 'Name', 'Category', 'Unit', 'Items/Unit', 'Price', 'Cost', 'Stock', 'Low Alert', 'Status', 'Notes'].map((h) => (
+                      <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {evaluatedRows.map((row) => {
+                    const excluded = excludedIndexes.has(row._index);
+                    const unitDef = UNITS.find((u) => u.value === (row.unit || 'each').trim().toLowerCase());
+                    return (
+                      <tr key={row._index} style={{ borderBottom: '1px solid #F1F5F9', opacity: excluded ? 0.4 : 1, background: row.errors.length ? '#FFF9F9' : '#fff' }}>
+                        <td style={{ padding: '6px 8px' }}>
+                          <button onClick={() => {
+                            if (!guardAction('inventory_mgmt')) return;
+                            toggleExcludeRow(row._index);
+                          }} title={excluded ? 'Include row' : 'Exclude row'}
+                            style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
+                            <Trash2 size={14} color={excluded ? '#CBD5E1' : '#EF4444'} />
+                          </button>
+                        </td>
+                        <td style={{ padding: '6px 8px' }}><StatusBadge action={row.action} hasErrors={row.errors.length > 0} /></td>
+                        <td style={{ padding: '6px 8px', minWidth: 110 }}>
+                          <input style={fieldInput()} value={row.sku || ''} onChange={(e) => updateRowField(row._index, 'sku', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 150 }}>
+                          <input style={fieldInput()} value={row.name || ''} onChange={(e) => updateRowField(row._index, 'name', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 120 }}>
+                          <input style={fieldInput()} value={row.category || ''} onChange={(e) => updateRowField(row._index, 'category', e.target.value)} placeholder="No Category" />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 90 }}>
+                          <select style={fieldInput()} value={(row.unit || 'each').toLowerCase()} onChange={(e) => updateRowField(row._index, 'unit', e.target.value)}>
+                            {UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 70 }}>
+                          {unitDef?.requiresQuantityPerUnit ? (
+                            <input type="number" style={fieldInput()} value={row.itemsPerUnit || ''} onChange={(e) => updateRowField(row._index, 'itemsPerUnit', e.target.value)} />
+                          ) : <span style={{ color: '#CBD5E1', fontSize: 12 }}>—</span>}
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 80 }}>
+                          <input style={fieldInput()} value={row.sellingPrice || ''} onChange={(e) => updateRowField(row._index, 'sellingPrice', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 80 }}>
+                          <input style={fieldInput()} value={row.costPrice || ''} onChange={(e) => updateRowField(row._index, 'costPrice', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 70 }}>
+                          <input type="number" style={fieldInput()} value={row.currentStock || ''} onChange={(e) => updateRowField(row._index, 'currentStock', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 70 }}>
+                          <input type="number" style={fieldInput()} value={row.lowStockThreshold || ''} onChange={(e) => updateRowField(row._index, 'lowStockThreshold', e.target.value)} />
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 90 }}>
+                          <select style={fieldInput()} value={(row.status || 'active').toLowerCase()} onChange={(e) => updateRowField(row._index, 'status', e.target.value)}>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                        </td>
+                        <td style={{ padding: '6px 8px', minWidth: 220, fontSize: 11, color: '#EF4444' }}>
+                          {row.errors.map((err, i) => <div key={i}>• {err}</div>)}
+                          {row.action === 'update' && row.errors.length === 0 && (
+                            <div style={{ color: '#B45309' }}>Updating: {row.targetProductId}</div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ─── Import controls ────────────────────────────────────────────── */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+              <button
+                onClick={handleImport}
+                disabled={!canImport}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 14, cursor: canImport ? 'pointer' : 'not-allowed', opacity: canImport ? 1 : 0.5 }}
+              >
+                {importing ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
+                {importing ? `Importing ${importProgress.current}/${importProgress.total}...` : `Import ${rowsToImport.length} Product${rowsToImport.length === 1 ? '' : 's'}`}
+              </button>
+              {importing && (
+                <span style={{ fontSize: 12, color: '#64748B' }}>Processing: {importProgress.label}</span>
+              )}
+            </div>
+
+            {/* ─── Results ─────────────────────────────────────────────────────── */}
+            {importResults && (
+              <div className="reports-list-card" style={{ padding: 16, marginBottom: 24 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <CheckCircle2 size={20} color="#16A34A" />
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    Import complete — {successCount} succeeded, {failCount} failed
+                  </div>
+                </div>
+                {failCount > 0 && (
+                  <>
+                    <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #FEE2E2', borderRadius: 8, marginBottom: 10 }}>
+                      {importResults.filter((r) => !r.success).map((r, i) => (
+                        <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid #FEF2F2', fontSize: 12 }}>
+                          <strong>{r.row.sku}</strong> — {r.row.name}: <span style={{ color: '#EF4444' }}>{r.error}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button onClick={handleDownloadFailedRows} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
+                      Download Failed Rows
+                    </button>
+                  </>
+                )}
+                <div style={{ marginTop: 12 }}>
+                  <button onClick={() => navigate('/inventory/products')} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                    Back to Products
+                  </button>
                 </div>
               </div>
-              {failCount > 0 && (
-                <>
-                  <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #FEE2E2', borderRadius: 8, marginBottom: 10 }}>
-                    {importResults.filter((r) => !r.success).map((r, i) => (
-                      <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid #FEF2F2', fontSize: 12 }}>
-                        <strong>{r.row.sku}</strong> — {r.row.name}: <span style={{ color: '#EF4444' }}>{r.error}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={handleDownloadFailedRows} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-                    Download Failed Rows
+            )}
+          </>
+        )}
+
+        {/* ─── Store selector modal ────────────────────────────────────────────── */}
+        {storeModalOpen && (
+          <div className="reports-modal-overlay" onClick={() => setStoreModalOpen(false)}>
+            <div className="reports-modal" style={{ maxWidth: 320 }} onClick={(e) => e.stopPropagation()}>
+              <div className="reports-modal-header">
+                <span className="reports-modal-title">Select Store</span>
+                <button className="reports-modal-close" onClick={() => setStoreModalOpen(false)}><X size={18} /></button>
+              </div>
+              <div className="reports-modal-body" style={{ padding: '8px 4px' }}>
+                {(branches || []).map((b) => (
+                  <button key={b.branchId} className={`reports-filter-option ${selectedBranchId === b.branchId ? 'is-active' : ''}`}
+                    onClick={() => { setSelectedBranchId(b.branchId); setStoreModalOpen(false); handleClearFile(); }}>
+                    {b.name}
                   </button>
-                </>
-              )}
-              <div style={{ marginTop: 12 }}>
-                <button onClick={() => navigate('/inventory/products')} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  Back to Products
-                </button>
+                ))}
               </div>
             </div>
-          )}
-        </>
-      )}
-
-      {/* ─── Store selector modal ────────────────────────────────────────────── */}
-      {storeModalOpen && (
-        <div className="reports-modal-overlay" onClick={() => setStoreModalOpen(false)}>
-          <div className="reports-modal" style={{ maxWidth: 320 }} onClick={(e) => e.stopPropagation()}>
-            <div className="reports-modal-header">
-              <span className="reports-modal-title">Select Store</span>
-              <button className="reports-modal-close" onClick={() => setStoreModalOpen(false)}><X size={18} /></button>
-            </div>
-            <div className="reports-modal-body" style={{ padding: '8px 4px' }}>
-              {(branches || []).map((b) => (
-                <button key={b.branchId} className={`reports-filter-option ${selectedBranchId === b.branchId ? 'is-active' : ''}`}
-                  onClick={() => { setSelectedBranchId(b.branchId); setStoreModalOpen(false); handleClearFile(); }}>
-                  {b.name}
-                </button>
-              ))}
-            </div>
           </div>
-        </div>
+        )}
+      </div>
+
+      {/* ─── Module subscription modal ────────────────────────────────────── */}
+      {gateModalModuleId && (
+        <ModuleSubscriptionModal
+          moduleId={gateModalModuleId}
+          moduleState={getModuleState(gateModalModuleId)}
+          onClose={closeGateModal}
+        />
       )}
-    </div>
+    </>
   );
 }

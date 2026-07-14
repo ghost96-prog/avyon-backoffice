@@ -7,7 +7,7 @@ import SubscriptionCountdownBar from "../common/SubscriptionCountDownBar";
 import "./TopBar.css";
 
 export default function TopBar({ onOpenMobileNav, title }) {
-  const { businessName, branches, branchId, activeStaff, requiresPin, lockSession, logout } =
+  const { businessName, branches, branchId, selectedBranchId, activeStaff, requiresPin, lockSession, logout } =
     useAppContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
@@ -20,7 +20,10 @@ export default function TopBar({ onOpenMobileNav, title }) {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const currentBranch = branches?.find((b) => b.branchId === branchId);
+  // ✅ Show whichever branch is actually selected right now (set from
+  // Products/Dashboard's store switchers), not the static login branch —
+  // otherwise this label never moves even though gating elsewhere does.
+  const currentBranch = branches?.find((b) => b.branchId === (selectedBranchId || branchId));
   const badge = ROLE_BADGE_COLORS[activeStaff?.role] || ROLE_BADGE_COLORS.owner;
   const initials = (activeStaff?.name || "?")
     .split(" ")

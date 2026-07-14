@@ -3,6 +3,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Store, Search, X, UserPlus, Users, Trash2, Edit2 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import { formatMoney } from '../utils/exportUtils';
 import '../styles/ReportsShared.css';
 
@@ -23,7 +24,9 @@ export default function Customers() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency, userProfile } = useAppContext();
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
+  // ✅ Use the shared selected branch hook with "All Stores" option
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
+
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,18 +50,20 @@ export default function Customers() {
     [branches]
   );
   const selectedBranchName = selectedBranchId === 'all' ? 'All Stores' : branchOptions.find((b) => b.value === selectedBranchId)?.label || '';
-function parsePurchases(value) {
-  if (Array.isArray(value)) return value;
-  if (typeof value === 'string') {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
+
+  function parsePurchases(value) {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
     }
+    return [];
   }
-  return [];
-}
+
   const fetchCustomers = useCallback(async () => {
     if (!businessId || !branches) return;
     setLoading(true);
@@ -69,12 +74,12 @@ function parsePurchases(value) {
       await Promise.all(targetBranches.map(async (branch) => {
         try {
           const res = await apiFetch(`/business/${businessId}/branches/${branch.branchId}/customers`);
-    const list = Array.isArray(res.data || res) ? (res.data || res) : [];
+          const list = Array.isArray(res.data || res) ? (res.data || res) : [];
           all.push(...list.filter((c) => !c.isDeleted).map((c) => ({
             ...c,
             store: branch.name,
             branchId: branch.branchId,
-            previousPurchases: parsePurchases(c.previousPurchases), // ✅ parse here
+            previousPurchases: parsePurchases(c.previousPurchases),
           })));
         } catch (e) { /* ignore */ }
       }));
@@ -101,7 +106,7 @@ function parsePurchases(value) {
     );
   }, [customers, searchQuery]);
 
-const openDetail = (customer) => {
+  const openDetail = (customer) => {
     setDetailCustomer({ ...customer, previousPurchases: parsePurchases(customer.previousPurchases) });
     setDetailBranchId(customer.branchId);
     setEditForm({ name: customer.name || '', email: customer.email || '', phone: customer.phone || '', address: customer.address || '', notes: customer.notes || '' });
@@ -304,7 +309,6 @@ const openDetail = (customer) => {
                   </div>
 
                   <hr className="reports-modal-divider" />
-                 <hr className="reports-modal-divider" />
                   <div className="reports-modal-section-title">Previous Purchases</div>
                   {(() => {
                     const purchases = parsePurchases(detailCustomer.previousPurchases);

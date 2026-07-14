@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useDateRange } from '../hooks/useDateRange';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import DateRangeNav from '../components/common/DateRangeNav';
 import Button from '../components/common/Button';
 import { formatMoney, toApiDate, downloadCsv } from '../utils/exportUtils';
@@ -68,6 +69,9 @@ export default function CashManagement() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency, userProfile, hasBackofficePermission } = useAppContext();
 
+  // ✅ Use the shared selected branch hook with "All Stores" option
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
+
   // ✅ Check permission
   const canViewCashManagement = hasBackofficePermission(BACKOFFICE_PERMISSIONS.VIEW_SALES_REPORTS);
 
@@ -75,7 +79,6 @@ export default function CashManagement() {
     startDate, endDate, selectedOption, handleOptionSelect, navigateDate, reload: reloadDateRange,
   } = useDateRange('today');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

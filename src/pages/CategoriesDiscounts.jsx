@@ -4,6 +4,7 @@ import {
   Store, Plus, X, Tag, Percent, Trash2, Search,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import ConfirmDeleteModal from '../components/common/ConfirmDeleteModal';
 import '../styles/ReportsShared.css';
 
@@ -66,10 +67,13 @@ function fieldInput(props) {
 
 export default function CategoriesDiscounts() {
   const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile } = useAppContext();
+  
+  // ✅ Use the shared selected branch hook
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch();
+  
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
 
   const [activeTab, setActiveTab] = useState('categories');
-  const [selectedBranchId, setSelectedBranchId] = useState('');
   const [storeModalOpen, setStoreModalOpen] = useState(false);
 
   const [categories, setCategories] = useState([]);
@@ -96,10 +100,6 @@ export default function CategoriesDiscounts() {
   const [deleteItem, setDeleteItem] = useState(null);
   const [deleteType, setDeleteType] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    if (!selectedBranchId && branches?.length) setSelectedBranchId(branches[0].branchId);
-  }, [branches, selectedBranchId]);
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 

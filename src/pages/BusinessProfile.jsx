@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import Button from '../components/common/Button';
+import { MODULE_IDS, getModuleInfo } from '../utils/moduleCatalog';
 import '../styles/ReportsShared.css';
 
 const SUPPORT_WHATSAPP_NUMBER = '263783556354';
@@ -44,6 +45,59 @@ function formatExpiryDate(ts) {
   return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+// ─── Module subscription badge ────────────────────────────────────────────
+function ModuleSubscriptionBadge({ moduleId, moduleState, nowTick }) {
+  const info = getModuleInfo(moduleId);
+  if (!info) return null;
+
+  const status = moduleState?.status || 'inactive';
+  const hasAccess = moduleState?.hasAccess || false;
+  const expiresAt = moduleState?.accessExpiresAt || null;
+  const remaining = expiresAt ? Math.max(0, expiresAt - nowTick) : 0;
+
+  const statusConfig = {
+    active: { label: 'Active', color: '#16a34a', bg: '#dcfce7' },
+    trial: { label: 'Trial', color: '#357abd', bg: '#e6eef9' },
+    expired: { label: 'Expired', color: '#ef4444', bg: '#fee2e2' },
+    suspended: { label: 'Suspended', color: '#d97706', bg: '#fef3c7' },
+    cancelled: { label: 'Cancelled', color: '#8b97a7', bg: '#f0f2f5' },
+    inactive: { label: 'Not Subscribed', color: '#8b97a7', bg: '#f0f2f5' },
+  };
+
+  const cfg = statusConfig[status] || statusConfig.inactive;
+  const Icon = info.icon;
+
+  return (
+    <div style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      padding: '3px 10px 3px 6px',
+      borderRadius: 16,
+      background: cfg.bg,
+      border: `1px solid ${cfg.color}33`,
+    }}>
+      <Icon size={12} color={cfg.color} />
+      <span style={{ fontSize: 10, fontWeight: 600, color: cfg.color }}>{info.label}</span>
+      <span style={{
+        fontSize: 9,
+        fontWeight: 700,
+        color: cfg.color,
+        background: `${cfg.color}15`,
+        padding: '0 5px',
+        borderRadius: 10,
+      }}>
+        {cfg.label}
+      </span>
+      {hasAccess && remaining > 0 && (
+        <span style={{ fontSize: 9, color: '#8b97a7' }}>
+          {formatCountdown(remaining)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function BusinessProfile() {
   const navigate = useNavigate();
   const { apiFetch, businessId } = useAppContext();
@@ -59,7 +113,7 @@ export default function BusinessProfile() {
   const [form, setForm] = useState({ businessName: '', email: '', phoneNumber: '', country: '', baseCurrency: '' });
   const [saving, setSaving] = useState(false);
 
-  const [supportModalBranch, setSupportModalBranch] = useState(null); // branch object or null
+  const [supportModalBranch, setSupportModalBranch] = useState(null);
 
   const tickRef = useRef(null);
   const pollRef = useRef(null);
@@ -93,9 +147,6 @@ export default function BusinessProfile() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Live tick for every branch's countdown, plus a periodic refetch so
-  // status changes made elsewhere (e.g. by an admin) show up without a
-  // manual reload.
   useEffect(() => {
     tickRef.current = setInterval(() => setNowTick(Date.now()), 1000);
     pollRef.current = setInterval(() => load(true), 5 * 60 * 1000);
@@ -264,45 +315,74 @@ export default function BusinessProfile() {
             const isUrgent = b.subscriptionStatus === 'suspended' || b.subscriptionStatus === 'expired' || remaining <= 7 * 24 * 60 * 60 * 1000;
 
             return (
-              <div key={b.branchId} className="reports-list-item" style={{ alignItems: 'flex-start' }}>
-                <div className="reports-list-item-info">
-                  <div className="reports-list-item-title">
-                    {b.name}
-                    {b.isMain && (
-                      <span style={{ marginLeft: 8, padding: '2px 7px', borderRadius: 5, background: '#f0f2f5', color: '#8b97a7', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', verticalAlign: 1 }}>
-                        Main
-                      </span>
-                    )}
+              <div key={b.branchId} className="reports-list-item" style={{ alignItems: 'flex-start', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', width: '100%', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div className="reports-list-item-info" style={{ flex: 1, minWidth: 0 }}>
+                    <div className="reports-list-item-title">
+                      {b.name}
+                      {b.isMain && (
+                        <span style={{ marginLeft: 8, padding: '2px 7px', borderRadius: 5, background: '#f0f2f5', color: '#8b97a7', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', verticalAlign: 1 }}>
+                          Main
+                        </span>
+                      )}
+                    </div>
+                    <div className="reports-list-item-sub">
+                      <span>{b.subscriptionPlan ? `Plan: ${b.subscriptionPlan}` : 'No plan on file'}</span>
+                      <span>Expires {formatExpiryDate(b.accessExpiresAt)}</span>
+                      {b.suspendedReason && <span style={{ color: '#d97706' }}>{b.suspendedReason}</span>}
+                    </div>
                   </div>
-                  <div className="reports-list-item-sub">
-                    <span>{b.subscriptionPlan ? `Plan: ${b.subscriptionPlan}` : 'No plan on file'}</span>
-                    <span>Expires {formatExpiryDate(b.accessExpiresAt)}</span>
-                    {b.suspendedReason && <span style={{ color: '#d97706' }}>{b.suspendedReason}</span>}
+                  <div className="reports-list-item-right" style={{ alignItems: 'flex-end' }}>
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20,
+                      background: meta.bg, color: meta.color, fontSize: 11, fontWeight: 700, marginBottom: 6,
+                    }}>
+                      <StatusIcon size={11} /> {meta.label}
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: remaining <= 0 ? '#ef4444' : '#1a2332' }}>
+                      {formatCountdown(remaining)}
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#8b97a7', marginBottom: 8 }}>remaining</div>
+                    <button
+                      onClick={() => setSupportModalBranch(b)}
+                      style={{
+                        padding: '5px 12px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                        border: isUrgent ? 'none' : '1.5px solid #357abd',
+                        background: isUrgent ? 'linear-gradient(90deg, #d97706, #ef4444)' : 'transparent',
+                        color: isUrgent ? '#fff' : '#357abd',
+                      }}
+                    >
+                      {isUrgent ? 'Contact Support to Subscribe' : 'Contact Support'}
+                    </button>
                   </div>
                 </div>
-                <div className="reports-list-item-right" style={{ alignItems: 'flex-end' }}>
+
+                {/* ─── Module subscriptions for this branch ───────────── */}
+                {b.modules && (
                   <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 20,
-                    background: meta.bg, color: meta.color, fontSize: 11, fontWeight: 700, marginBottom: 6,
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: 6,
+                    paddingTop: 8,
+                    borderTop: '1px solid #f0f2f5',
+                    width: '100%',
                   }}>
-                    <StatusIcon size={11} /> {meta.label}
+                    <span style={{ fontSize: 10, color: '#8b97a7', fontWeight: 600, marginRight: 4, alignSelf: 'center' }}>
+                      Modules:
+                    </span>
+                    {MODULE_IDS.map((moduleId) => {
+                      const moduleState = b.modules?.[moduleId];
+                      return (
+                        <ModuleSubscriptionBadge
+                          key={moduleId}
+                          moduleId={moduleId}
+                          moduleState={moduleState}
+                          nowTick={nowTick}
+                        />
+                      );
+                    })}
                   </div>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: remaining <= 0 ? '#ef4444' : '#1a2332' }}>
-                    {formatCountdown(remaining)}
-                  </div>
-                  <div style={{ fontSize: 10.5, color: '#8b97a7', marginBottom: 8 }}>remaining</div>
-                  <button
-                    onClick={() => setSupportModalBranch(b)}
-                    style={{
-                      padding: '5px 12px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                      border: isUrgent ? 'none' : '1.5px solid #357abd',
-                      background: isUrgent ? 'linear-gradient(90deg, #d97706, #ef4444)' : 'transparent',
-                      color: isUrgent ? '#fff' : '#357abd',
-                    }}
-                  >
-                    {isUrgent ? 'Contact Support to Subscribe' : 'Contact Support'}
-                  </button>
-                </div>
+                )}
               </div>
             );
           })

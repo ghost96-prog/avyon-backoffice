@@ -10,7 +10,7 @@ import { formatMoney, toApiDate, downloadCsv } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
 import '../styles/ReportsShared.css';
 import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
-
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 // ─── Loading Bar Component ──────────────────────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
@@ -96,7 +96,7 @@ export default function Shifts() {
     reload: reloadDateRange,
   } = useDateRange('today');
 
-  const [selectedBranchId, setSelectedBranchId] = useState('all');
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
