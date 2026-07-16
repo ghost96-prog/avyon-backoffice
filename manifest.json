@@ -1,7 +1,7 @@
 {
   "id": "/",
   "name": "Avyon Backoffice",
-  "short_name": "Avyon",
+  "short_name": "Avyon Backoffice",
   "description": "Business backoffice for Avyon POS",
   "start_url": "/",
   "scope": "/",
