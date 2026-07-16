@@ -1,31 +1,43 @@
 {
+  "id": "/",
   "name": "Avyon Backoffice",
   "short_name": "Avyon",
   "description": "Business backoffice for Avyon POS",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#357abd",
-
   "icons": [
- 
     {
-      "src": "../src/assets/dashboard.png",
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-
   "screenshots": [
     {
-      "src": "../src/assets/screenshot-desktop.png",
+      "src": "/screenshots/screenshot-desktop.png",
       "sizes": "1280x720",
       "type": "image/png",
       "form_factor": "wide"
     },
     {
-      "src": "../src/assets/screenshot-mobile.png",
+      "src": "/screenshots/screenshot-mobile.png",
       "sizes": "390x844",
       "type": "image/png"
     }

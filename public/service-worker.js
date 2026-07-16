@@ -1,52 +1,68 @@
 // service-worker.js
+const CACHE_NAME = "cache-v1";
+const OFFLINE_URL = "/index.html"; // must already be cached (see below) or served by network on first load
+
 self.addEventListener("install", (event) => {
   console.log("Service Worker installed");
-  // Skip waiting to activate immediately
   event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
   console.log("Service Worker activated");
-  // Claim clients to take control immediately
   event.waitUntil(self.clients.claim());
 });
 
-// IMPORTANT: Only add fetch handler if you actually need it
-// Option 1: Remove the fetch handler entirely if you don't need it
-// Option 2: Add proper fetch handling
-
-// Option 1: No fetch handler (recommended if you don't need caching)
-// Just remove the fetch event listener completely
-
-// Option 2: Proper fetch handler (if you need caching)
 self.addEventListener("fetch", (event) => {
-  // Only handle GET requests
-  if (event.request.method !== "GET") {
-    event.respondWith(fetch(event.request));
+  const { request } = event;
+
+  // Only handle GET — let everything else (POST/PUT/etc.) go straight to network untouched.
+  if (request.method !== "GET") {
+    return; // don't call respondWith at all; browser handles it natively
+  }
+
+  // Only handle http/https. chrome-extension:, data:, blob:, etc. must be left alone —
+  // Cache API throws on put() for these schemes.
+  const url = new URL(request.url);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
     return;
   }
 
-  // Network-first strategy with cache fallback
+  // SPA navigations (e.g. /reports/top-selling-items): these are client-side routes,
+  // not real server paths, so on network failure fall back to the cached index.html
+  // instead of trying to cache-match the exact route path (which will never exist).
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        const cached = await cache.match(OFFLINE_URL);
+        return (
+          cached ||
+          new Response("Offline", { status: 503, statusText: "Service Unavailable" })
+        );
+      })
+    );
+    return;
+  }
+
+  // Regular assets: network-first, fall back to cache, then a real fallback Response —
+  // every branch here resolves to an actual Response, never undefined.
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        // Clone the response to cache it
-        const responseClone = response.clone();
-        caches.open("cache-v1").then((cache) => {
-          cache.put(event.request, responseClone);
+    (async () => {
+      try {
+        const response = await fetch(request);
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(request, response.clone()).catch(() => {
+          // ignore cache write failures (e.g. opaque cross-origin responses)
         });
         return response;
-      })
-      .catch(() => {
-        // If network fails, try cache
-        return caches.match(event.request);
-      })
-      .catch(() => {
-        // If all fails, return a basic offline response
-        return new Response("Offline", {
-          status: 503,
-          statusText: "Service Unavailable",
-        });
-      })
+      } catch {
+        const cache = await caches.open(CACHE_NAME);
+        const cached = await cache.match(request);
+        return (
+          cached ||
+          new Response("Offline", { status: 503, statusText: "Service Unavailable" })
+        );
+      }
+    })()
   );
 });

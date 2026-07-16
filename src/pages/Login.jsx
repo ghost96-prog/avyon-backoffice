@@ -2,9 +2,10 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { Mail, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Download } from "lucide-react";
 import { auth } from "../firebase/firebase";
 import Button from "../components/common/Button";
+import { useInstallPrompt } from "../hooks/useInstallPrompt";
 import "./Login.css";
 
 // Import your logo
@@ -98,6 +99,8 @@ const FEATURE_CARDS = [
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { canInstall, promptInstall } = useInstallPrompt();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -169,6 +172,17 @@ export default function Login() {
           <div className="login-brand">
             <span>Avyon BackOffice</span>
           </div>
+
+          {canInstall && (
+            <button
+              type="button"
+              className="login-install-btn"
+              onClick={promptInstall}
+            >
+              <Download size={14} />
+              Install app
+            </button>
+          )}
 
           <div className="login-form-wrap">
             <h1 className="login-title">Welcome back</h1>
