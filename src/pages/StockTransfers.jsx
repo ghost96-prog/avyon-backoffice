@@ -29,6 +29,11 @@ const STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
+// ✅ NEW — page size used by every cursor-paginated /products call in this
+// file (create-flow source-store picker AND the accept modal's
+// destination-store picker). Same pattern as StockTake.jsx / GRV.jsx.
+const PRODUCTS_PAGE_SIZE = 250;
+
 function fieldInput(props) {
   return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
 }
@@ -88,43 +93,127 @@ const Toast = ({ message, type, onClose, onClick }) => {
   );
 };
 
+// ✅ NEW — thin inline progress bar shown while a product picker is loading
+// (same visual language / estimate curve as StockTake.jsx / Products.jsx's
+// InlineLoadProgress). Reused for both the create-flow source-store list
+// and the accept modal's destination-store list.
+const InlineLoadProgress = ({ loading, loadedCount }) => {
+  const [percent, setPercent] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = React.useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      const estimated = loadedCount === 0
+        ? 8
+        : Math.min(92, 15 + Math.log2(loadedCount + 1) * 11);
+      setPercent(estimated);
+    } else if (visible) {
+      setPercent(100);
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadedCount]);
+
+  if (!visible) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
+      <div style={{ width: 70, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : `Loading products… (${loadedCount})`}
+      </span>
+    </div>
+  );
+};
+
 // Accept/Reject Modal
 const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch, businessId }) => {
   const [rejectReason, setRejectReason] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [destProducts, setDestProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(true);
+  // ✅ NEW — drives the InlineLoadProgress bar while destination products load
+  const [productsLoadedCount, setProductsLoadedCount] = useState(0);
   const [productsError, setProductsError] = useState(null);
   const [mapping, setMapping] = useState({});
 
-  useEffect(() => {
-    if (!transfer?.toBranchId || !businessId) return;
-    let cancelled = false;
-    setProductsLoading(true);
-    setProductsError(null);
-    (async () => {
-      try {
-        const res = await apiFetch(`/business/${businessId}/branches/${transfer.toBranchId}/products?status=active`);
-        const list = Array.isArray(res) ? res : (res?.data || []);
-        if (cancelled) return;
-        setDestProducts(list);
-
-        const initialMapping = {};
-        (transfer.items || []).forEach((item) => {
-          const match = list.find((p) => p.sku && item.sku && p.sku.toUpperCase() === item.sku.toUpperCase());
-          if (match) initialMapping[item.productId] = match.productId;
-        });
-        setMapping(initialMapping);
-      } catch (e) {
-        console.error('Load destination products for transfer accept error:', e);
-        if (!cancelled) setProductsError('Could not load this store\'s products. You can still reject the transfer.');
-      } finally {
-        if (!cancelled) setProductsLoading(false);
+  // ✅ FIXED — /business/.../products returns a paginated object
+  // ({ products, count, hasMore, nextCursor }), never a raw array and never
+  // wrapped in `.data`. The old code did
+  // `Array.isArray(res) ? res : (res?.data || [])`, which was ALWAYS false
+  // against that shape, so destProducts silently stayed empty and every
+  // item showed "no products found" in the receiving dropdown. This now
+  // walks cursor pagination — same pattern as the create-flow loader below
+  // and StockTake.jsx / GRV.jsx — so large destination catalogs load
+  // progressively instead of one giant request.
+useEffect(() => {
+  if (!transfer?.toBranchId || !businessId) return;
+  let cancelled = false;
+  setProductsLoading(true);
+  setProductsLoadedCount(0);
+  setProductsError(null);
+  setDestProducts([]);
+  (async () => {
+    try {
+      let cursor = null;
+      let hasMore = true;
+      let accumulated = [];
+      while (hasMore && !cancelled) {
+        const params = new URLSearchParams();
+        params.append('status', 'active');
+        params.append('limit', String(PRODUCTS_PAGE_SIZE));
+        if (cursor) params.append('cursor', cursor);
+        const data = await apiFetch(`/business/${businessId}/branches/${transfer.toBranchId}/products?${params.toString()}`);
+        accumulated = accumulated.concat(data.products || []);
+        hasMore = !!data.hasMore;
+        cursor = data.nextCursor || null;
+        if (!cancelled) {
+          // Sort accumulated products alphabetically by name
+          const sorted = [...accumulated].sort((a, b) => {
+            const nameA = (a.name || '').toLowerCase();
+            const nameB = (b.name || '').toLowerCase();
+            return nameA.localeCompare(nameB);
+          });
+          setDestProducts(sorted);
+          setProductsLoadedCount(accumulated.length);
+        }
+        if (!cursor) break;
       }
-    })();
-    return () => { cancelled = true; };
-  }, [transfer?.toBranchId, transfer?.items, businessId, apiFetch]);
 
+      if (cancelled) return;
+
+      const initialMapping = {};
+      (transfer.items || []).forEach((item) => {
+        const match = accumulated.find((p) => p.sku && item.sku && p.sku.toUpperCase() === item.sku.toUpperCase());
+        if (match) initialMapping[item.productId] = match.productId;
+      });
+      setMapping(initialMapping);
+    } catch (e) {
+      console.error('Load destination products for transfer accept error:', e);
+      if (!cancelled) setProductsError('Could not load this store\'s products. You can still reject the transfer.');
+    } finally {
+      if (!cancelled) setProductsLoading(false);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [transfer?.toBranchId, transfer?.items, businessId, apiFetch]);
   const allMapped = (transfer?.items || []).every((item) => !!mapping[item.productId]);
 
   return (
@@ -178,7 +267,10 @@ const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch,
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <h4 style={{ marginBottom: 4 }}>Match each item to a product in your store:</h4>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 4 }}>
+            <h4 style={{ margin: 0 }}>Match each item to a product in your store:</h4>
+            <InlineLoadProgress loading={productsLoading} loadedCount={productsLoadedCount} />
+          </div>
           <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 10 }}>
             Stock will be added to whichever product you pick here. If an item doesn't exist yet in this store, create it first, then come back and accept.
           </div>
@@ -316,6 +408,10 @@ export default function StockTransfers() {
   const [createSearch, setCreateSearch] = useState('');
   const [cart, setCart] = useState({});
   const [creating, setCreating] = useState(false);
+  // ✅ NEW — drives the InlineLoadProgress bar while the source-store
+  // product picker (create flow, step 2) loads.
+  const [createProductsLoading, setCreateProductsLoading] = useState(false);
+  const [createProductsLoadedCount, setCreateProductsLoadedCount] = useState(0);
 
   // ─── ALL useCallbacks NEXT ──────────────────────────────────────────────
   
@@ -747,6 +843,15 @@ export default function StockTransfers() {
     setView('create');
   };
 
+  // ✅ FIXED — /business/.../products now returns a paginated object
+  // ({ products, count, hasMore, nextCursor }), not a raw array. The old
+  // code did `Array.isArray(prodRes) ? prodRes : []`, which was ALWAYS
+  // false against that object, so createProducts silently stayed empty
+  // and the source-store picker showed nothing. This now walks cursor
+  // pagination — same pattern as StockTake.jsx / GRV.jsx / InventoryScreen.js
+  // — so the picker fills in page by page instead of pulling the whole
+  // (~5k item) catalog in a single request. createProductsLoading /
+  // createProductsLoadedCount feed the InlineLoadProgress bar below.
   useEffect(() => {
     if (view !== 'create' || !businessId) return;
     if (!fromBranchId && branches?.length > 0) {
@@ -755,19 +860,42 @@ export default function StockTransfers() {
       return;
     }
     if (!fromBranchId) return;
+    let cancelled = false;
     (async () => {
+      setCreateProductsLoading(true);
+      setCreateProductsLoadedCount(0);
+      setCreateProducts([]);
       try {
-        const [prodRes, catRes] = await Promise.all([
-          apiFetch(`/business/${businessId}/branches/${fromBranchId}/products?status=active`),
-          apiFetch(`/business/${businessId}/branches/${fromBranchId}/categories`),
-        ]);
-        setCreateProducts(Array.isArray(prodRes) ? prodRes : []);
-        setCreateCategories(Array.isArray(catRes) ? catRes : []);
+        const catRes = await apiFetch(`/business/${businessId}/branches/${fromBranchId}/categories`);
+        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+
+        let cursor = null;
+        let hasMore = true;
+        let accumulated = [];
+        while (hasMore && !cancelled) {
+          const params = new URLSearchParams();
+          params.append('status', 'active');
+          params.append('limit', String(PRODUCTS_PAGE_SIZE));
+          if (cursor) params.append('cursor', cursor);
+          const data = await apiFetch(`/business/${businessId}/branches/${fromBranchId}/products?${params.toString()}`);
+          accumulated = accumulated.concat(data.products || []);
+          hasMore = !!data.hasMore;
+          cursor = data.nextCursor || null;
+          if (!cancelled) {
+            setCreateProducts([...accumulated]);
+            setCreateProductsLoadedCount(accumulated.length);
+          }
+          if (!cursor) break;
+        }
       } catch (e) {
         console.error('Load products/categories for transfer error:', e);
+        showToast('Failed to load products', 'error');
+      } finally {
+        if (!cancelled) setCreateProductsLoading(false);
       }
     })();
-  }, [view, fromBranchId, businessId, apiFetch, branches, viewBranchId]);
+    return () => { cancelled = true; };
+  }, [view, fromBranchId, businessId, apiFetch, branches, viewBranchId, showToast]);
 
   const filteredCreateProducts = useMemo(() => {
     let result = createProducts;
@@ -1057,7 +1185,7 @@ export default function StockTransfers() {
           alignItems: 'start',
         }}>
           <div className="reports-list-card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
               <div className="reports-search" style={{ flex: 1, minWidth: '150px' }}>
                 <Search size={14} />
                 <input placeholder="Search products or SKU" value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
@@ -1066,6 +1194,7 @@ export default function StockTransfers() {
                 <option value="All">All Categories</option>
                 {createCategories.map((c) => <option key={c.categoryId} value={c.name}>{c.name}</option>)}
               </select>
+              <InlineLoadProgress loading={createProductsLoading} loadedCount={createProductsLoadedCount} />
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -1130,7 +1259,9 @@ export default function StockTransfers() {
                     );
                   })}
                   {filteredCreateProducts.length === 0 && (
-                    <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>No products found</td></tr>
+                    <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>
+                      {createProductsLoading ? 'Loading products…' : 'No products found'}
+                    </td></tr>
                   )}
                 </tbody>
               </table>

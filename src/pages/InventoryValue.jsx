@@ -1,5 +1,5 @@
 // src/pages/Inventory/InventoryValue.jsx
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Store, Search, X, Landmark, RefreshCw, Download, FileText, ChevronLeft, Lock, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatMoney, toApiDate, downloadCsv } from '../utils/exportUtils';
@@ -11,6 +11,10 @@ import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
+
+// ✅ NEW — page size used by the cursor-paginated /products call below.
+// Same pattern as StockTake.jsx / StockTransfers.jsx / GRV.jsx.
+const PRODUCTS_PAGE_SIZE = 250;
 
 // ─── Loading Bar Component (Loyverse style) ──────────────────────────────
 function LoadingBar({ visible }) {
@@ -44,6 +48,56 @@ function LoadingBar({ visible }) {
   );
 }
 
+// ✅ NEW — thin inline progress bar shown while the product list loads
+// (same visual language / estimate curve as StockTake.jsx / StockTransfers.jsx's
+// InlineLoadProgress). Lets the user see progress on large catalogs instead
+// of a blank table until every page has come in.
+const InlineLoadProgress = ({ loading, loadedCount }) => {
+  const [percent, setPercent] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      const estimated = loadedCount === 0
+        ? 8
+        : Math.min(92, 15 + Math.log2(loadedCount + 1) * 11);
+      setPercent(estimated);
+    } else if (visible) {
+      setPercent(100);
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadedCount]);
+
+  if (!visible) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
+      <div style={{ width: 70, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : `Loading products… (${loadedCount})`}
+      </span>
+    </div>
+  );
+};
+
 // Helper to get margin color based on percentage
 const getMarginColor = (percent) => {
   if (percent >= 40) return '#16A34A'; // Green - high margin
@@ -68,6 +122,8 @@ export default function InventoryValue() {
   const [stats, setStats] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  // ✅ NEW — drives the InlineLoadProgress bar while products page in
+  const [productsLoadedCount, setProductsLoadedCount] = useState(0);
 
   useEffect(() => {
     if (!selectedBranchId && branches?.length) setSelectedBranchId(branches[0].branchId);
@@ -75,17 +131,49 @@ export default function InventoryValue() {
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
+  // ✅ FIXED — /business/.../products returns a paginated object
+  // ({ products, count, hasMore, nextCursor }), never a raw array. The old
+  // code did `Array.isArray(productsRes) ? productsRes.filter(...) : []`,
+  // which was ALWAYS false against that shape, so `products` silently
+  // stayed empty and the table showed nothing even though inventory-stats
+  // (aggregates) loaded fine. This now walks cursor pagination — same
+  // pattern as StockTake.jsx / StockTransfers.jsx / GRV.jsx — so the table
+  // fills in page by page instead of expecting one giant array response.
   const fetchData = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
     setLoading(true);
     setError(null);
+    setProductsLoadedCount(0);
+    setProducts([]);
     try {
-      const [productsRes, statsRes] = await Promise.all([
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=all`),
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/inventory-stats`),
-      ]);
-      setProducts(Array.isArray(productsRes) ? productsRes.filter((p) => p.status !== 'deleted') : []);
-      setStats(statsRes);
+      // ✅ FIXED — stats (the aggregate stat cards) must not wait on the
+      // product pagination loop below. Previously this fired the stats
+      // request early but only called setStats() AFTER the entire product
+      // loop had finished, so on a large catalog the stat cards sat at 0
+      // for however long paging took, even though the aggregate itself
+      // came back almost instantly. Now it's set the moment it resolves,
+      // fully independent of how many product pages there are.
+      apiFetch(`/business/${businessId}/branches/${selectedBranchId}/inventory-stats`)
+        .then(setStats)
+        .catch((e) => console.error('Fetch inventory stats error:', e));
+
+      let cursor = null;
+      let hasMore = true;
+      let accumulated = [];
+      while (hasMore) {
+        const params = new URLSearchParams();
+        params.append('status', 'all');
+        params.append('limit', String(PRODUCTS_PAGE_SIZE));
+        if (cursor) params.append('cursor', cursor);
+        const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+        const pageProducts = (data.products || []).filter((p) => p.status !== 'deleted');
+        accumulated = accumulated.concat(pageProducts);
+        setProducts([...accumulated]);
+        setProductsLoadedCount(accumulated.length);
+        hasMore = !!data.hasMore;
+        cursor = data.nextCursor || null;
+        if (!cursor) break;
+      }
     } catch (e) {
       console.error('Fetch inventory value error:', e);
       setError('Failed to load inventory value');
@@ -427,7 +515,7 @@ export default function InventoryValue() {
           </div>
         </div>
 
-        {/* Stats Row */}
+        {/* Stats Row — untouched, sourced from /inventory-stats aggregates */}
         <div className="reports-stats-row">
           <div className="reports-stat-card">
             <span className="reports-stat-label">Total Items</span>
@@ -455,19 +543,23 @@ export default function InventoryValue() {
           </div>
         </div>
 
-        <div className="reports-toolbar" style={{ marginTop: 16 }}>
+        <div className="reports-toolbar" style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div className="reports-search">
             <Search size={14} />
             <input placeholder="Search by product name" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
           </div>
+          <InlineLoadProgress loading={loading} loadedCount={productsLoadedCount} />
         </div>
 
         <div className="reports-list-card" style={{ overflowX: 'auto' }}>
           {error ? (
             <div className="reports-empty"><div className="reports-empty-title">{error}</div></div>
           ) : productRows.length === 0 ? (
-            <div className="reports-empty"><Landmark size={32} /><div className="reports-empty-title">No products</div></div>
+            <div className="reports-empty">
+              <Landmark size={32} />
+              <div className="reports-empty-title">{loading ? 'Loading products…' : 'No products'}</div>
+            </div>
           ) : (
             <>
               <table style={{ width: '100%', minWidth: 600, borderCollapse: 'collapse' }}>

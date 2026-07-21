@@ -514,44 +514,49 @@ export default function GRV() {
   // createProductsLoadedCount feed the InlineLoadProgress bar below.
   const GRV_PRODUCTS_PAGE_SIZE = 250;
 
-  useEffect(() => {
-    if (view !== 'create' || !businessId || !selectedBranchId) return;
-    let cancelled = false;
-    (async () => {
-      setCreateProductsLoading(true);
-      setCreateProductsLoadedCount(0);
-      setCreateProducts([]);
-      try {
-        const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
-        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+useEffect(() => {
+  if (view !== 'create' || !businessId || !selectedBranchId) return;
+  let cancelled = false;
+  (async () => {
+    setCreateProductsLoading(true);
+    setCreateProductsLoadedCount(0);
+    setCreateProducts([]);
+    try {
+      const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+      if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
 
-        let cursor = null;
-        let hasMore = true;
-        let accumulated = [];
-        while (hasMore && !cancelled) {
-          const params = new URLSearchParams();
-          params.append('status', 'active');
-          params.append('limit', String(GRV_PRODUCTS_PAGE_SIZE));
-          if (cursor) params.append('cursor', cursor);
-          const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
-          accumulated = accumulated.concat(data.products || []);
-          hasMore = !!data.hasMore;
-          cursor = data.nextCursor || null;
-          if (!cancelled) {
-            setCreateProducts([...accumulated]);
-            setCreateProductsLoadedCount(accumulated.length);
-          }
-          if (!cursor) break;
+      let cursor = null;
+      let hasMore = true;
+      let accumulated = [];
+      while (hasMore && !cancelled) {
+        const params = new URLSearchParams();
+        params.append('status', 'active');
+        params.append('limit', String(GRV_PRODUCTS_PAGE_SIZE));
+        if (cursor) params.append('cursor', cursor);
+        const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+        accumulated = accumulated.concat(data.products || []);
+        hasMore = !!data.hasMore;
+        cursor = data.nextCursor || null;
+        if (!cancelled) {
+          // Sort accumulated products alphabetically by name
+          const sorted = [...accumulated].sort((a, b) => {
+            const nameA = (a.name || '').toLowerCase();
+            const nameB = (b.name || '').toLowerCase();
+            return nameA.localeCompare(nameB);
+          });
+          setCreateProducts(sorted);
+          setCreateProductsLoadedCount(accumulated.length);
         }
-      } catch (e) {
-        console.error('Load products/categories for GRV error:', e);
-      } finally {
-        if (!cancelled) setCreateProductsLoading(false);
+        if (!cursor) break;
       }
-    })();
-    return () => { cancelled = true; };
-  }, [view, businessId, selectedBranchId, apiFetch]);
-
+    } catch (e) {
+      console.error('Load products/categories for GRV error:', e);
+    } finally {
+      if (!cancelled) setCreateProductsLoading(false);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [view, businessId, selectedBranchId, apiFetch]);
   const filteredCreateProducts = useMemo(() => {
     let result = createProducts;
     if (createCategoryFilter !== 'All') result = result.filter((p) => p.category === createCategoryFilter);

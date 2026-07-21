@@ -17,6 +17,10 @@ import '../styles/ReportsShared.css';
 
 const DASHBOARD_POS_ID = 'web-dashboard';
 
+// ✅ NEW — page size for the cursor-paginated /products walk in
+// fetchBranchData below.
+const PRODUCTS_PAGE_SIZE = 250;
+
 function fieldInput(props) {
   return { width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 12, boxSizing: 'border-box', ...props };
 }
@@ -25,6 +29,56 @@ function StatusBadge({ action, hasErrors }) {
   if (hasErrors) return <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#FEE2E2', color: '#EF4444' }}>Error</span>;
   if (action === 'update') return <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#FEF3C7', color: '#B45309' }}>Update</span>;
   return <span style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: '#DCFCE7', color: '#16A34A' }}>New</span>;
+}
+
+// ✅ NEW — thin inline progress bar shown while the branch's product
+// catalog is loading (needed for create-vs-update / duplicate-SKU
+// detection during import). Same visual language as StockTake.jsx /
+// StockTransfers.jsx / InventoryValue.jsx's InlineLoadProgress.
+function InlineLoadProgress({ loading, loadedCount }) {
+  const [percent, setPercent] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      const estimated = loadedCount === 0
+        ? 8
+        : Math.min(92, 15 + Math.log2(loadedCount + 1) * 11);
+      setPercent(estimated);
+    } else if (visible) {
+      setPercent(100);
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadedCount]);
+
+  if (!visible) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
+      <div style={{ width: 70, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : `Loading products… (${loadedCount})`}
+      </span>
+    </div>
+  );
 }
 
 export default function ImportStock() {
@@ -48,6 +102,8 @@ export default function ImportStock() {
   const [allProducts, setAllProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
+  // ✅ NEW — drives the InlineLoadProgress bar while allProducts pages in
+  const [productsLoadingCount, setProductsLoadingCount] = useState(0);
 
   const [fileName, setFileName] = useState(null);
   const [parsedRows, setParsedRows] = useState([]);
@@ -75,15 +131,41 @@ export default function ImportStock() {
   }, [categories]);
 
   // ─── Load products + categories for the selected branch ────────────────────
+  // ✅ FIXED — /business/.../products returns a paginated object
+  // ({ products, count, hasMore, nextCursor }), not a raw array. The old
+  // code did `Array.isArray(productsRes) ? productsRes : []`, which was
+  // ALWAYS false against that shape, so allProducts silently stayed empty.
+  // That's used for create-vs-update detection and duplicate-SKU matching
+  // (evaluateImportRow), so with it empty EVERY row in the CSV was treated
+  // as brand-new, even ones that already existed. This now walks cursor
+  // pagination — same pattern as StockTake.jsx / StockTransfers.jsx /
+  // InventoryValue.jsx — loading the catalog progressively.
   const fetchBranchData = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
     setLoadingProducts(true);
+    setProductsLoadingCount(0);
+    setAllProducts([]);
     try {
-      const [productsRes, categoriesRes] = await Promise.all([
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=all`),
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
-      ]);
-      setAllProducts(Array.isArray(productsRes) ? productsRes : []);
+      const categoriesPromise = apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+
+      let cursor = null;
+      let hasMore = true;
+      let accumulated = [];
+      while (hasMore) {
+        const params = new URLSearchParams();
+        params.append('status', 'all');
+        params.append('limit', String(PRODUCTS_PAGE_SIZE));
+        if (cursor) params.append('cursor', cursor);
+        const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+        accumulated = accumulated.concat(data.products || []);
+        hasMore = !!data.hasMore;
+        cursor = data.nextCursor || null;
+        setAllProducts([...accumulated]);
+        setProductsLoadingCount(accumulated.length);
+        if (!cursor) break;
+      }
+
+      const categoriesRes = await categoriesPromise;
       setCategories(Array.isArray(categoriesRes) ? categoriesRes : []);
     } catch (e) {
       console.error('Failed to load branch data:', e);
@@ -557,7 +639,7 @@ export default function ImportStock() {
         </div>
 
         {/* ─── Toolbar ─────────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0' }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0', alignItems: 'center' }}>
           <button onClick={() => {
             if (!guardAction('inventory_mgmt')) return;
             downloadProductTemplate();
@@ -579,6 +661,7 @@ export default function ImportStock() {
           }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             <RefreshCw size={15} className={loadingProducts ? 'animate-spin' : ''} /> Refresh Product List
           </button>
+          <InlineLoadProgress loading={loadingProducts} loadedCount={productsLoadingCount} />
         </div>
 
         {/* ─── Dropzone ────────────────────────────────────────────────────────── */}
@@ -634,6 +717,12 @@ export default function ImportStock() {
                 </button>
               </div>
             </div>
+
+            {loadingProducts && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#0891B2', borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
+                <AlertTriangle size={14} /> Still loading your existing product list — create/update detection may be incomplete until this finishes.
+              </div>
+            )}
 
             {blockingErrors && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', color: '#EF4444', borderRadius: 8, marginBottom: 12, fontSize: 13 }}>

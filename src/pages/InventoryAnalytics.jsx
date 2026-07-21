@@ -1,5 +1,5 @@
 // src/pages/InventoryAnalytics.jsx
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -26,6 +26,58 @@ const URGENCY_META = {
   critical: { color: '#ef4444', bg: '#fee2e2', label: 'Critical' },
   high: { color: '#d97706', bg: '#fef3c7', label: 'High' },
   medium: { color: '#357abd', bg: '#e6eef9', label: 'Medium' },
+};
+
+// ✅ NEW — number of parallel report calls `load()` fires, used to drive
+// the progress bar below (5 endpoints: performance, reorder, forecast,
+// dead-stock, movements).
+const TOTAL_ANALYTICS_CALLS = 5;
+
+// ✅ NEW — inline progress bar shown while the analytics report calls are
+// in flight. Unlike InventoryValue's InlineLoadProgress (which estimates
+// progress via a log curve because it doesn't know the total page count
+// up front), here we know exactly how many calls are outstanding, so the
+// bar fills in exact fifths as each request resolves.
+const LoadProgressBar = ({ loading, completed, total }) => {
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+    } else if (visible) {
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  if (!visible) return null;
+
+  const percent = loading ? Math.min(100, Math.round((completed / total) * 100)) : 100;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 190 }}>
+      <div style={{ width: 90, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : `Loading data… (${completed}/${total})`}
+      </span>
+    </div>
+  );
 };
 
 function TrendIcon({ trend }) {
@@ -71,6 +123,9 @@ export default function InventoryAnalytics() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  // ✅ NEW — how many of the TOTAL_ANALYTICS_CALLS report calls have
+  // resolved so far; drives LoadProgressBar.
+  const [loadCompleted, setLoadCompleted] = useState(0);
 
   const branchOptions = useMemo(
     () => [{ value: 'all', label: 'All Stores' }, ...(branches || []).map((b) => ({ value: b.branchId, label: b.name }))],
@@ -82,6 +137,7 @@ export default function InventoryAnalytics() {
     if (!businessId) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     setError(null);
+    setLoadCompleted(0);
     try {
       const rangeParams = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
       const branchParams = new URLSearchParams();
@@ -92,12 +148,20 @@ export default function InventoryAnalytics() {
       const reorderParams = new URLSearchParams(branchParams);
       reorderParams.set('leadTimeDays', leadTimeDays);
 
+      // ✅ NEW — wraps each call so LoadProgressBar can tick up as each of
+      // the 5 report endpoints resolves, instead of the whole KPI/section
+      // block staying blank until every request comes back at once.
+      const trackedFetch = (url) => apiFetch(url).then((res) => {
+        setLoadCompleted((c) => c + 1);
+        return res;
+      });
+
       const [perf, reo, fc, dead, moves] = await Promise.all([
-        apiFetch(`/business/${businessId}/reports/inventory-performance?${rangeParams.toString()}`),
-        apiFetch(`/business/${businessId}/reports/reorder-recommendations?${reorderParams.toString()}`),
-        apiFetch(`/business/${businessId}/reports/demand-forecast?${branchParams.toString()}`),
-        apiFetch(`/business/${businessId}/reports/dead-stock?${branchParams.toString()}`),
-        apiFetch(`/business/${businessId}/reports/stock-movement-analytics?${rangeParams.toString()}`),
+        trackedFetch(`/business/${businessId}/reports/inventory-performance?${rangeParams.toString()}`),
+        trackedFetch(`/business/${businessId}/reports/reorder-recommendations?${reorderParams.toString()}`),
+        trackedFetch(`/business/${businessId}/reports/demand-forecast?${branchParams.toString()}`),
+        trackedFetch(`/business/${businessId}/reports/dead-stock?${branchParams.toString()}`),
+        trackedFetch(`/business/${businessId}/reports/stock-movement-analytics?${rangeParams.toString()}`),
       ]);
       setPerformance(perf);
       setReorder(reo);
@@ -247,6 +311,7 @@ export default function InventoryAnalytics() {
           </div>
         </div>
         <div className="reports-header-right">
+          <LoadProgressBar loading={loading || refreshing} completed={loadCompleted} total={TOTAL_ANALYTICS_CALLS} />
           <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
             <Store size={14} /><span>{selectedBranchName}</span>
           </button>

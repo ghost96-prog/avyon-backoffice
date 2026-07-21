@@ -421,48 +421,62 @@ export default function StockTake() {
   // the picker fills in page by page instead of pulling the whole
   // (~5k item) catalog in a single request. createProductsLoading /
   // createProductsLoadedCount feed the InlineLoadProgress bar below.
-  const STOCKTAKE_PRODUCTS_PAGE_SIZE = 250;
+// ✅ FIXED — /business/.../products now returns a paginated object
+// ({ products, count, hasMore, nextCursor }), not a raw array. The old
+// code did `Array.isArray(prodRes) ? prodRes.filter(...) : []`, which
+// was ALWAYS false against that object, so createProducts silently
+// stayed empty and the picker showed nothing. This now walks cursor
+// pagination — same pattern as Products.jsx / InventoryScreen.js — so
+// the picker fills in page by page instead of pulling the whole
+// (~5k item) catalog in a single request. createProductsLoading /
+// createProductsLoadedCount feed the InlineLoadProgress bar below.
+const STOCKTAKE_PRODUCTS_PAGE_SIZE = 250;
 
-  useEffect(() => {
-    if (view !== 'create' || !businessId || !selectedBranchId) return;
-    let cancelled = false;
-    (async () => {
-      setCreateProductsLoading(true);
-      setCreateProductsLoadedCount(0);
-      setCreateProducts([]);
-      try {
-        const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
-        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+useEffect(() => {
+  if (view !== 'create' || !businessId || !selectedBranchId) return;
+  let cancelled = false;
+  (async () => {
+    setCreateProductsLoading(true);
+    setCreateProductsLoadedCount(0);
+    setCreateProducts([]);
+    try {
+      const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+      if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
 
-        let cursor = null;
-        let hasMore = true;
-        let accumulated = [];
-        while (hasMore && !cancelled) {
-          const params = new URLSearchParams();
-          params.append('status', 'active');
-          params.append('limit', String(STOCKTAKE_PRODUCTS_PAGE_SIZE));
-          if (cursor) params.append('cursor', cursor);
-          const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
-          const trackedOnly = (data.products || []).filter((p) => p.trackInventory);
-          accumulated = accumulated.concat(trackedOnly);
-          hasMore = !!data.hasMore;
-          cursor = data.nextCursor || null;
-          if (!cancelled) {
-            setCreateProducts([...accumulated]);
-            setCreateProductsLoadedCount(accumulated.length);
-          }
-          if (!cursor) break;
+      let cursor = null;
+      let hasMore = true;
+      let accumulated = [];
+      while (hasMore && !cancelled) {
+        const params = new URLSearchParams();
+        params.append('status', 'active');
+        params.append('limit', String(STOCKTAKE_PRODUCTS_PAGE_SIZE));
+        if (cursor) params.append('cursor', cursor);
+        const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+        const trackedOnly = (data.products || []).filter((p) => p.trackInventory);
+        accumulated = accumulated.concat(trackedOnly);
+        hasMore = !!data.hasMore;
+        cursor = data.nextCursor || null;
+        if (!cancelled) {
+          // Sort accumulated products alphabetically by name
+          const sorted = [...accumulated].sort((a, b) => {
+            const nameA = (a.name || '').toLowerCase();
+            const nameB = (b.name || '').toLowerCase();
+            return nameA.localeCompare(nameB);
+          });
+          setCreateProducts(sorted);
+          setCreateProductsLoadedCount(accumulated.length);
         }
-      } catch (e) {
-        console.error('Load products for stock take error:', e);
-        showToast('Failed to load products', 'error');
-      } finally {
-        if (!cancelled) setCreateProductsLoading(false);
+        if (!cursor) break;
       }
-    })();
-    return () => { cancelled = true; };
-  }, [view, businessId, selectedBranchId, apiFetch]);
-
+    } catch (e) {
+      console.error('Load products for stock take error:', e);
+      showToast('Failed to load products', 'error');
+    } finally {
+      if (!cancelled) setCreateProductsLoading(false);
+    }
+  })();
+  return () => { cancelled = true; };
+}, [view, businessId, selectedBranchId, apiFetch]);
   const filteredCreateProducts = useMemo(() => {
     let result = createProducts;
     if (createCategoryFilter !== 'All') {
