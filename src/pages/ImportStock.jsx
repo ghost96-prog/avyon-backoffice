@@ -61,6 +61,19 @@ export default function ImportStock() {
 
   const fileInputRef = useRef(null);
 
+  // ✅ NEW — a mutable, always-current mirror of `categories` used during
+  // import. React state (`categories`) only updates on the NEXT render, but
+  // `handleImport`'s for-loop runs many `await`-ed rows back-to-back inside
+  // one synchronous callback tree — a `setCategories` call from row #1
+  // wouldn't be visible via the `categories` closure when row #2 runs its
+  // lookup a few milliseconds later. This ref is updated synchronously the
+  // instant a new category is created, so row #2 (same category name as
+  // row #1) reuses it instead of creating a duplicate.
+  const categoryCacheRef = useRef([]);
+  useEffect(() => {
+    categoryCacheRef.current = categories;
+  }, [categories]);
+
   // ─── Load products + categories for the selected branch ────────────────────
   const fetchBranchData = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
@@ -86,6 +99,108 @@ export default function ImportStock() {
   }, [importResults, importing, navigate]);
 
   useEffect(() => { fetchBranchData(); }, [fetchBranchData]);
+
+  // ✅ NEW — resolve a CSV row's category cell to a real category record,
+  // creating it on the server (and caching it) if it doesn't exist yet.
+  // Mirrors the mobile app's category-creation shape
+  // (api.createCategory(businessId, branchId, { name, posId, staffId }) →
+  // { categoryId }, see syncService.syncSingleCategory) against the same
+  // /business/:businessId/branches/:branchId/categories route already used
+  // for the GET above.
+  //
+  // Returns:
+  //   - null if the row's category cell is blank/whitespace — caller falls
+  //     back to "No Category" (create) or the existing product's category
+  //     (update), same as before this change.
+  //   - { categoryId, name } otherwise, whether matched to an existing
+  //     category or freshly created.
+  const getOrCreateCategoryForRow = useCallback(async (rawCategoryName) => {
+    const trimmedName = (rawCategoryName || '').trim();
+    if (!trimmedName) return null;
+
+    // 1. Case-insensitive match against everything we know about right now
+    //    — original branch categories PLUS anything created earlier in
+    //    this same import run. If found, this row LINKS to it (update-style)
+    //    rather than attempting a create at all.
+    const existing = categoryCacheRef.current.find(
+      (c) => (c.name || '').trim().toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (existing) {
+      return { categoryId: existing.categoryId, name: existing.name };
+    }
+
+    // 2. Not found in our local cache — attempt to create it on the server,
+    //    the same way the app creates any other category (not just
+    //    attaching the typed name as a free-text label on the product).
+    try {
+      const created = await apiFetch(
+        `/business/${businessId}/branches/${selectedBranchId}/categories`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            name: trimmedName,
+            posId: DASHBOARD_POS_ID,
+            staffId,
+          }),
+        }
+      );
+
+      if (!created?.categoryId) {
+        throw new Error(`Failed to create category "${trimmedName}"`);
+      }
+
+      const newCategory = { categoryId: created.categoryId, name: trimmedName };
+
+      // Update the ref synchronously (so the very next row in this same
+      // import loop sees it immediately) AND the React state (so the UI —
+      // dropdowns, badges, category counts — reflects it without needing a
+      // full re-fetch after the import finishes).
+      categoryCacheRef.current = [...categoryCacheRef.current, newCategory];
+      setCategories((prev) => [...prev, newCategory]);
+
+      return newCategory;
+    } catch (err) {
+      // ✅ NEW: createCategory does an exact, case-sensitive server-side
+      // name check and returns 409 ("Category ... already exists in this
+      // branch") if it's already there. Our local cache check above is
+      // case-insensitive and only as fresh as this page's last load/fetch,
+      // so it's possible for the server to know about a category we don't
+      // yet (created moments ago elsewhere, or a near-duplicate name that
+      // differs only in case from what's already on the server). In that
+      // case: don't fail the row — re-fetch categories from the server,
+      // find the real match, and LINK to it instead. Only a genuinely
+      // unexpected error should still fail the row.
+      const message = (err?.message || '').toLowerCase();
+      const isDuplicateNameError = message.includes('already exists');
+
+      if (!isDuplicateNameError) {
+        throw err;
+      }
+
+      const freshCategories = await apiFetch(
+        `/business/${businessId}/branches/${selectedBranchId}/categories`
+      );
+
+      if (Array.isArray(freshCategories)) {
+        categoryCacheRef.current = freshCategories;
+        setCategories(freshCategories);
+
+        const match = freshCategories.find(
+          (c) => (c.name || '').trim().toLowerCase() === trimmedName.toLowerCase()
+        );
+        if (match) {
+          return { categoryId: match.categoryId, name: match.name };
+        }
+      }
+
+      // Server insists the name exists but we still can't find it (e.g.
+      // it's soft-deleted and excluded from the default GET) — surface a
+      // clear error rather than silently falling back to "No Category".
+      throw new Error(
+        `Category "${trimmedName}" already exists on the server but could not be resolved to a categoryId`
+      );
+    }
+  }, [apiFetch, businessId, selectedBranchId, staffId]);
 
   // ─── File handling ──────────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
@@ -174,7 +289,13 @@ export default function ImportStock() {
 
   // ─── Create / update helpers ─────────────────────────────────────────────────
   const createProductFromRow = useCallback(async (row) => {
-    const category = categories.find((c) => c.name.toLowerCase() === (row.category || '').trim().toLowerCase());
+    // ✅ CHANGED: was a plain lookup against the `categories` list loaded at
+    // page-open time — if the CSV named a category that didn't exist yet,
+    // it just got attached to the product as a free-text label ("category"
+    // field) while `categoryId` silently fell back to 'no-category'. Now it
+    // actually creates the category first (or reuses one created earlier in
+    // this same import) and links the product to the real categoryId.
+    const category = await getOrCreateCategoryForRow(row.category);
     const unitDef = UNITS.find((u) => u.value === (row.unit || 'each').trim().toLowerCase()) || UNITS[0];
     const itemsPerUnitValue = unitDef.requiresQuantityPerUnit ? (parseInt(row.itemsPerUnit, 10) || 1) : 1;
     const trackInventory = row.trackInventory === '' || row.trackInventory === undefined ? true : parseBool(row.trackInventory);
@@ -188,7 +309,7 @@ export default function ImportStock() {
       barcode: row.barcode?.trim() || null,
       name: row.name.trim().toUpperCase(),
       description: row.description?.trim() || null,
-      category: category?.name || (row.category?.trim() || 'No Category'),
+      category: category?.name || 'No Category',
       categoryId: category?.categoryId || 'no-category',
       unit: unitDef.value,
       itemsPerUnit: itemsPerUnitValue,
@@ -236,13 +357,17 @@ export default function ImportStock() {
         }),
       });
     }
-  }, [apiFetch, businessId, selectedBranchId, categories, baseCurrency, staffId, staffName]);
+  }, [apiFetch, businessId, selectedBranchId, getOrCreateCategoryForRow, baseCurrency, staffId, staffName]);
 
   const updateProductFromRow = useCallback(async (row) => {
     const target = allProducts.find((p) => p.productId === row.targetProductId);
     if (!target) throw new Error('Product no longer exists');
 
-    const category = categories.find((c) => c.name.toLowerCase() === (row.category || '').trim().toLowerCase());
+    // ✅ CHANGED: same fix as createProductFromRow — resolves/creates the
+    // real category instead of only matching against categories that
+    // already existed when the page loaded. A blank cell still falls back
+    // to the product's current category, unchanged from before.
+    const category = await getOrCreateCategoryForRow(row.category);
     const unitDef = UNITS.find((u) => u.value === (row.unit || target.unit || 'each').trim().toLowerCase()) || UNITS[0];
     const itemsPerUnitValue = unitDef.requiresQuantityPerUnit
       ? (parseInt(row.itemsPerUnit, 10) || target.itemsPerUnit || 1)
@@ -259,7 +384,7 @@ export default function ImportStock() {
       barcode: row.barcode?.trim() || null,
       name: row.name.trim().toUpperCase(),
       description: row.description?.trim() || null,
-      category: category?.name || (row.category?.trim() || target.category || 'No Category'),
+      category: category?.name || target.category || 'No Category',
       categoryId: category?.categoryId || target.categoryId || 'no-category',
       unit: unitDef.value,
       itemsPerUnit: itemsPerUnitValue,
@@ -302,7 +427,7 @@ export default function ImportStock() {
         });
       }
     }
-  }, [apiFetch, businessId, selectedBranchId, allProducts, categories, baseCurrency, staffId, staffName]);
+  }, [apiFetch, businessId, selectedBranchId, allProducts, getOrCreateCategoryForRow, baseCurrency, staffId, staffName]);
 
   // ─── Run the import ───────────────────────────────────────────────────────────
   const handleImport = useCallback(async () => {

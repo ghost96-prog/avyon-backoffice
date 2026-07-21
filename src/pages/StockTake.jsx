@@ -1,5 +1,5 @@
 // src/pages/Inventory/StockTake.jsx
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Store, Plus, X, ClipboardCheck, Search, Check, ChevronLeft, FileText, Clock, User, MessageSquare, AlertTriangle, Trash2, Package, Lock } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatMoney } from '../utils/exportUtils';
@@ -60,6 +60,54 @@ const Toast = ({ message, type, onClose }) => {
     }}>
       <span>{message}</span>
       <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: style.text, fontSize: 18 }}>×</button>
+    </div>
+  );
+};
+
+// ✅ NEW — thin inline progress bar shown while the product picker loads
+// (same visual language / estimate curve as Products.jsx's InlineLoadProgress).
+const InlineLoadProgress = ({ loading, loadedCount }) => {
+  const [percent, setPercent] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      const estimated = loadedCount === 0
+        ? 8
+        : Math.min(92, 15 + Math.log2(loadedCount + 1) * 11);
+      setPercent(estimated);
+    } else if (visible) {
+      setPercent(100);
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadedCount]);
+
+  if (!visible) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
+      <div style={{ width: 70, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : `Loading products… (${loadedCount})`}
+      </span>
     </div>
   );
 };
@@ -131,6 +179,9 @@ export default function StockTake() {
   const [creating, setCreating] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [createCategoryFilter, setCreateCategoryFilter] = useState('All');
+  // ✅ NEW — drives the inline progress bar while the product picker loads
+  const [createProductsLoading, setCreateProductsLoading] = useState(false);
+  const [createProductsLoadedCount, setCreateProductsLoadedCount] = useState(0);
 
   const showToast = (message, type = 'error') => {
     setToast({ message, type });
@@ -361,21 +412,55 @@ export default function StockTake() {
     setView('create');
   };
 
+  // ✅ FIXED — /business/.../products now returns a paginated object
+  // ({ products, count, hasMore, nextCursor }), not a raw array. The old
+  // code did `Array.isArray(prodRes) ? prodRes.filter(...) : []`, which
+  // was ALWAYS false against that object, so createProducts silently
+  // stayed empty and the picker showed nothing. This now walks cursor
+  // pagination — same pattern as Products.jsx / InventoryScreen.js — so
+  // the picker fills in page by page instead of pulling the whole
+  // (~5k item) catalog in a single request. createProductsLoading /
+  // createProductsLoadedCount feed the InlineLoadProgress bar below.
+  const STOCKTAKE_PRODUCTS_PAGE_SIZE = 250;
+
   useEffect(() => {
     if (view !== 'create' || !businessId || !selectedBranchId) return;
+    let cancelled = false;
     (async () => {
+      setCreateProductsLoading(true);
+      setCreateProductsLoadedCount(0);
+      setCreateProducts([]);
       try {
-        const [prodRes, catRes] = await Promise.all([
-          apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=active`),
-          apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
-        ]);
-        setCreateProducts(Array.isArray(prodRes) ? prodRes.filter((p) => p.trackInventory) : []);
-        setCreateCategories(Array.isArray(catRes) ? catRes : []);
+        const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+
+        let cursor = null;
+        let hasMore = true;
+        let accumulated = [];
+        while (hasMore && !cancelled) {
+          const params = new URLSearchParams();
+          params.append('status', 'active');
+          params.append('limit', String(STOCKTAKE_PRODUCTS_PAGE_SIZE));
+          if (cursor) params.append('cursor', cursor);
+          const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+          const trackedOnly = (data.products || []).filter((p) => p.trackInventory);
+          accumulated = accumulated.concat(trackedOnly);
+          hasMore = !!data.hasMore;
+          cursor = data.nextCursor || null;
+          if (!cancelled) {
+            setCreateProducts([...accumulated]);
+            setCreateProductsLoadedCount(accumulated.length);
+          }
+          if (!cursor) break;
+        }
       } catch (e) {
         console.error('Load products for stock take error:', e);
         showToast('Failed to load products', 'error');
+      } finally {
+        if (!cancelled) setCreateProductsLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [view, businessId, selectedBranchId, apiFetch]);
 
   const filteredCreateProducts = useMemo(() => {
@@ -799,6 +884,7 @@ export default function StockTake() {
                   style={{ flex: 1, minWidth: '120px', padding: '10px 14px', borderRadius: 8, border: `1px solid ${!selectAll ? '#0891B2' : '#E2E8F0'}`, background: !selectAll ? '#EFF6FF' : '#fff', color: !selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   Select Specific Products
                 </button>
+                <InlineLoadProgress loading={createProductsLoading} loadedCount={createProductsLoadedCount} />
               </div>
 
               {!selectAll && (
@@ -833,7 +919,11 @@ export default function StockTake() {
                         <span style={{ fontSize: 11, color: '#64748B' }}>{p.currentStock ?? 0} in system</span>
                       </div>
                     ))}
-                    {filteredCreateProducts.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>No products found</div>}
+                    {filteredCreateProducts.length === 0 && (
+                      <div style={{ padding: 20, textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>
+                        {createProductsLoading ? 'Loading products…' : 'No products found'}
+                      </div>
+                    )}
                   </div>
                 </>
               )}

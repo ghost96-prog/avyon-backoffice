@@ -1,6 +1,6 @@
 // src/pages/Inventory/Products.jsx
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Store, Search, X, Package, Plus, Filter, Trash2, Edit2,
   AlertTriangle, Download, FileText, RefreshCw, Upload,
@@ -29,6 +29,24 @@ const STOCK_STATUS_OPTIONS = [
 ];
 
 const PAGE_SIZE = 20;
+// Server page size for the cursor loop below. Kept well under the
+// backend's hard cap (500, see productController.getProducts) so no
+// single request/response balloons back up to "the whole catalog at
+// once," while still being large enough that a ~5k-product branch only
+// takes a handful of round trips.
+const SERVER_FETCH_PAGE_SIZE = 250;
+
+// Module-level cache, OUTSIDE the component. Survives Products.jsx
+// unmounting/remounting when you navigate to ProductForm and back (React
+// state does not survive that; a module-scoped Map does, for the lifetime
+// of the page/tab). Keyed by `${businessId}:${branchId}` so switching
+// branches never mixes catalogs.
+// products: array, categories: array, laybyeIds: Set, loadedAt: number,
+// lastSyncAt: number — the newest product `updatedAt` we've seen for this
+// branch. Once set, every subsequent fetchProducts() call takes the DELTA
+// path (only products changed since lastSyncAt via /products/pull)
+// instead of refetching the whole catalog.
+const productsCache = new Map();
 
 function getStockStatus(product) {
   if (!product.trackInventory) return 'in_stock';
@@ -99,15 +117,66 @@ function LoadingBar({ visible }) {
   );
 }
 
+// ✅ FIXED — this is now a REAL filling bar, not an indeterminate sliding
+// segment. There's no reliable total item count up front (the backend
+// only reports hasMore per page, not a grand total), so the percentage
+// while loading is an estimate that grows with loadedCount and is capped
+// below 100 — reserving the final stretch to 100% for when the load
+// actually completes. On completion it snaps to 100% (green), holds
+// briefly, then fades out. This directly replaces the old version, which
+// just slid a segment back and forth forever and never reached 100%.
+function InlineLoadProgress({ loading, loadingMore, loadedCount }) {
+  const isActive = loading || loadingMore;
+  const [percent, setPercent] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (isActive) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      const estimated = loadedCount === 0
+        ? 8
+        : Math.min(92, 15 + Math.log2(loadedCount + 1) * 11);
+      setPercent(estimated);
+    } else if (visible) {
+      setPercent(100);
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, loadedCount]);
+
+  if (!visible) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
+      <div style={{ width: 70, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : loading ? 'Loading products…' : `Loading more… (${loadedCount})`}
+      </span>
+    </div>
+  );
+}
+
 export default function Products() {
   const navigate = useNavigate();
+  const location = useLocation();
   const {
     apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile, hasBackofficePermission,
-    // ✅ Shared, persisted "currently selected branch" — lives in AppContext
-    // now (not local state) so switching stores here is remembered across
-    // screens AND so useModuleGate/useModuleSubscriptions (which read the
-    // same selectedBranchId) immediately re-check module access for
-    // whichever branch is actually selected, instead of the login branch.
     selectedBranchId, setSelectedBranchId,
   } = useAppContext();
   const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
@@ -144,11 +213,12 @@ export default function Products() {
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoadingMoreProducts, setIsLoadingMoreProducts] = useState(false);
   const [error, setError] = useState(null);
 
   const [allProducts, setAllProducts] = useState([]);
   const [categories, setCategories] = useState([]);
-
+  const [laybyeProductIds, setLaybyeProductIds] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [statusPopup, setStatusPopup] = useState(false);
@@ -166,27 +236,229 @@ export default function Products() {
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
-  const fetchProducts = useCallback(async (isRefresh = false) => {
+  const cacheKey = businessId && selectedBranchId ? `${businessId}:${selectedBranchId}` : null;
+
+  // ✅ NEW — holds a savedProduct handed back via navigation state until
+  // it's actually been merged into the real (cached or freshly-fetched)
+  // list. Captured once, at construction time, from whatever
+  // location.state looked like on THIS mount — Products.jsx fully
+  // remounts on every navigation back from ProductForm, so this is safe
+  // and avoids depending on a stale closure over location.state.
+  const pendingSavedProductRef = useRef(location.state?.savedProduct || null);
+
+  const writeCache = useCallback((patch) => {
+    if (!cacheKey) return;
+    const existing = productsCache.get(cacheKey) || {};
+    productsCache.set(cacheKey, { ...existing, ...patch, loadedAt: Date.now() });
+  }, [cacheKey]);
+
+  // ✅ REWRITTEN — fetchProducts now has two modes, chosen automatically
+  // based on whether we already have a `lastSyncAt` cached for this branch:
+  //
+  //   1. FULL LOAD  — the very first time a branch is loaded (no cached
+  //      lastSyncAt yet). Walks /products with cursor pagination exactly
+  //      as before, and additionally tracks the newest `updatedAt` seen
+  //      across every product returned, storing it as lastSyncAt.
+  //
+  //   2. DELTA LOAD — every subsequent call (Refresh button, or the
+  //      background sync fired on remount/"focus"). Instead of refetching
+  //      the whole catalog, it calls /products/pull?since=<lastSyncAt>,
+  //      which returns ONLY products that changed (created/updated/
+  //      deleted) since that timestamp, and merges just those into the
+  //      existing list — upserting changed ones, dropping ones that came
+  //      back deleted. Untouched products are never re-fetched.
+  const fetchProducts = useCallback(async (isManualRefresh = false) => {
     if (!businessId || !selectedBranchId) return;
-    isRefresh ? setRefreshing(true) : setLoading(true);
+
+    const cached = productsCache.get(cacheKey);
+    const since = cached?.lastSyncAt || 0;
+    const isDelta = since > 0;
+
+    if (isManualRefresh) {
+      setRefreshing(true);
+    } else if (!isDelta) {
+      // Only show the full-page loading state for a genuine first load.
+      // A background delta sync (triggered silently on remount) shouldn't
+      // flash the big loading UI.
+      setLoading(true);
+    }
     setError(null);
+
     try {
-      const [productsRes, categoriesRes] = await Promise.all([
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=all`),
+      const [categoriesRes, laybyesRes] = await Promise.all([
         apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
+        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/laybyes/pull?since=0&includeCompleted=false`),
       ]);
-      setAllProducts(Array.isArray(productsRes) ? productsRes : []);
-      setCategories(Array.isArray(categoriesRes) ? categoriesRes : []);
+      const categoriesArr = Array.isArray(categoriesRes) ? categoriesRes : [];
+      setCategories(categoriesArr);
+
+      const ids = new Set();
+      (laybyesRes?.laybyes || []).forEach((lb) => {
+        (lb.items || []).forEach((it) => {
+          if (it.productId) ids.add(it.productId);
+        });
+      });
+      setLaybyeProductIds(ids);
+
+      if (!isDelta) {
+        // ─── FULL LOAD (first time for this branch) ───────────────────────
+        let cursor = null;
+        let hasMore = true;
+        let accumulated = [];
+        let firstBatch = true;
+        let maxUpdatedAt = 0;
+
+        while (hasMore) {
+          const params = new URLSearchParams();
+          params.append('status', 'all');
+          params.append('limit', String(SERVER_FETCH_PAGE_SIZE));
+          if (cursor) params.append('cursor', cursor);
+
+          const data = await apiFetch(
+            `/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`
+          );
+
+          accumulated = accumulated.concat(data.products || []);
+          (data.products || []).forEach((p) => {
+            if ((p.updatedAt || 0) > maxUpdatedAt) maxUpdatedAt = p.updatedAt;
+          });
+          hasMore = !!data.hasMore;
+          cursor = data.nextCursor || null;
+
+          const sorted = [...accumulated].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          setAllProducts(sorted);
+
+          if (firstBatch) {
+            setLoading(false);
+            firstBatch = false;
+          }
+          setIsLoadingMoreProducts(hasMore);
+
+          if (!cursor) break;
+        }
+
+        writeCache({
+          products: accumulated.sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+          categories: categoriesArr,
+          laybyeIds: ids,
+          lastSyncAt: maxUpdatedAt || Date.now(),
+        });
+      } else {
+        // ─── DELTA LOAD — only fetch products changed since last sync ─────
+        let sinceCursor = since;
+        let hasMore = true;
+        let changed = [];
+        let maxUpdatedAt = since;
+
+        while (hasMore) {
+          const params = new URLSearchParams();
+          params.append('since', String(sinceCursor));
+          params.append('includeDeleted', 'true');
+
+          const data = await apiFetch(
+            `/business/${businessId}/branches/${selectedBranchId}/products/pull?${params.toString()}`
+          );
+
+          changed = changed.concat(data.products || []);
+          (data.products || []).forEach((p) => {
+            if ((p.updatedAt || 0) > maxUpdatedAt) maxUpdatedAt = p.updatedAt;
+          });
+          hasMore = !!data.hasMore;
+          sinceCursor = data.nextSince || sinceCursor;
+
+          if (!hasMore) break;
+        }
+
+        if (changed.length > 0) {
+          setAllProducts((prev) => {
+            const map = new Map(prev.map((p) => [p.productId, p]));
+            changed.forEach((p) => {
+              if (p.status === 'deleted') {
+                map.delete(p.productId);
+              } else {
+                map.set(p.productId, p);
+              }
+            });
+            const merged = Array.from(map.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            writeCache({ products: merged, categories: categoriesArr, laybyeIds: ids, lastSyncAt: maxUpdatedAt });
+            return merged;
+          });
+        } else {
+          writeCache({ categories: categoriesArr, laybyeIds: ids, lastSyncAt: maxUpdatedAt });
+        }
+      }
     } catch (e) {
       console.error('Fetch products error:', e);
       setError('Failed to load products');
     } finally {
       setLoading(false);
       setRefreshing(false);
+      setIsLoadingMoreProducts(false);
     }
-  }, [businessId, selectedBranchId, apiFetch]);
+  }, [businessId, selectedBranchId, apiFetch, writeCache, cacheKey]);
 
-  useEffect(() => { fetchProducts(); }, [fetchProducts]);
+  // ✅ Combined mount effect. Order is always: (1) load the REAL base list
+  // — from cache if we have it, otherwise a full fetch — THEN (2) merge
+  // any pending savedProduct on top of that real list. When a cache
+  // already exists, we render it INSTANTLY (no network wait) and then fire
+  // a silent background delta sync (fetchProducts(false), which auto-picks
+  // the delta path since lastSyncAt is cached) to pick up anything that
+  // changed elsewhere — without ever refetching the whole catalog.
+  useEffect(() => {
+    if (!businessId || !selectedBranchId) return;
+
+    const key = `${businessId}:${selectedBranchId}`;
+    const cached = productsCache.get(key);
+
+    const applyPending = (list) => {
+      const saved = pendingSavedProductRef.current;
+      if (!saved) return list;
+      const idx = list.findIndex((p) => p.productId === saved.productId);
+      let next;
+      if (idx === -1) next = [...list, saved];
+      else {
+        next = [...list];
+        next[idx] = { ...next[idx], ...saved };
+      }
+      return next.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    };
+
+    // Clear the router's savedProduct state right away so browser
+    // back/forward never re-applies a stale merge.
+    if (pendingSavedProductRef.current) {
+      window.history.replaceState({}, document.title);
+    }
+
+    if (cached) {
+      const merged = applyPending(cached.products || []);
+      setAllProducts(merged);
+      setCategories(cached.categories || []);
+      setLaybyeProductIds(cached.laybyeIds || new Set());
+      setLoading(false);
+      setError(null);
+      if (pendingSavedProductRef.current) {
+        writeCache({ products: merged });
+        pendingSavedProductRef.current = null;
+      }
+      // ✅ Screen "focus" (remount) — sync only what changed since the
+      // last load instead of refetching the whole catalog. fetchProducts
+      // detects the cached lastSyncAt and automatically takes the delta
+      // path (silent — no full-page loading state).
+      fetchProducts(false);
+    } else {
+      fetchProducts().then(() => {
+        if (!pendingSavedProductRef.current) return;
+        setAllProducts((prev) => {
+          const merged = applyPending(prev);
+          writeCache({ products: merged });
+          return merged;
+        });
+        pendingSavedProductRef.current = null;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [businessId, selectedBranchId]);
+
   useEffect(() => { 
     setVisibleCount(PAGE_SIZE);
     setSelectedIds(new Set());
@@ -222,14 +494,12 @@ export default function Products() {
 
   const openDeleteModal = useCallback((ids, e) => {
     if (e) e.stopPropagation();
-    // ✅ Guard delete action
     if (!guardAction('inventory_mgmt')) return;
     setDeleteIds(Array.isArray(ids) ? ids : [ids]);
     setDeleteModalOpen(true);
   }, [guardAction]);
 
   const handleConfirmDelete = useCallback(async () => {
-    // ✅ Already guarded, but double-check
     if (!guardAction('inventory_mgmt')) {
       setDeleteModalOpen(false);
       return;
@@ -246,9 +516,13 @@ export default function Products() {
           }),
         })
       ));
+      setAllProducts((prev) => {
+        const next = prev.filter((p) => !deleteIds.includes(p.productId));
+        writeCache({ products: next });
+        return next;
+      });
       setSelectedIds(new Set());
       setDeleteModalOpen(false);
-      await fetchProducts();
     } catch (e) {
       console.error('Delete products error:', e);
       setError('Failed to delete products');
@@ -256,7 +530,7 @@ export default function Products() {
       setIsDeleting(false);
       setDeleteIds([]);
     }
-  }, [apiFetch, businessId, selectedBranchId, staffId, activeStaff, userProfile, fetchProducts, deleteIds, guardAction]);
+  }, [apiFetch, businessId, selectedBranchId, staffId, activeStaff, userProfile, deleteIds, guardAction, writeCache]);
 
   const handleToggleSelect = useCallback((id, e) => {
     if (e) e.stopPropagation();
@@ -282,14 +556,12 @@ export default function Products() {
 
   const handleProductClick = useCallback((productId) => {
     if (isSelectionMode) return;
-    if (!guardAction('inventory_mgmt')) return; // opens modal, blocks navigation to the edit screen
+    if (!guardAction('inventory_mgmt')) return;
     navigate(`/inventory/products/${productId}/edit`, { state: { branchId: selectedBranchId } });
   }, [navigate, selectedBranchId, isSelectionMode, guardAction]);
 
-  // ✅ Guarded export functions
   const handleExportCsv = useCallback(() => {
     if (isExporting || !filteredProducts.length) return;
-    // ✅ Guard export action
     if (!guardAction('inventory_mgmt')) return;
     setIsExporting(true);
     try {
@@ -302,7 +574,6 @@ export default function Products() {
 
   const handleExportPdf = useCallback(() => {
     if (isExporting || !filteredProducts.length) return;
-    // ✅ Guard export action
     if (!guardAction('inventory_mgmt')) return;
     setIsExporting(true);
 
@@ -389,7 +660,6 @@ export default function Products() {
     }
   }, [filteredProducts, selectedBranchName, baseCurrency, isExporting, canViewStock, guardAction]);
 
-  // ✅ Guarded template download
   const handleDownloadTemplate = useCallback(() => {
     if (!guardAction('inventory_mgmt')) return;
     downloadProductTemplate();
@@ -398,8 +668,7 @@ export default function Products() {
   const showStockColumn = canViewStock;
   const showLoadingBar = loading || refreshing;
 
-  // ─── Mobile Product Item ──────────────────────────────────────────────
-  const MobileProductItem = ({ product, isSelected, onToggleSelect, onPress, onDelete }) => {
+  const MobileProductItem = ({ product, isSelected, onToggleSelect, onPress, onDelete, }) => {
     const stockStatus = getStockStatus(product);
     const statusStyle = getStockBadge(stockStatus);
     const isActive = product.status === 'active';
@@ -468,7 +737,23 @@ export default function Products() {
             <ImageIcon size={24} color="#CBD5E1" />
           )}
         </div>
-
+        {laybyeProductIds.has(product.productId) && (
+          <div style={{
+            position: 'absolute',
+            bottom: 8,
+            left: 12,
+            width: 16,
+            height: 16,
+            borderRadius: 8,
+            background: '#D97706',
+            border: '1.5px solid #fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <Package size={9} color="#fff" />
+          </div>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span
@@ -553,7 +838,16 @@ export default function Products() {
     );
   };
 
-  // ─── Desktop/Tablet View ─────────────────────────────────────────────
+  const renderLoadingMoreFooter = () => {
+    if (!isLoadingMoreProducts) return null;
+    return (
+      <div style={{ padding: '10px 16px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+        <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span>
+        <span style={{ fontSize: 12, color: '#94A3B8' }}>Loading more products…</span>
+      </div>
+    );
+  };
+
   if (!isMobile) {
     return (
       <>
@@ -615,6 +909,9 @@ export default function Products() {
               <input placeholder="Search by name, SKU or barcode" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
             </div>
+
+            <InlineLoadProgress loading={loading} loadingMore={isLoadingMoreProducts} loadedCount={allProducts.length} />
+
             <div style={{ position: 'relative' }}>
               <button className="reports-filter-btn" onClick={() => setStatusPopup(!statusPopup)}>
                 <Filter size={13} /> {STOCK_STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label}
@@ -722,8 +1019,15 @@ export default function Products() {
                               {p.imageUrl ? <img src={p.imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Package size={14} color="#CBD5E1" />}
                             </div>
                             <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{p.name}</div>
-                              {p.status !== 'active' && <div style={{ fontSize: 10, color: '#94A3B8' }}>Inactive</div>}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+  <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{p.name}</div>
+  {laybyeProductIds.has(p.productId) && (
+    <span style={{ fontSize: 9, fontWeight: 700, color: '#D97706', background: '#FEF3C7', padding: '1px 6px', borderRadius: 4 }}>
+      On Laybye
+    </span>
+  )}
+</div>
+{p.status !== 'active' && <div style={{ fontSize: 10, color: '#94A3B8' }}>Inactive</div>}
                             </div>
                           </div>
                         </td>
@@ -776,6 +1080,7 @@ export default function Products() {
                 </button>
               </div>
             )}
+            {renderLoadingMoreFooter()}
           </div>
 
           <ConfirmDeleteModal
@@ -809,7 +1114,6 @@ export default function Products() {
           )}
         </div>
 
-        {/* ✅ Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}
@@ -821,7 +1125,6 @@ export default function Products() {
     );
   }
 
-  // ─── Mobile List View ────────────────────────────────────────────────
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
@@ -844,12 +1147,13 @@ export default function Products() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 16px 12px' }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <div className="reports-search products-search" style={{ flex: 1, minWidth: 120 }}>
               <Search size={14} />
               <input placeholder="Search products..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
             </div>
+            <InlineLoadProgress loading={loading} loadingMore={isLoadingMoreProducts} loadedCount={allProducts.length} />
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button 
@@ -971,11 +1275,11 @@ export default function Products() {
                   </button>
                 </div>
               )}
+              {renderLoadingMoreFooter()}
             </>
           )}
         </div>
 
-        {/* ✅ Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}

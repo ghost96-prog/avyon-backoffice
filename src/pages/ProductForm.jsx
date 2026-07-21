@@ -566,16 +566,35 @@ export default function ProductForm() {
           }
         }
 
-        if (imageFile && created?.productId) {
-          try {
-            await uploadProductImage(apiFetch, { businessId, branchId, productId: created.productId, staffId, file: imageFile });
-          } catch (imgErr) {
-            console.warn('Image upload failed:', imgErr.message);
-          }
-        }
+  // replace the create-path image block + final navigate at the end of the
+// `!isEdit` branch in handleSave
 
-        navigate('/inventory/products');
-        return;
+let uploadedImageUrl = null;
+if (imageFile && created?.productId) {
+  try {
+    const result = await uploadProductImage(apiFetch, { businessId, branchId, productId: created.productId, staffId, file: imageFile });
+    uploadedImageUrl = result?.imageUrl || null;
+  } catch (imgErr) {
+    console.warn('Image upload failed:', imgErr.message);
+  }
+}
+
+// ✅ CHANGED — was `navigate('/inventory/products'); return;` with no
+// data handed back, forcing Products.jsx to refetch the whole catalog to
+// pick up the one new row. Now hands back the exact created record via
+// navigation state so Products.jsx can merge it in place (see
+// handleProductSaved there) — same effect as the mobile CreateProductScreen
+// calling route.params.onCreated(mergedProduct).
+navigate('/inventory/products', {
+  state: {
+    savedProduct: {
+      ...created,
+      currentStock: finalStock,
+      imageUrl: uploadedImageUrl,
+    },
+  },
+});
+return;
       }
 
       const itemsPerUnitValue = selectedUnit?.requiresQuantityPerUnit ? parseInt(form.itemsPerUnit, 10) : 1;
@@ -678,17 +697,44 @@ export default function ProductForm() {
           console.warn('Stock movement failed:', movErr.message);
         }
       }
+let finalImageUrl = existingImageUrl;
+if (imageFile) {
+  try {
+    const result = await uploadProductImage(apiFetch, { businessId, branchId, productId, staffId, file: imageFile });
+    finalImageUrl = result?.imageUrl || finalImageUrl;
+  } catch (imgErr) {
+    console.warn('Image upload failed:', imgErr.message);
+  }
+}
 
-      if (imageFile) {
-        try {
-          await uploadProductImage(apiFetch, { businessId, branchId, productId, staffId, file: imageFile });
-        } catch (imgErr) {
-          console.warn('Image upload failed:', imgErr.message);
-        }
-      }
-
-      navigate('/inventory/products');
-
+// ✅ CHANGED — was a bare navigate() after PUT, forcing Products.jsx to
+// refetch everything to see the one edited row. Builds the same merged
+// record shape the mobile EditProductScreen hands to onSaved, and passes
+// it back via navigation state instead.
+navigate('/inventory/products', {
+  state: {
+    savedProduct: {
+      productId,
+      sku: payload.sku,
+      barcode: payload.barcode,
+      name: payload.name,
+      description: payload.description,
+      category: payload.category,
+      categoryId: payload.categoryId,
+      unit: payload.unit,
+      itemsPerUnit: payload.itemsPerUnit,
+      sellingPrice: payload.sellingPrice,
+      sellingCurrency: payload.sellingCurrency,
+      costPrice: payload.costPrice,
+      costCurrency: payload.costCurrency,
+      trackInventory: payload.trackInventory,
+      lowStockThreshold: payload.lowStockThreshold,
+      status: payload.status,
+      currentStock: finalStock,
+      imageUrl: finalImageUrl,
+    },
+  },
+});
     } catch (e) {
       console.error('Save error:', e);
       if (e.message?.includes('SKU') || e.status === 409) {

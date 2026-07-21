@@ -1,5 +1,5 @@
 // src/pages/Inventory/GRV.jsx
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Store, Plus, X, FileInput, Package, Trash2, Check, ChevronLeft,
   Search, FileText, Clock, User, MessageSquare, Truck, AlertTriangle, Sparkles,
@@ -142,6 +142,56 @@ const Toast = ({ message, type, onClose }) => {
     }}>
       <span>{message}</span>
       <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: style.text, fontSize: 18 }}>×</button>
+    </div>
+  );
+};
+
+// ✅ NEW — thin inline progress bar for background product loading.
+// Mirrors the same estimated-fill behavior used on the Products.jsx
+// screen: percent grows (log-scaled) with loadedCount while loading is
+// true, snaps to 100%/green on completion, then fades out shortly after.
+const InlineLoadProgress = ({ loading, loadedCount }) => {
+  const [percent, setPercent] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const hideTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setVisible(true);
+      if (hideTimeoutRef.current) {
+        clearTimeout(hideTimeoutRef.current);
+        hideTimeoutRef.current = null;
+      }
+      const estimated = loadedCount === 0
+        ? 8
+        : Math.min(92, 15 + Math.log2(loadedCount + 1) * 11);
+      setPercent(estimated);
+    } else if (visible) {
+      setPercent(100);
+      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
+    }
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadedCount]);
+
+  if (!visible) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 170 }}>
+      <div style={{ width: 70, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{
+          height: '100%',
+          width: `${percent}%`,
+          borderRadius: 3,
+          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
+          transition: 'width 0.35s ease, background 0.25s ease',
+        }} />
+      </div>
+      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
+        {percent >= 100 ? 'Loaded' : `Loading products… (${loadedCount})`}
+      </span>
     </div>
   );
 };
@@ -425,6 +475,9 @@ export default function GRV() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [newItemModalOpen, setNewItemModalOpen] = useState(false);
   const [newItemDraft, setNewItemDraft] = useState(emptyNewItemDraft);
+  // ✅ NEW — drives the inline progress bar while the product picker loads
+  const [createProductsLoading, setCreateProductsLoading] = useState(false);
+  const [createProductsLoadedCount, setCreateProductsLoadedCount] = useState(0);
 
   const isStepComplete = (step) => {
     if (step === 1) return supplierName.trim().length > 0;
@@ -450,20 +503,53 @@ export default function GRV() {
     setView('create');
   };
 
+  // ✅ FIXED — /business/.../products now returns a paginated object
+  // ({ products, count, hasMore, nextCursor }), not a raw array. The old
+  // code did `Array.isArray(prodRes) ? prodRes : []`, which was ALWAYS
+  // false against that object, so createProducts silently stayed empty
+  // and the product picker showed nothing. This now walks cursor
+  // pagination — same pattern as Products.jsx / InventoryScreen.js — so
+  // the picker fills in page by page instead of trying to pull the whole
+  // (~5k item) catalog in a single request. createProductsLoading /
+  // createProductsLoadedCount feed the InlineLoadProgress bar below.
+  const GRV_PRODUCTS_PAGE_SIZE = 250;
+
   useEffect(() => {
     if (view !== 'create' || !businessId || !selectedBranchId) return;
+    let cancelled = false;
     (async () => {
+      setCreateProductsLoading(true);
+      setCreateProductsLoadedCount(0);
+      setCreateProducts([]);
       try {
-        const [prodRes, catRes] = await Promise.all([
-          apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=active`),
-          apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
-        ]);
-        setCreateProducts(Array.isArray(prodRes) ? prodRes : []);
-        setCreateCategories(Array.isArray(catRes) ? catRes : []);
+        const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+
+        let cursor = null;
+        let hasMore = true;
+        let accumulated = [];
+        while (hasMore && !cancelled) {
+          const params = new URLSearchParams();
+          params.append('status', 'active');
+          params.append('limit', String(GRV_PRODUCTS_PAGE_SIZE));
+          if (cursor) params.append('cursor', cursor);
+          const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+          accumulated = accumulated.concat(data.products || []);
+          hasMore = !!data.hasMore;
+          cursor = data.nextCursor || null;
+          if (!cancelled) {
+            setCreateProducts([...accumulated]);
+            setCreateProductsLoadedCount(accumulated.length);
+          }
+          if (!cursor) break;
+        }
       } catch (e) {
         console.error('Load products/categories for GRV error:', e);
+      } finally {
+        if (!cancelled) setCreateProductsLoading(false);
       }
     })();
+    return () => { cancelled = true; };
   }, [view, businessId, selectedBranchId, apiFetch]);
 
   const filteredCreateProducts = useMemo(() => {
@@ -985,7 +1071,7 @@ export default function GRV() {
           alignItems: 'start' 
         }}>
           <div className="reports-list-card" style={{ padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
               <div className="reports-search" style={{ flex: 1, minWidth: '150px' }}>
                 <Search size={14} />
                 <input placeholder="Search products or SKU" value={createSearch} onChange={(e) => setCreateSearch(e.target.value)} />
@@ -994,6 +1080,7 @@ export default function GRV() {
                 <option value="All">All Categories</option>
                 {createCategories.map((c) => <option key={c.categoryId} value={c.name}>{c.name}</option>)}
               </select>
+              <InlineLoadProgress loading={createProductsLoading} loadedCount={createProductsLoadedCount} />
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
@@ -1050,7 +1137,7 @@ export default function GRV() {
                     );
                   })}
                   {filteredCreateProducts.length === 0 && (
-                    <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>No products found</td></tr>
+                    <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>{createProductsLoading ? 'Loading products…' : 'No products found'}</td></tr>
                   )}
                 </tbody>
               </table>
