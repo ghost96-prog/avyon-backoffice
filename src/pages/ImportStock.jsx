@@ -516,7 +516,7 @@ export default function ImportStock() {
     // ✅ Guard: Check if user has inventory management module access
     if (!guardAction('inventory_mgmt')) return;
     if (!canImport) return;
-    
+
     setImporting(true);
     setImportResults(null);
     const results = [];
@@ -576,8 +576,8 @@ export default function ImportStock() {
             <h2>Access Denied</h2>
             <p>You need the Inventory Management module to import stock for <strong>{branchName}</strong>.</p>
             <p className="reports-access-denied-sub">Contact your administrator to subscribe.</p>
-            <button 
-              className="reports-access-denied-btn" 
+            <button
+              className="reports-access-denied-btn"
               onClick={() => {
                 // ✅ Open the subscription modal instead of going back
                 guardAction('inventory_mgmt');
@@ -639,7 +639,17 @@ export default function ImportStock() {
         </div>
 
         {/* ─── Toolbar ─────────────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0', alignItems: 'center' }}>
+        {/* ✅ CHANGED: sticky, and now also hosts the Import button + a compact
+            results summary once a file is loaded. These used to sit at the
+            very bottom of the page, below the entire row-preview table — with
+            a large CSV (thousands of rows) that meant scrolling past all of
+            them just to hit Import or see whether it succeeded. Both now live
+            here, next to Download Template / Export / Refresh, and stay
+            pinned to the top of the viewport while the table below scrolls. */}
+        <div style={{
+          display: 'flex', gap: 10, flexWrap: 'wrap', margin: '16px 0', alignItems: 'center',
+          position: 'sticky', top: 0, zIndex: 5, background: '#fff', padding: '10px 0',
+        }}>
           <button onClick={() => {
             if (!guardAction('inventory_mgmt')) return;
             downloadProductTemplate();
@@ -662,6 +672,38 @@ export default function ImportStock() {
             <RefreshCw size={15} className={loadingProducts ? 'animate-spin' : ''} /> Refresh Product List
           </button>
           <InlineLoadProgress loading={loadingProducts} loadedCount={productsLoadingCount} />
+
+          {/* ✅ NEW — Import button + compact results, moved up from the
+              bottom of the page so they're always reachable. */}
+          {fileName && (
+            <>
+              <div style={{ width: 1, height: 24, background: '#E2E8F0', margin: '0 2px' }} />
+              <button
+                onClick={handleImport}
+                disabled={!canImport}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 13, cursor: canImport ? 'pointer' : 'not-allowed', opacity: canImport ? 1 : 0.5 }}
+              >
+                {importing ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
+                {importing ? `Importing ${importProgress.current}/${importProgress.total}...` : `Import ${rowsToImport.length} Product${rowsToImport.length === 1 ? '' : 's'}`}
+              </button>
+              {importing && (
+                <span style={{ fontSize: 12, color: '#64748B' }}>Processing: {importProgress.label}</span>
+              )}
+              {importResults && !importing && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: failCount ? '#B45309' : '#16A34A' }}>
+                  <CheckCircle2 size={14} /> {successCount} succeeded{failCount > 0 ? `, ${failCount} failed` : ''}
+                  {failCount > 0 && (
+                    <button onClick={handleDownloadFailedRows} style={{ marginLeft: 4, padding: '3px 10px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}>
+                      Download Failed Rows
+                    </button>
+                  )}
+                  <button onClick={() => navigate('/inventory/products')} style={{ marginLeft: 2, padding: '3px 10px', borderRadius: 6, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 600, fontSize: 11, cursor: 'pointer' }}>
+                    Back to Products
+                  </button>
+                </span>
+              )}
+            </>
+          )}
         </div>
 
         {/* ─── Dropzone ────────────────────────────────────────────────────────── */}
@@ -806,48 +848,20 @@ export default function ImportStock() {
               </table>
             </div>
 
-            {/* ─── Import controls ────────────────────────────────────────────── */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-              <button
-                onClick={handleImport}
-                disabled={!canImport}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 22px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 14, cursor: canImport ? 'pointer' : 'not-allowed', opacity: canImport ? 1 : 0.5 }}
-              >
-                {importing ? <Loader2 size={16} className="animate-spin" /> : <UploadCloud size={16} />}
-                {importing ? `Importing ${importProgress.current}/${importProgress.total}...` : `Import ${rowsToImport.length} Product${rowsToImport.length === 1 ? '' : 's'}`}
-              </button>
-              {importing && (
-                <span style={{ fontSize: 12, color: '#64748B' }}>Processing: {importProgress.label}</span>
-              )}
-            </div>
-
-            {/* ─── Results ─────────────────────────────────────────────────────── */}
-            {importResults && (
+            {/* ─── Results detail (failures only — the summary + retry/download
+                 controls now live in the sticky toolbar above; this panel is
+                 just the per-row failure breakdown for anyone who wants it) ── */}
+            {importResults && failCount > 0 && (
               <div className="reports-list-card" style={{ padding: 16, marginBottom: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                  <CheckCircle2 size={20} color="#16A34A" />
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    Import complete — {successCount} succeeded, {failCount} failed
-                  </div>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: '#EF4444' }}>
+                  Failed rows ({failCount})
                 </div>
-                {failCount > 0 && (
-                  <>
-                    <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #FEE2E2', borderRadius: 8, marginBottom: 10 }}>
-                      {importResults.filter((r) => !r.success).map((r, i) => (
-                        <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid #FEF2F2', fontSize: 12 }}>
-                          <strong>{r.row.sku}</strong> — {r.row.name}: <span style={{ color: '#EF4444' }}>{r.error}</span>
-                        </div>
-                      ))}
+                <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #FEE2E2', borderRadius: 8 }}>
+                  {importResults.filter((r) => !r.success).map((r, i) => (
+                    <div key={i} style={{ padding: '8px 12px', borderBottom: '1px solid #FEF2F2', fontSize: 12 }}>
+                      <strong>{r.row.sku}</strong> — {r.row.name}: <span style={{ color: '#EF4444' }}>{r.error}</span>
                     </div>
-                    <button onClick={handleDownloadFailedRows} style={{ padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' }}>
-                      Download Failed Rows
-                    </button>
-                  </>
-                )}
-                <div style={{ marginTop: 12 }}>
-                  <button onClick={() => navigate('/inventory/products')} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                    Back to Products
-                  </button>
+                  ))}
                 </div>
               </div>
             )}

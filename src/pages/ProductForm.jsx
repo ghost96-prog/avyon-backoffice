@@ -123,42 +123,18 @@ export default function ProductForm() {
   const selectedUnit = UNITS.find((u) => u.value === form.unit) || UNITS[0];
   const isPackOrBox = selectedUnit?.requiresQuantityPerUnit;
 
-  const getHighestSKU = useCallback(async () => {
-    if (!businessId || !branchId) return 10000;
-    try {
-      const products = await apiFetch(`/business/${businessId}/branches/${branchId}/products?status=all`);
-      let highest = 10000;
-      if (Array.isArray(products)) {
-        products.forEach((p) => {
-          if (p.sku) {
-            const skuNum = parseInt(p.sku, 10);
-            if (!isNaN(skuNum) && skuNum > highest) {
-              highest = skuNum;
-            }
-          }
-        });
-      }
-      return highest;
-    } catch (error) {
-      console.error('Error getting highest SKU:', error);
-      return 10000;
-    }
-  }, [businessId, branchId, apiFetch]);
-
-  const generateNextSKU = useCallback(async () => {
-    setLoadingSku(true);
-    try {
-      const highest = await getHighestSKU();
-      const next = highest + 1;
-      setField('sku', String(next));
-    } catch (error) {
-      console.error('Error generating SKU:', error);
-      setField('sku', String(Date.now()).slice(-6));
-    } finally {
-      setLoadingSku(false);
-    }
-  }, [getHighestSKU]);
-
+const generateNextSKU = useCallback(async () => {
+  setLoadingSku(true);
+  try {
+    const res = await apiFetch(`/business/${businessId}/branches/${branchId}/products/next-sku`);
+    setField('sku', res.sku);
+  } catch (error) {
+    console.error('Error generating SKU:', error);
+    setField('sku', String(Date.now()).slice(-6));
+  } finally {
+    setLoadingSku(false);
+  }
+}, [apiFetch, businessId, branchId]);
   useEffect(() => {
     if (businessId && branchId && !isEdit) {
       generateNextSKU();

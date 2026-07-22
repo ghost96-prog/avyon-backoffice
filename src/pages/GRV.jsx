@@ -22,36 +22,10 @@ function fmtDateTime(ts) {
   if (!ts) return '—';
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
-
-// ─── GET HIGHEST SKU FROM SERVER ──────────────────────────────
-async function getHighestSKU(apiFetch, businessId, branchId) {
-  if (!businessId || !branchId) return 10000;
-  try {
-    const products = await apiFetch(`/business/${businessId}/branches/${branchId}/products?status=all`);
-    
-    let highest = 10000;
-    if (Array.isArray(products)) {
-      products.forEach((p) => {
-        if (p.sku) {
-          const skuNum = parseInt(p.sku, 10);
-          if (!isNaN(skuNum) && skuNum > highest) {
-            highest = skuNum;
-          }
-        }
-      });
-    }
-    return highest;
-  } catch (error) {
-    console.error('Error getting highest SKU:', error);
-    return 10000;
-  }
-}
-
-// ─── GENERATE NEXT SKU ──────────────────────────────────────────
 async function generateNextSKU(apiFetch, businessId, branchId) {
   try {
-    const highest = await getHighestSKU(apiFetch, businessId, branchId);
-    return String(highest + 1);
+    const res = await apiFetch(`/business/${businessId}/branches/${branchId}/products/next-sku`);
+    return res.sku;
   } catch (error) {
     console.error('Error generating SKU:', error);
     return String(Date.now()).slice(-6);
