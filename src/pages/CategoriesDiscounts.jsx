@@ -82,9 +82,6 @@ export default function CategoriesDiscounts() {
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // ✅ Product counts for categories
-  const [productCounts, setProductCounts] = useState({});
-  const [loadingCounts, setLoadingCounts] = useState(false);
 
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
@@ -104,59 +101,27 @@ export default function CategoriesDiscounts() {
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
   // ── Fetch categories with product counts ──────────────────────────────
-  const fetchData = useCallback(async () => {
-    if (!businessId || !selectedBranchId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [catRes, discRes] = await Promise.all([
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/discounts`),
-      ]);
-      
-      const categoriesData = Array.isArray(catRes) ? catRes : [];
-      setCategories(categoriesData);
-      setDiscounts(Array.isArray(discRes) ? discRes : []);
-      
-      // ✅ Fetch product counts for each category
-      await fetchProductCounts(categoriesData);
-    } catch (e) {
-      console.error('Fetch categories/discounts error:', e);
-      setError('Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  }, [apiFetch, businessId, selectedBranchId]);
+const fetchData = useCallback(async () => {
+  if (!businessId || !selectedBranchId) return;
+  setLoading(true);
+  setError(null);
+  try {
+    const [catRes, discRes] = await Promise.all([
+      apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`),
+      apiFetch(`/business/${businessId}/branches/${selectedBranchId}/discounts`),
+    ]);
 
-  // ── Fetch product counts per category ──────────────────────────────────
-  const fetchProductCounts = useCallback(async (categoriesData) => {
-    if (!businessId || !selectedBranchId || !categoriesData.length) {
-      setProductCounts({});
-      return;
-    }
-    
-    setLoadingCounts(true);
-    try {
-      // Fetch all products for this branch
-      const products = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?status=all`);
-      const productsArray = Array.isArray(products) ? products : [];
-      
-      // Count products by category name (since categoryId might not be set)
-      const counts = {};
-      categoriesData.forEach(cat => {
-        // Count by category name (matches the category field in product)
-        const count = productsArray.filter(p => p.category === cat.name && p.status !== 'deleted').length;
-        counts[cat.categoryId || cat.id] = count;
-      });
-      
-      setProductCounts(counts);
-    } catch (e) {
-      console.error('Error fetching product counts:', e);
-      // Don't set error here, just show 0 counts
-    } finally {
-      setLoadingCounts(false);
-    }
-  }, [apiFetch, businessId, selectedBranchId]);
+    // Each category now arrives with productCount already computed by
+    // the backend — no separate product fetch or client-side counting.
+    setCategories(Array.isArray(catRes) ? catRes : []);
+    setDiscounts(Array.isArray(discRes) ? discRes : []);
+  } catch (e) {
+    console.error('Fetch categories/discounts error:', e);
+    setError('Failed to load data');
+  } finally {
+    setLoading(false);
+  }
+}, [apiFetch, businessId, selectedBranchId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -317,8 +282,7 @@ export default function CategoriesDiscounts() {
   }, []);
 
   // ─── Show loading bar ──────────────────────────────────────────────────
-  const showLoadingBar = loading || catSaving || discSaving || isDeleting || loadingCounts;
-
+const showLoadingBar = loading || catSaving || discSaving || isDeleting;
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
@@ -380,10 +344,9 @@ export default function CategoriesDiscounts() {
                 <div className="reports-empty-sub">Create your first category to organize products</div>
               </div>
             ) : (
-              filteredCategories.map((c) => {
-                const count = productCounts[c.categoryId || c.id] || 0;
-                const isNoCategory = c.name === 'No Category';
-                
+      filteredCategories.map((c) => {
+  const count = c.productCount || 0;
+  const isNoCategory = c.name === 'No Category';
                 return (
                   <div 
                     key={c.categoryId || c.id} 
@@ -442,48 +405,31 @@ export default function CategoriesDiscounts() {
                         >
                           {c.name}
                         </div>
-                        <div 
-                          className="category-item-count"
-                          style={{ 
-                            fontSize: 12, 
-                            color: '#94A3B8',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 4,
-                          }}
-                        >
-                          {loadingCounts ? (
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ 
-                                display: 'inline-block', 
-                                width: 12, 
-                                height: 12, 
-                                border: '2px solid #E2E8F0', 
-                                borderTopColor: '#0891B2', 
-                                borderRadius: '50%',
-                                animation: 'spin 0.8s linear infinite',
-                              }} />
-                              Loading...
-                            </span>
-                          ) : (
-                            <>
-                              <span>{count}</span>
-                              <span>product{count !== 1 ? 's' : ''}</span>
-                              {isNoCategory && (
-                                <span style={{ 
-                                  fontSize: 10, 
-                                  color: '#94A3B8', 
-                                  background: '#F1F5F9', 
-                                  padding: '1px 8px', 
-                                  borderRadius: 4,
-                                  marginLeft: 4,
-                                }}>
-                                  Default
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </div>
+                      <div 
+  className="category-item-count"
+  style={{ 
+    fontSize: 12, 
+    color: '#94A3B8',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  }}
+>
+  <span>{count}</span>
+  <span>product{count !== 1 ? 's' : ''}</span>
+  {isNoCategory && (
+    <span style={{ 
+      fontSize: 10, 
+      color: '#94A3B8', 
+      background: '#F1F5F9', 
+      padding: '1px 8px', 
+      borderRadius: 4,
+      marginLeft: 4,
+    }}>
+      Default
+    </span>
+  )}
+</div>
                       </div>
                     </div>
 

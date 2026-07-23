@@ -112,6 +112,46 @@ const InlineLoadProgress = ({ loading, loadedCount }) => {
   );
 };
 
+// ✅ NEW — reveals items from a (potentially long) array in small batches as
+// the user scrolls, instead of rendering the whole array into the DOM in
+// one go. A sentinel element is placed after the last rendered row; when it
+// enters the viewport of the nearest `[data-lazy-scroll-root]` ancestor,
+// another `step` items are revealed. `resetKey` should change whenever the
+// underlying filtered list changes shape (new search term, new category,
+// etc.) so the picker snaps back to the top of the list instead of keeping
+// a stale scroll position/reveal count.
+function useIncrementalReveal(totalLength, step = 40, resetKey) {
+  const [visibleCount, setVisibleCount] = useState(step);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    setVisibleCount(step);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return undefined;
+    const root = node.closest('[data-lazy-scroll-root]') || null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((c) => Math.min(c + step, totalLength || c));
+        }
+      },
+      { root, rootMargin: '150px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [totalLength, step]);
+
+  return {
+    visibleCount: Math.min(visibleCount, totalLength || 0),
+    sentinelRef,
+    isDone: visibleCount >= (totalLength || 0),
+  };
+}
+
 // Confirmation modal for completing a stock take
 const ConfirmCompleteModal = ({ itemCount, uncountedCount, onCancel, onConfirm, completing }) => (
   <div style={{
@@ -421,15 +461,6 @@ export default function StockTake() {
   // the picker fills in page by page instead of pulling the whole
   // (~5k item) catalog in a single request. createProductsLoading /
   // createProductsLoadedCount feed the InlineLoadProgress bar below.
-// ✅ FIXED — /business/.../products now returns a paginated object
-// ({ products, count, hasMore, nextCursor }), not a raw array. The old
-// code did `Array.isArray(prodRes) ? prodRes.filter(...) : []`, which
-// was ALWAYS false against that object, so createProducts silently
-// stayed empty and the picker showed nothing. This now walks cursor
-// pagination — same pattern as Products.jsx / InventoryScreen.js — so
-// the picker fills in page by page instead of pulling the whole
-// (~5k item) catalog in a single request. createProductsLoading /
-// createProductsLoadedCount feed the InlineLoadProgress bar below.
 const STOCKTAKE_PRODUCTS_PAGE_SIZE = 250;
 
 useEffect(() => {
@@ -488,6 +519,18 @@ useEffect(() => {
     }
     return result;
   }, [createProducts, createCategoryFilter, productSearch]);
+
+  // ✅ NEW — the picker below used to render every entry in
+  // `filteredCreateProducts` (up to the whole ~5k-product catalog) into the
+  // DOM the moment it loaded. This reveals them 40 at a time as the user
+  // scrolls the picker, and resets to the top whenever the search term or
+  // category filter changes (so the list doesn't feel "stuck" showing a
+  // stale window into a different filter's results).
+  const productPickerReveal = useIncrementalReveal(
+    filteredCreateProducts.length,
+    40,
+    `${createCategoryFilter}|${productSearch}|${createProducts.length}`
+  );
 
   const toggleProduct = (productId) => {
     setSelectedProductIds((prev) => {
@@ -924,8 +967,14 @@ useEffect(() => {
                     <span style={{ fontSize: 12, color: '#64748B', marginLeft: 'auto', alignSelf: 'center' }}>{selectedProductIds.size} selected</span>
                   </div>
 
-                  <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 8 }}>
-                    {filteredCreateProducts.map((p) => (
+                  {/* ✅ CHANGED — data-lazy-scroll-root marks this as the
+                      IntersectionObserver's scroll container; rows are
+                      revealed 40 at a time via productPickerReveal as the
+                      user scrolls, with a visible "End of list" marker once
+                      everything's been shown (rather than rendering all
+                      matching products into the DOM immediately). */}
+                  <div data-lazy-scroll-root style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 8 }}>
+                    {filteredCreateProducts.slice(0, productPickerReveal.visibleCount).map((p) => (
                       <div key={p.productId} onClick={() => toggleProduct(p.productId)}
                         style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderBottom: '1px solid #F1F5F9', cursor: 'pointer', background: selectedProductIds.has(p.productId) ? '#EFF6FF' : '#fff' }}>
                         <input type="checkbox" checked={selectedProductIds.has(p.productId)} readOnly />
@@ -936,6 +985,16 @@ useEffect(() => {
                     {filteredCreateProducts.length === 0 && (
                       <div style={{ padding: 20, textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>
                         {createProductsLoading ? 'Loading products…' : 'No products found'}
+                      </div>
+                    )}
+                    {filteredCreateProducts.length > 0 && !productPickerReveal.isDone && (
+                      <div ref={productPickerReveal.sentinelRef} style={{ padding: '10px 0', textAlign: 'center', fontSize: 11, color: '#94A3B8' }}>
+                        Loading more…
+                      </div>
+                    )}
+                    {filteredCreateProducts.length > 0 && productPickerReveal.isDone && (
+                      <div style={{ padding: '10px 0', textAlign: 'center', fontSize: 11, color: '#CBD5E1' }}>
+                        — End of list ({filteredCreateProducts.length} product{filteredCreateProducts.length !== 1 ? 's' : ''}) —
                       </div>
                     )}
                   </div>

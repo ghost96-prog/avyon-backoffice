@@ -328,8 +328,8 @@ export default function InventoryAnalytics() {
       {/* KPI row */}
       <div className="reports-stats-row">
         {[
-          { label: 'Inventory Cost Value', value: performance ? formatMoney(performance.inventoryValue.totalCostValue, baseCurrency) : '' },
           { label: 'Retail Value', value: performance ? formatMoney(performance.inventoryValue.totalRetailValue, baseCurrency) : '' },
+          { label: 'Inventory Cost Value', value: performance ? formatMoney(performance.inventoryValue.totalCostValue, baseCurrency) : '' },
           { label: 'Turnover Ratio', value: performance ? `${performance.periodMetrics.turnoverRatio.toFixed(2)}x` : '' },
           { label: 'GMROI', value: performance ? `${performance.periodMetrics.gmroi.toFixed(2)}x` : '' },
           { label: 'Low Stock', value: performance ? formatNumber(performance.stockHealth.lowStockCount) : '' },

@@ -81,6 +81,45 @@ function InlineLoadProgress({ loading, loadedCount }) {
   );
 }
 
+// ✅ NEW — reveals rows from a (potentially thousands-long) CSV import
+// preview in small batches as the user scrolls, instead of rendering every
+// row into the DOM the moment a file is parsed. A sentinel row is placed
+// after the last rendered row; when it enters the viewport of the nearest
+// `[data-lazy-scroll-root]` ancestor, another `step` rows are revealed.
+// `resetKey` should change whenever the underlying row set is replaced
+// wholesale (a new file is loaded) so the preview snaps back to the top.
+function useIncrementalReveal(totalLength, step = 60, resetKey) {
+  const [visibleCount, setVisibleCount] = useState(step);
+  const sentinelRef = useRef(null);
+
+  useEffect(() => {
+    setVisibleCount(step);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return undefined;
+    const root = node.closest('[data-lazy-scroll-root]') || null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((c) => Math.min(c + step, totalLength || c));
+        }
+      },
+      { root, rootMargin: '200px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [totalLength, step]);
+
+  return {
+    visibleCount: Math.min(visibleCount, totalLength || 0),
+    sentinelRef,
+    isDone: visibleCount >= (totalLength || 0),
+  };
+}
+
 export default function ImportStock() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -139,7 +178,11 @@ export default function ImportStock() {
   // (evaluateImportRow), so with it empty EVERY row in the CSV was treated
   // as brand-new, even ones that already existed. This now walks cursor
   // pagination — same pattern as StockTake.jsx / StockTransfers.jsx /
-  // InventoryValue.jsx — loading the catalog progressively.
+  // InventoryValue.jsx — loading the catalog progressively. Note this list
+  // is used only for matching (not rendered row-by-row), so it's still
+  // loaded to completion in the background rather than lazily — the
+  // "lazy load as you scroll" treatment below applies to the CSV preview
+  // table instead, which IS rendered row-by-row and can be much longer.
   const fetchBranchData = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
     setLoadingProducts(true);
@@ -335,6 +378,13 @@ export default function ImportStock() {
       return { ...row, _index: idx, action, targetProductId, errors };
     });
   }, [parsedRows, allProducts, duplicateSkuSet]);
+
+  // ✅ NEW — the preview table below used to render every row of the parsed
+  // CSV into the DOM immediately, which gets expensive fast on large
+  // imports (thousands of SKUs). This reveals rows 60 at a time as the user
+  // scrolls the table, resetting back to the top whenever a new file is
+  // loaded.
+  const importRowsReveal = useIncrementalReveal(evaluatedRows.length, 60, fileName);
 
   const summary = useMemo(() => {
     let creates = 0, updates = 0, errors = 0, excluded = 0;
@@ -773,7 +823,14 @@ export default function ImportStock() {
             )}
 
             {/* ─── Table preview ──────────────────────────────────────────────── */}
-            <div className="reports-list-card" style={{ overflowX: 'auto', marginBottom: 16 }}>
+            {/* ✅ CHANGED — added a fixed max-height + vertical scroll and
+                data-lazy-scroll-root so this becomes the IntersectionObserver's
+                scroll container. Rows are revealed 60 at a time via
+                importRowsReveal as the user scrolls, with an "End of list"
+                marker row once every parsed row has been shown, instead of
+                rendering the entire CSV (which can be thousands of rows)
+                into the DOM the moment it's parsed. */}
+            <div data-lazy-scroll-root className="reports-list-card" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 560, marginBottom: 16 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>
@@ -783,7 +840,7 @@ export default function ImportStock() {
                   </tr>
                 </thead>
                 <tbody>
-                  {evaluatedRows.map((row) => {
+                  {evaluatedRows.slice(0, importRowsReveal.visibleCount).map((row) => {
                     const excluded = excludedIndexes.has(row._index);
                     const unitDef = UNITS.find((u) => u.value === (row.unit || 'each').trim().toLowerCase());
                     return (
@@ -844,6 +901,20 @@ export default function ImportStock() {
                       </tr>
                     );
                   })}
+                  {evaluatedRows.length > 0 && !importRowsReveal.isDone && (
+                    <tr>
+                      <td colSpan={13} ref={importRowsReveal.sentinelRef} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: '#94A3B8' }}>
+                        Loading more rows…
+                      </td>
+                    </tr>
+                  )}
+                  {evaluatedRows.length > 0 && importRowsReveal.isDone && (
+                    <tr>
+                      <td colSpan={13} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: '#CBD5E1' }}>
+                        — End of list ({evaluatedRows.length} row{evaluatedRows.length !== 1 ? 's' : ''}) —
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

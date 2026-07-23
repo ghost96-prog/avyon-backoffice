@@ -315,6 +315,18 @@ const GRV_STATUS_CONFIG = {
   completed: { label: 'Completed', bg: '#DCFCE7', color: '#16A34A' },
 };
 
+// ✅ NEW — how many product rows we mount into the DOM at once for the
+// picker table. Independent of GRV_PRODUCTS_PAGE_SIZE below, which is the
+// NETWORK page size (how many products come back per API call). This is
+// the RENDER page size — even once thousands of products have loaded into
+// createProducts, only this many rows actually get put in the DOM,
+// growing as the user scrolls the table. Keeps the table snappy on large
+// catalogs regardless of how much data has already been fetched.
+const RENDER_PAGE_SIZE = 60;
+// Start loading the next slice this many px before the true bottom of the
+// scrollable table, so it feels seamless rather than a visible pop-in.
+const SCROLL_LOAD_THRESHOLD_PX = 160;
+
 export default function GRV() {
   const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile } = useAppContext();
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
@@ -452,6 +464,9 @@ export default function GRV() {
   // ✅ NEW — drives the inline progress bar while the product picker loads
   const [createProductsLoading, setCreateProductsLoading] = useState(false);
   const [createProductsLoadedCount, setCreateProductsLoadedCount] = useState(0);
+  // ✅ NEW — how many rows of the (already-loaded) product list are
+  // actually rendered right now. Grows as the user scrolls the table.
+  const [visibleProductCount, setVisibleProductCount] = useState(RENDER_PAGE_SIZE);
 
   const isStepComplete = (step) => {
     if (step === 1) return supplierName.trim().length > 0;
@@ -474,6 +489,7 @@ export default function GRV() {
     setError(null);
     setConfirmOpen(false);
     setNewItemModalOpen(false);
+    setVisibleProductCount(RENDER_PAGE_SIZE);
     setView('create');
   };
 
@@ -486,6 +502,11 @@ export default function GRV() {
   // the picker fills in page by page instead of trying to pull the whole
   // (~5k item) catalog in a single request. createProductsLoading /
   // createProductsLoadedCount feed the InlineLoadProgress bar below.
+  //
+  // ✅ NEW — this is purely the NETWORK-side pagination (how many products
+  // are fetched into memory). It's independent from visibleProductCount /
+  // RENDER_PAGE_SIZE above, which controls how many of those loaded
+  // products are actually rendered as table rows at once.
   const GRV_PRODUCTS_PAGE_SIZE = 250;
 
 useEffect(() => {
@@ -531,6 +552,7 @@ useEffect(() => {
   })();
   return () => { cancelled = true; };
 }, [view, businessId, selectedBranchId, apiFetch]);
+
   const filteredCreateProducts = useMemo(() => {
     let result = createProducts;
     if (createCategoryFilter !== 'All') result = result.filter((p) => p.category === createCategoryFilter);
@@ -540,6 +562,38 @@ useEffect(() => {
     }
     return result;
   }, [createProducts, createCategoryFilter, createSearch]);
+
+  // ✅ NEW — a new search/category filter changes WHICH rows should be
+  // visible, so the render window resets to the top. Reset does NOT
+  // depend on createProducts itself, since that array grows continuously
+  // as network pages arrive — resetting on every page landing would keep
+  // yanking the user back to the top of the table mid-scroll.
+  useEffect(() => {
+    setVisibleProductCount(RENDER_PAGE_SIZE);
+  }, [createSearch, createCategoryFilter]);
+
+  // ✅ NEW — only the first `visibleProductCount` filtered rows are
+  // actually rendered into the table. This is what keeps the DOM light
+  // even once createProducts holds thousands of items.
+  const renderedCreateProducts = useMemo(
+    () => filteredCreateProducts.slice(0, visibleProductCount),
+    [filteredCreateProducts, visibleProductCount]
+  );
+
+  // ✅ NEW — grows the render window as the user scrolls near the bottom
+  // of the table's scroll container. Independent of network pagination —
+  // this only ever reveals rows that are already sitting in
+  // filteredCreateProducts; it never triggers a new API call itself.
+  const handleProductTableScroll = useCallback((e) => {
+    const el = e.currentTarget;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < SCROLL_LOAD_THRESHOLD_PX) {
+      setVisibleProductCount((prev) => {
+        if (prev >= filteredCreateProducts.length) return prev;
+        return Math.min(prev + RENDER_PAGE_SIZE, filteredCreateProducts.length);
+      });
+    }
+  }, [filteredCreateProducts.length]);
 
   const cartItems = useMemo(() => Object.values(cart), [cart]);
   const cartCount = cartItems.filter((item) => Number(item.quantityReceived) > 0).length;
@@ -1075,10 +1129,17 @@ useEffect(() => {
               <span style={{ fontSize: 12, color: '#64748B', marginLeft: 'auto', alignSelf: 'center' }}>{cartCount} selected</span>
             </div>
 
-            <div style={{ overflowX: 'auto' }}>
+            {/* ✅ NEW — fixed-height, scrollable table body. onScroll grows
+                visibleProductCount as the user nears the bottom, so only a
+                bounded number of <tr> rows are ever mounted regardless of
+                how many products have loaded into createProducts. */}
+            <div
+              style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 460, border: '1px solid #F1F5F9', borderRadius: 8 }}
+              onScroll={handleProductTableScroll}
+            >
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '400px' }}>
                 <thead>
-                  <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
+                  <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left', position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
                     <th style={{ padding: '8px 6px', width: 30 }}>
                       <input
                         type="checkbox"
@@ -1096,7 +1157,7 @@ useEffect(() => {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCreateProducts.map((p) => {
+                  {renderedCreateProducts.map((p) => {
                     const inCart = !!cart[`p:${p.productId}`];
                     return (
                       <tr key={p.productId} onClick={() => toggleCart(p)} style={{
@@ -1117,6 +1178,13 @@ useEffect(() => {
                   })}
                   {filteredCreateProducts.length === 0 && (
                     <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>{createProductsLoading ? 'Loading products…' : 'No products found'}</td></tr>
+                  )}
+                  {visibleProductCount < filteredCreateProducts.length && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: '10px 6px', textAlign: 'center', color: '#94A3B8', fontSize: 12 }}>
+                        Scroll for more — showing {renderedCreateProducts.length} of {filteredCreateProducts.length}
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>

@@ -143,6 +143,46 @@ const InlineLoadProgress = ({ loading, loadedCount }) => {
   );
 };
 
+// ✅ NEW — reveals items from a (potentially long) array in small batches as
+// the user scrolls, instead of rendering the whole array into the DOM in
+// one go. A sentinel element is placed after the last rendered row; when it
+// enters the viewport of the nearest `[data-lazy-scroll-root]` ancestor,
+// another `step` items are revealed. `resetKey` should change whenever the
+// underlying filtered list changes shape (new search term, new category,
+// new source store, etc.) so the picker snaps back to the top of the list
+// instead of keeping a stale scroll position/reveal count.
+function useIncrementalReveal(totalLength, step = 40, resetKey) {
+  const [visibleCount, setVisibleCount] = useState(step);
+  const sentinelRef = React.useRef(null);
+
+  useEffect(() => {
+    setVisibleCount(step);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return undefined;
+    const root = node.closest('[data-lazy-scroll-root]') || null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setVisibleCount((c) => Math.min(c + step, totalLength || c));
+        }
+      },
+      { root, rootMargin: '150px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [totalLength, step]);
+
+  return {
+    visibleCount: Math.min(visibleCount, totalLength || 0),
+    sentinelRef,
+    isDone: visibleCount >= (totalLength || 0),
+  };
+}
+
 // Accept/Reject Modal
 const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch, businessId }) => {
   const [rejectReason, setRejectReason] = useState('');
@@ -163,6 +203,13 @@ const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch,
   // walks cursor pagination — same pattern as the create-flow loader below
   // and StockTake.jsx / GRV.jsx — so large destination catalogs load
   // progressively instead of one giant request.
+  //
+  // Note: destination products are rendered as native <select><option>
+  // lists below (one per incoming line item), not as a long custom-rendered
+  // row list, so there's no DOM-dump problem here the way there is for the
+  // create-flow table — the browser's own <select> handles large option
+  // counts fine. Lazy-reveal-on-scroll is applied to the create-flow table
+  // instead (see filteredCreateProducts / transferProductReveal below).
 useEffect(() => {
   if (!transfer?.toBranchId || !businessId) return;
   let cancelled = false;
@@ -907,6 +954,17 @@ export default function StockTransfers() {
     return result;
   }, [createProducts, createCategoryFilter, createSearch]);
 
+  // ✅ NEW — the source-store product table below used to render every
+  // entry in `filteredCreateProducts` (up to the whole catalog) into the
+  // DOM at once. This reveals rows 40 at a time as the user scrolls the
+  // table, and resets to the top whenever the search term, category
+  // filter, or source store changes.
+  const transferProductReveal = useIncrementalReveal(
+    filteredCreateProducts.length,
+    40,
+    `${fromBranchId}|${createCategoryFilter}|${createSearch}|${createProducts.length}`
+  );
+
   const toggleCart = (product) => {
     if (!cart[product.productId] && (product.currentStock ?? 0) <= 0) {
       showToast(`Cannot add ${product.name} - no stock available`, 'error');
@@ -1207,7 +1265,13 @@ export default function StockTransfers() {
               <span style={{ fontSize: 12, color: '#64748B', marginLeft: 'auto', alignSelf: 'center' }}>{cartCount} selected</span>
             </div>
 
-            <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            {/* ✅ CHANGED — added a fixed max-height + vertical scroll and
+                data-lazy-scroll-root so this becomes the IntersectionObserver's
+                scroll container. Rows are revealed 40 at a time via
+                transferProductReveal as the user scrolls, with an "End of
+                list" marker row once everything's been shown, instead of
+                rendering every filtered product into the DOM immediately. */}
+            <div data-lazy-scroll-root style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 420, WebkitOverflowScrolling: 'touch' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '400px' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
@@ -1229,7 +1293,7 @@ export default function StockTransfers() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredCreateProducts.map((p) => {
+                  {filteredCreateProducts.slice(0, transferProductReveal.visibleCount).map((p) => {
                     const inCart = !!cart[p.productId];
                     const hasStock = (p.currentStock ?? 0) > 0;
                     const stock = p.currentStock ?? 0;
@@ -1262,6 +1326,20 @@ export default function StockTransfers() {
                     <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94A3B8' }}>
                       {createProductsLoading ? 'Loading products…' : 'No products found'}
                     </td></tr>
+                  )}
+                  {filteredCreateProducts.length > 0 && !transferProductReveal.isDone && (
+                    <tr>
+                      <td colSpan={4} ref={transferProductReveal.sentinelRef} style={{ padding: '10px 6px', textAlign: 'center', fontSize: 11, color: '#94A3B8' }}>
+                        Loading more…
+                      </td>
+                    </tr>
+                  )}
+                  {filteredCreateProducts.length > 0 && transferProductReveal.isDone && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '10px 6px', textAlign: 'center', fontSize: 11, color: '#CBD5E1' }}>
+                        — End of list ({filteredCreateProducts.length} product{filteredCreateProducts.length !== 1 ? 's' : ''}) —
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
