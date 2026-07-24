@@ -1,0 +1,59 @@
+/* src/components/community/AutoplayVideo.css */
+.autoplay-video {
+  position: relative;
+  width: 100%;
+  background: #000;
+  cursor: pointer;
+  overflow: hidden;
+  line-height: 0;
+}
+
+.autoplay-video video {
+  width: 100%;
+  max-height: 420px;
+  display: block;
+  object-fit: contain;
+  background: #000;
+}
+
+.autoplay-video--compact {
+  border-radius: 12px;
+  max-width: 220px;
+}
+.autoplay-video--compact video {
+  max-height: 220px;
+  border-radius: 12px;
+}
+
+.autoplay-video-playbtn {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.autoplay-video-mute {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.autoplay-video--compact .autoplay-video-mute {
+  width: 22px;
+  height: 22px;
+  bottom: 6px;
+  right: 6px;
+}

@@ -1,0 +1,246 @@
+/* src/components/community/PostCard.css */
+.post-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.post-card--deleting {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.post-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.post-card-header-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.post-card-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.post-card-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.post-card-author {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.post-card-meta {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+}
+
+.post-card-body {
+  font-size: 14px;
+  color: var(--ink);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  margin-bottom: 10px;
+}
+
+.post-card-media {
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+  background: var(--surface-sunken);
+  cursor: pointer;
+}
+.post-card-media img,
+.post-card-media video {
+  width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  display: block;
+}
+
+.post-card-stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink-faint);
+  padding-bottom: 8px;
+}
+
+.post-card-like-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #e0455f;
+}
+
+.post-card-comment-count {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+.post-card-comment-count:hover {
+  text-decoration: underline;
+}
+
+.post-card-actions {
+  display: flex;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.post-card-action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  border-radius: var(--r-sm);
+}
+.post-card-action-btn:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+.post-card-action-btn.is-liked {
+  color: #e0455f;
+}
+
+.post-card-comments {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.comment-row {
+  display: flex;
+  gap: 8px;
+}
+
+.comment-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  font-weight: 700;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.comment-body {
+  min-width: 0;
+}
+
+.comment-bubble-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.comment-bubble {
+  background: var(--surface-sunken);
+  border-radius: 14px;
+  padding: 7px 12px;
+  display: inline-block;
+}
+
+.comment-author {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-right: 6px;
+}
+
+.comment-text {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.comment-media {
+  margin-top: 6px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  max-width: 220px;
+  cursor: pointer;
+  background: var(--surface-sunken);
+}
+.comment-media img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  display: block;
+}
+
+.comment-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: 3px;
+  padding-left: 12px;
+}
+
+.comment-like-btn {
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+.comment-like-btn.is-liked {
+  color: #e0455f;
+}
+
+/* ── Responsiveness ─────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .post-card {
+    padding: 12px 14px;
+    border-radius: 10px;
+  }
+  .post-card-media img,
+  .post-card-media video {
+    max-height: 320px;
+  }
+  .comment-media {
+    max-width: 160px;
+  }
+}

@@ -1,0 +1,128 @@
+/* src/components/community/CommentComposer.css */
+.comment-composer-wrap {
+  margin-top: 2px;
+}
+
+.comment-composer-media-preview {
+  position: relative;
+  max-width: 160px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.comment-composer-media-preview img,
+.comment-composer-media-preview video {
+  width: 100%;
+  max-height: 140px;
+  object-fit: cover;
+  display: block;
+  background: var(--surface-sunken);
+}
+.comment-composer-media-remove {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(22, 32, 43, 0.65);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.comment-composer-error {
+  font-size: 11.5px;
+  color: var(--danger);
+  margin-bottom: 6px;
+}
+
+.comment-composer-hint {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+.comment-composer-edit-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.comment-composer-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--ink-soft);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.comment-composer-save {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.comment-composer-save:disabled,
+.comment-composer-cancel:disabled {
+  opacity: 0.6;
+}
+
+.comment-composer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.comment-composer-attach-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.comment-composer-attach-btn:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.comment-composer input[type="text"] {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  outline: none;
+}
+.comment-composer input[type="text"]:focus {
+  border-color: var(--accent);
+}
+
+.comment-composer button[type="submit"] {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.comment-composer button[type="submit"]:disabled {
+  opacity: 0.5;
+}

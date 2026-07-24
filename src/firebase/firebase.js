@@ -1,10 +1,9 @@
 // src/firebase/firebase.js
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage"; // ✅ NEW — for post image/video uploads
 
-// ⚠️ Replace with your project's actual web config (Firebase console →
-// Project settings → General → Your apps → Web app). These are the same
-// values your mobile app's firebase.js uses, just the "web" variant.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -16,3 +15,5 @@ const firebaseConfig = {
 
 export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const db = getFirestore(app);
+export const storage = getStorage(app); // ✅ NEW

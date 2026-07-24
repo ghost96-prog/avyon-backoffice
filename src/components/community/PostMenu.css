@@ -1,0 +1,63 @@
+/* src/components/community/PostMenu.css */
+.post-menu {
+  position: relative;
+  flex: none;
+}
+
+.post-menu-trigger {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.post-menu-trigger:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.post-menu-dropdown {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  min-width: 130px;
+  z-index: 20;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.post-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  border-radius: 6px;
+  text-align: left;
+}
+.post-menu-item:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.post-menu-item--danger {
+  color: #e0455f;
+}
+.post-menu-item--danger:hover {
+  background: var(--danger-soft);
+  color: #e0455f;
+}

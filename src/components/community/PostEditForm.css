@@ -1,0 +1,119 @@
+/* src/components/community/PostEditForm.css */
+.post-edit-form {
+  margin-bottom: 10px;
+}
+
+.post-edit-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  resize: vertical;
+  outline: none;
+}
+.post-edit-textarea:focus {
+  border-color: var(--accent);
+}
+
+.post-edit-media-preview {
+  position: relative;
+  margin-top: 10px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  max-height: 260px;
+  border: 1px solid var(--border);
+}
+.post-edit-media-preview img,
+.post-edit-media-preview video {
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  background: var(--surface-sunken);
+  display: block;
+}
+.post-edit-media-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(22, 32, 43, 0.65);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.post-edit-hint {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: 8px;
+}
+
+.post-edit-error {
+  font-size: 12.5px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  padding: 7px 10px;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.post-edit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.post-edit-icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.post-edit-icon-btn:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.post-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.post-edit-cancel {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--ink-soft);
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.post-edit-save {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 7px 14px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.post-edit-save:disabled,
+.post-edit-cancel:disabled {
+  opacity: 0.6;
+}

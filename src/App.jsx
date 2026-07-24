@@ -32,6 +32,10 @@ import { BACKOFFICE_PERMISSIONS as P } from "./utils/permissions";
 import BranchComparison from "./pages/BranchComparison";
 import StaffPerformance from "./pages/StaffPerformance";
 import BusinessProfile from "./pages/BusinessProfile";
+// ✅ Community
+import Community from "./pages/Community";
+// import CommunityPostDetail from "./pages/CommunityPostDetail";
+
 const REAL_PAGES = {
   '/': Dashboard,
     '/sales': SalesAnalytics,           // ← add this line
@@ -119,6 +123,10 @@ export default function App() {
                 </RequirePermission>
               }
             />
+
+            {/* ✅ Community — not in sidebar nav, reached via the TopBar button */}
+            <Route path="community" element={<Community />} />
+            {/* <Route path="community/:postId" element={<CommunityPostDetail />} /> */}
 
             {/* Catch-all for unknown routes */}
             <Route path="*" element={<ComingSoon label="Page not found" />} />

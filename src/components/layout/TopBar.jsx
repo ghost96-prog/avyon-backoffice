@@ -1,12 +1,14 @@
 // src/components/layout/TopBar.jsx
 import React, { useState, useRef, useEffect } from "react";
-import { Menu, ChevronDown, Lock, LogOut, Repeat, Bell } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Menu, ChevronDown, Lock, LogOut, Repeat, Bell, MessagesSquare } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { ROLE_BADGE_COLORS, ROLE_LABELS } from "../../utils/permissions";
 import SubscriptionCountdownBar from "../common/SubscriptionCountDownBar";
 import "./TopBar.css";
 
 export default function TopBar({ onOpenMobileNav, title }) {
+  const navigate = useNavigate();
   const { businessName, branches, branchId, selectedBranchId, activeStaff, requiresPin, lockSession, logout } =
     useAppContext();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,6 +58,16 @@ export default function TopBar({ onOpenMobileNav, title }) {
         </div>
 
         <div className="topbar-right">
+          {/* ✅ NEW — Community button */}
+          <button
+            className="topbar-icon-btn"
+            aria-label="Community"
+            title="Community"
+            onClick={() => navigate("/community")}
+          >
+            <MessagesSquare size={18} />
+          </button>
+
           <button className="topbar-icon-btn" aria-label="Notifications">
             <Bell size={18} />
           </button>
