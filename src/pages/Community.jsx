@@ -10,7 +10,7 @@ import MediaViewer from "../components/community/MediaViewer";
 import "./Community.css";
 
 export default function Community() {
-  const { uid, userProfile } = useAppContext();
+  const { uid, userProfile, businessName } = useAppContext();
   const [activeCategory, setActiveCategory] = useState("all");
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +48,7 @@ export default function Community() {
     <div className={`community-shell ${viewerPost ? "viewer-open" : ""}`}>
       <div className="community-page">
         <div className="community-header">
-          <h1>Avyon Community</h1>
+          <h1>AVYON Community</h1>
           <p>Ask questions, share tips, and connect with other Avyon business owners.</p>
         </div>
 
@@ -105,6 +105,7 @@ export default function Community() {
           post={viewerPost}
           uid={uid}
           userProfile={userProfile}
+          businessName={businessName}
           onClose={() => setViewerPostId(null)}
         />
       )}

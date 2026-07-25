@@ -14,11 +14,13 @@ import CommentRow from "./CommentRow";
 import CommentComposer from "./CommentComposer";
 import PostMenu from "./PostMenu";
 import PostEditForm from "./PostEditForm";
+import ConfirmDialog from "./ConfirmDialog";
 import "./MediaViewer.css";
 
-export default function MediaViewer({ post, uid, userProfile, onClose }) {
+export default function MediaViewer({ post, uid, userProfile, businessName, onClose }) {
   const [comments, setComments] = useState([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     if (!post) return;
@@ -52,6 +54,7 @@ export default function MediaViewer({ post, uid, userProfile, onClose }) {
     await addComment(post.id, {
       authorId: uid,
       authorName: userProfile?.name || "Business Owner",
+      businessName,
       body,
       mediaFile,
     });
@@ -63,7 +66,7 @@ export default function MediaViewer({ post, uid, userProfile, onClose }) {
       onClose();
     } catch (err) {
       console.error("deletePost error:", err);
-      window.alert(err.message || "Couldn't delete that post.");
+      setErrorMsg(err.message || "Couldn't delete that post.");
     }
   };
 
@@ -89,7 +92,8 @@ export default function MediaViewer({ post, uid, userProfile, onClose }) {
               canDelete={canDelete}
               onEdit={() => setIsEditing(true)}
               onDelete={handleDeletePost}
-              confirmMessage="Delete this post and all its comments? This can't be undone."
+              confirmTitle="Delete this post?"
+              confirmMessage="All its comments and attached media will be deleted too. This can't be undone."
             />
             <button className="media-viewer-close" onClick={onClose} aria-label="Close preview">
               <X size={20} />
@@ -130,7 +134,16 @@ export default function MediaViewer({ post, uid, userProfile, onClose }) {
 
             <div className="media-viewer-comments">
               {comments.map((c) => (
-                <CommentRow key={c.id} postId={post.id} comment={c} uid={uid} isSuperAdmin={isSuperAdmin} />
+                <CommentRow
+                  key={c.id}
+                  postId={post.id}
+                  comment={c}
+                  uid={uid}
+                  isSuperAdmin={isSuperAdmin}
+                  postAuthorId={post.authorId}
+                  authorName={userProfile?.name || "Business Owner"}
+                  businessName={businessName}
+                />
               ))}
               {comments.length === 0 && (
                 <p className="media-viewer-empty">No comments yet — be the first to reply.</p>
@@ -145,6 +158,16 @@ export default function MediaViewer({ post, uid, userProfile, onClose }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!errorMsg}
+        variant="alert"
+        danger={false}
+        title="Couldn't delete post"
+        message={errorMsg}
+        onConfirm={() => setErrorMsg(null)}
+        onCancel={() => setErrorMsg(null)}
+      />
     </div>
   );
 }

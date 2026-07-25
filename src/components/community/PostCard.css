@@ -182,6 +182,26 @@
   display: inline-block;
 }
 
+.comment-bubble--author {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-2);
+}
+
+.comment-author-badge {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+  background: var(--surface);
+  border: 1px solid var(--accent-soft-2);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
 .comment-author {
   font-size: 12.5px;
   font-weight: 700;
@@ -212,14 +232,18 @@
 
 .comment-meta {
   display: flex;
+  align-items: center;
   gap: 10px;
   font-size: 11px;
   color: var(--ink-faint);
   margin-top: 3px;
   padding-left: 12px;
+  flex-wrap: wrap;
 }
 
-.comment-like-btn {
+.comment-like-btn,
+.comment-dislike-btn,
+.comment-reply-btn {
   background: none;
   border: none;
   font-size: 11px;
@@ -228,6 +252,52 @@
 }
 .comment-like-btn.is-liked {
   color: #e0455f;
+}
+.comment-dislike-btn.is-disliked {
+  color: var(--ink);
+}
+.comment-reply-btn:hover,
+.comment-like-btn:hover,
+.comment-dislike-btn:hover {
+  color: var(--ink);
+}
+
+.reply-composer-wrap {
+  margin-top: 8px;
+  padding-left: 12px;
+}
+
+.comment-view-replies-btn {
+  background: none;
+  border: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  margin-top: 6px;
+  margin-left: 12px;
+}
+.comment-view-replies-btn:hover {
+  text-decoration: underline;
+}
+
+.reply-list {
+  margin-top: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.reply-row .comment-avatar--small {
+  width: 22px;
+  height: 22px;
+  font-size: 10px;
+}
+
+.reply-row .comment-media {
+  max-width: 180px;
 }
 
 /* ── Responsiveness ─────────────────────────────────────────────── */

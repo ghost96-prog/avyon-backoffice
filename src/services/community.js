@@ -10,8 +10,18 @@
 //   pinned, status
 //
 // community/{postId}/comments/{commentId}
-//   authorId, authorName, body, createdAt, editedAt, likeCount, likedBy: [uid, ...]
+//   authorId, authorName, businessName, body, createdAt, editedAt,
+//   likeCount, likedBy: [uid, ...], dislikeCount, dislikedBy: [uid, ...],
+//   replyCount
 //   mediaUrl, mediaPath, mediaType ("image" | "video" | null)
+//
+// community/{postId}/comments/{commentId}/replies/{replyId}
+//   authorId, authorName, businessName, body, createdAt, editedAt,
+//   likeCount, likedBy: [uid, ...]
+//   mediaUrl, mediaPath, mediaType ("image" | "video" | null)
+//
+// Replies are ONE level deep only — a reply has no "reply to this reply"
+// affordance in the UI, and there's no replies-of-replies subcollection.
 //
 // `mediaPath` is the Storage object path (not the download URL) — keeping
 // it alongside mediaUrl means deletes/edits never have to parse a URL to
@@ -52,7 +62,10 @@ async function uploadMedia(file, authorId, folder = "posts") {
   if (!isVideo && !isImage) throw new Error("Only images and videos are supported.");
 
   const ext = file.name.split(".").pop();
-  const path = `community-media/${folder}/${authorId}/${Date.now()}.${ext}`;
+  // Path shape must match the deployed storage rule exactly:
+  // community-media/{userId}/{fileName} — so `folder` (posts/comments/replies)
+  // gets folded into the filename instead of being its own segment.
+  const path = `community-media/${authorId}/${folder}-${Date.now()}.${ext}`;
   const storageRef = ref(storage, path);
   await uploadBytes(storageRef, file);
   const url = await getDownloadURL(storageRef);
@@ -78,6 +91,28 @@ async function deleteMediaFile(mediaUrl, mediaPath) {
       console.error("deleteMediaFile error:", err);
     }
   }
+}
+
+// Deletes every doc in a subcollection ref, plus each doc's attached
+// media. Used to cascade-delete replies (under a comment) and comments
+// (under a post).
+async function deleteSubcollectionDocs(subcollectionRef) {
+  const snap = await getDocs(subcollectionRef);
+
+  await Promise.all(
+    snap.docs.map((d) => {
+      const data = d.data();
+      return data.mediaUrl || data.mediaPath ? deleteMediaFile(data.mediaUrl, data.mediaPath) : Promise.resolve();
+    })
+  );
+
+  for (let i = 0; i < snap.docs.length; i += 450) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 450).forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  return snap.docs;
 }
 
 // ── Posts ────────────────────────────────────────────────────────────────
@@ -196,28 +231,30 @@ export async function updatePost(
 }
 
 /**
- * Delete a post and everything under it: every comment doc, every
- * comment's attached media, and the post's own attached media.
+ * Delete a post and everything under it: every comment, every comment's
+ * replies, every attached media anywhere in that tree, and the post's
+ * own media.
  */
 export async function deletePost(post) {
   const postRef = doc(db, COMMUNITY_COLLECTION, post.id);
   const commentsRef = collection(db, COMMUNITY_COLLECTION, post.id, "comments");
-
   const commentsSnap = await getDocs(commentsRef);
 
-  // Clean up comment media first (Storage has no cascade delete).
+  // For every comment: cascade-delete its replies first, then its own media.
   await Promise.all(
-    commentsSnap.docs.map((d) => {
-      const c = d.data();
-      return c.mediaUrl || c.mediaPath ? deleteMediaFile(c.mediaUrl, c.mediaPath) : Promise.resolve();
+    commentsSnap.docs.map(async (commentDoc) => {
+      const repliesRef = collection(db, COMMUNITY_COLLECTION, post.id, "comments", commentDoc.id, "replies");
+      await deleteSubcollectionDocs(repliesRef);
+
+      const c = commentDoc.data();
+      if (c.mediaUrl || c.mediaPath) await deleteMediaFile(c.mediaUrl, c.mediaPath);
     })
   );
 
-  // Batch-delete comment docs (Firestore batches cap at 500 writes).
-  const commentDocs = commentsSnap.docs;
-  for (let i = 0; i < commentDocs.length; i += 450) {
+  // Now the comment docs themselves.
+  for (let i = 0; i < commentsSnap.docs.length; i += 450) {
     const batch = writeBatch(db);
-    commentDocs.slice(i, i + 450).forEach((d) => batch.delete(d.ref));
+    commentsSnap.docs.slice(i, i + 450).forEach((d) => batch.delete(d.ref));
     await batch.commit();
   }
 
@@ -257,7 +294,7 @@ export function subscribeToComments(postId, { take = 100, onChange, onError }) {
  * Add a comment. `mediaFile` is optional — validate with
  * validateMediaFile() before calling this.
  */
-export async function addComment(postId, { authorId, authorName, body, mediaFile = null }) {
+export async function addComment(postId, { authorId, authorName, businessName, body, mediaFile = null }) {
   if (!body?.trim() && !mediaFile) throw new Error("Write something or attach a photo/video.");
 
   let mediaUrl = null;
@@ -274,6 +311,7 @@ export async function addComment(postId, { authorId, authorName, body, mediaFile
   await addDoc(commentsRef, {
     authorId,
     authorName: authorName || "Business Owner",
+    businessName: businessName || null,
     body: body?.trim() || "",
     mediaUrl,
     mediaPath,
@@ -282,6 +320,9 @@ export async function addComment(postId, { authorId, authorName, body, mediaFile
     editedAt: null,
     likeCount: 0,
     likedBy: [],
+    dislikeCount: 0,
+    dislikedBy: [],
+    replyCount: 0,
   });
 
   const postRef = doc(db, COMMUNITY_COLLECTION, postId);
@@ -322,8 +363,15 @@ export async function updateComment(
   await updateDoc(ref_, updates);
 }
 
-/** Delete a single comment (and its attached media) and decrement the post's count. */
+/**
+ * Delete a comment: cascades to every reply under it (docs + their
+ * media), the comment's own media, then the comment doc itself, and
+ * decrements the post's commentCount.
+ */
 export async function deleteComment(postId, comment) {
+  const repliesRef = collection(db, COMMUNITY_COLLECTION, postId, "comments", comment.id, "replies");
+  await deleteSubcollectionDocs(repliesRef);
+
   if (comment.mediaUrl || comment.mediaPath) {
     await deleteMediaFile(comment.mediaUrl, comment.mediaPath);
   }
@@ -335,8 +383,132 @@ export async function deleteComment(postId, comment) {
   await updateDoc(postRef, { commentCount: increment(-1) });
 }
 
-export async function toggleCommentLike(postId, commentId, uid, isCurrentlyLiked) {
+/** Like a comment. Removes an existing dislike from the same user, if any. */
+export async function toggleCommentLike(postId, commentId, uid, isCurrentlyLiked, isCurrentlyDisliked = false) {
   const ref_ = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId);
+  const updates = {
+    likedBy: isCurrentlyLiked ? arrayRemove(uid) : arrayUnion(uid),
+    likeCount: increment(isCurrentlyLiked ? -1 : 1),
+  };
+  if (!isCurrentlyLiked && isCurrentlyDisliked) {
+    updates.dislikedBy = arrayRemove(uid);
+    updates.dislikeCount = increment(-1);
+  }
+  await updateDoc(ref_, updates);
+}
+
+/** Dislike a comment. Removes an existing like from the same user, if any. */
+export async function toggleCommentDislike(postId, commentId, uid, isCurrentlyDisliked, isCurrentlyLiked = false) {
+  const ref_ = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId);
+  const updates = {
+    dislikedBy: isCurrentlyDisliked ? arrayRemove(uid) : arrayUnion(uid),
+    dislikeCount: increment(isCurrentlyDisliked ? -1 : 1),
+  };
+  if (!isCurrentlyDisliked && isCurrentlyLiked) {
+    updates.likedBy = arrayRemove(uid);
+    updates.likeCount = increment(-1);
+  }
+  await updateDoc(ref_, updates);
+}
+
+// ── Replies (one level deep — a reply cannot itself be replied to) ────────
+
+export function subscribeToReplies(postId, commentId, { take = 100, onChange, onError }) {
+  const repliesRef = collection(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies");
+  const q = query(repliesRef, orderBy("createdAt", "asc"), limit(take));
+
+  return onSnapshot(
+    q,
+    (snapshot) => onChange(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (error) => {
+      console.error("subscribeToReplies error:", error);
+      onError?.(error);
+    }
+  );
+}
+
+/**
+ * Add a reply to a comment. `mediaFile` is optional — validate with
+ * validateMediaFile() before calling this (same size/duration caps as
+ * posts and comments).
+ */
+export async function addReply(postId, commentId, { authorId, authorName, businessName, body, mediaFile = null }) {
+  if (!body?.trim() && !mediaFile) throw new Error("Write something or attach a photo/video.");
+
+  let mediaUrl = null;
+  let mediaPath = null;
+  let mediaType = null;
+  if (mediaFile) {
+    const uploaded = await uploadMedia(mediaFile, authorId, "replies");
+    mediaUrl = uploaded.url;
+    mediaPath = uploaded.path;
+    mediaType = uploaded.type;
+  }
+
+  const repliesRef = collection(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies");
+  await addDoc(repliesRef, {
+    authorId,
+    authorName: authorName || "Business Owner",
+    businessName: businessName || null,
+    body: body?.trim() || "",
+    mediaUrl,
+    mediaPath,
+    mediaType,
+    createdAt: serverTimestamp(),
+    editedAt: null,
+    likeCount: 0,
+    likedBy: [],
+  });
+
+  const commentRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId);
+  await updateDoc(commentRef, { replyCount: increment(1) });
+}
+
+export async function updateReply(
+  postId,
+  commentId,
+  replyId,
+  { body, mediaFile = null, removeMedia = false, currentMediaUrl = null, currentMediaPath = null, authorId }
+) {
+  const updates = { editedAt: serverTimestamp() };
+
+  if (body !== undefined) updates.body = body?.trim() || "";
+
+  if (mediaFile) {
+    const uploaded = await uploadMedia(mediaFile, authorId, "replies");
+    updates.mediaUrl = uploaded.url;
+    updates.mediaPath = uploaded.path;
+    updates.mediaType = uploaded.type;
+    if (currentMediaUrl || currentMediaPath) {
+      await deleteMediaFile(currentMediaUrl, currentMediaPath);
+    }
+  } else if (removeMedia) {
+    updates.mediaUrl = null;
+    updates.mediaPath = null;
+    updates.mediaType = null;
+    if (currentMediaUrl || currentMediaPath) {
+      await deleteMediaFile(currentMediaUrl, currentMediaPath);
+    }
+  }
+
+  const ref_ = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies", replyId);
+  await updateDoc(ref_, updates);
+}
+
+export async function deleteReply(postId, commentId, reply) {
+  if (reply.mediaUrl || reply.mediaPath) {
+    await deleteMediaFile(reply.mediaUrl, reply.mediaPath);
+  }
+
+  const replyRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies", reply.id);
+  await deleteDoc(replyRef);
+
+  const commentRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId);
+  await updateDoc(commentRef, { replyCount: increment(-1) });
+}
+
+export async function toggleReplyLike(postId, commentId, replyId, uid, isCurrentlyLiked) {
+  const ref_ = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies", replyId);
   await updateDoc(ref_, {
     likedBy: isCurrentlyLiked ? arrayRemove(uid) : arrayUnion(uid),
     likeCount: increment(isCurrentlyLiked ? -1 : 1),

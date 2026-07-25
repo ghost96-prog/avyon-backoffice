@@ -11,10 +11,11 @@ import CommentRow from "./CommentRow";
 import CommentComposer from "./CommentComposer";
 import PostMenu from "./PostMenu";
 import PostEditForm from "./PostEditForm";
+import ConfirmDialog from "./ConfirmDialog";
 import "./PostCard.css";
 
 export default function PostCard({ post, onOpenMedia }) {
-  const { uid, userProfile } = useAppContext();
+  const { uid, userProfile, businessName } = useAppContext();
 
   const isLiked = (post.likedBy || []).includes(uid);
   const [showComments, setShowComments] = useState(false);
@@ -22,6 +23,7 @@ export default function PostCard({ post, onOpenMedia }) {
   const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const isAuthor = post.authorId === uid;
   const isSuperAdmin = isCommunitySuperAdmin(userProfile);
@@ -43,6 +45,11 @@ export default function PostCard({ post, onOpenMedia }) {
     loadComments();
   };
 
+  // Once the thread has actually loaded, the live subscribed list is the
+  // source of truth — it can't drift out of sync the way the stored
+  // commentCount field can if an increment write ever gets rejected.
+  const displayCommentCount = commentsLoaded ? comments.length : post.commentCount || 0;
+
   const typeColor = POST_TYPE_COLORS[post.type] || POST_TYPE_COLORS.discussion;
   const authorLine = post.anonymous
     ? "Anonymous"
@@ -56,6 +63,7 @@ export default function PostCard({ post, onOpenMedia }) {
     await addComment(post.id, {
       authorId: uid,
       authorName: userProfile?.name || "Business Owner",
+      businessName,
       body,
       mediaFile,
     });
@@ -70,7 +78,7 @@ export default function PostCard({ post, onOpenMedia }) {
       // automatically once the delete completes — nothing else to do here.
     } catch (err) {
       console.error("deletePost error:", err);
-      window.alert(err.message || "Couldn't delete that post.");
+      setErrorMsg(err.message || "Couldn't delete that post.");
       setDeleting(false);
     }
   };
@@ -113,7 +121,8 @@ export default function PostCard({ post, onOpenMedia }) {
           canDelete={canDelete}
           onEdit={() => setIsEditing(true)}
           onDelete={handleDeletePost}
-          confirmMessage="Delete this post and all its comments? This can't be undone."
+          confirmTitle="Delete this post?"
+          confirmMessage="All its comments and attached media will be deleted too. This can't be undone."
         />
       </div>
 
@@ -136,11 +145,11 @@ export default function PostCard({ post, onOpenMedia }) {
             <Heart size={12} fill="currentColor" /> {post.likeCount}
           </span>
         )}
-        {post.commentCount > 0 && (
-          <button className="post-card-comment-count" onClick={toggleShowComments}>
-            {post.commentCount} comment{post.commentCount === 1 ? "" : "s"}
-          </button>
-        )}
+        <button className="post-card-comment-count" onClick={toggleShowComments}>
+          {displayCommentCount > 0
+            ? `${displayCommentCount} comment${displayCommentCount === 1 ? "" : "s"}`
+            : "No comments yet"}
+        </button>
       </div>
 
       <div className="post-card-actions">
@@ -155,11 +164,30 @@ export default function PostCard({ post, onOpenMedia }) {
       {showComments && (
         <div className="post-card-comments">
           {comments.map((c) => (
-            <CommentRow key={c.id} postId={post.id} comment={c} uid={uid} isSuperAdmin={isSuperAdmin} />
+            <CommentRow
+              key={c.id}
+              postId={post.id}
+              comment={c}
+              uid={uid}
+              isSuperAdmin={isSuperAdmin}
+              postAuthorId={post.authorId}
+              authorName={userProfile?.name || "Business Owner"}
+              businessName={businessName}
+            />
           ))}
           <CommentComposer onSubmit={handleSubmitComment} />
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!errorMsg}
+        variant="alert"
+        danger={false}
+        title="Couldn't delete post"
+        message={errorMsg}
+        onConfirm={() => setErrorMsg(null)}
+        onCancel={() => setErrorMsg(null)}
+      />
     </div>
   );
 }
