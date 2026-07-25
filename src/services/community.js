@@ -12,16 +12,25 @@
 // community/{postId}/comments/{commentId}
 //   authorId, authorName, businessName, body, createdAt, editedAt,
 //   likeCount, likedBy: [uid, ...], dislikeCount, dislikedBy: [uid, ...],
-//   replyCount
+//   replyCount, mentions: [{ uid, name }, ...]
 //   mediaUrl, mediaPath, mediaType ("image" | "video" | null)
 //
 // community/{postId}/comments/{commentId}/replies/{replyId}
 //   authorId, authorName, businessName, body, createdAt, editedAt,
-//   likeCount, likedBy: [uid, ...]
+//   likeCount, likedBy: [uid, ...], mentions: [{ uid, name }, ...]
 //   mediaUrl, mediaPath, mediaType ("image" | "video" | null)
+//   parentReplyId: string | null — null for a direct reply to the comment
+//     (level 2); set to another reply's id for a reply-to-a-reply
+//     (level 3, the deepest level the UI allows).
+//   replyingToName: string | null — the display name of who a level-3
+//     reply is addressed to, for the "↳ replying to X" hint in the UI.
 //
-// Replies are ONE level deep only — a reply has no "reply to this reply"
-// affordance in the UI, and there's no replies-of-replies subcollection.
+// All replies — level 2 and level 3 alike — live flat in this one
+// `replies` subcollection (nesting is a client-side grouping by
+// parentReplyId, not a Firestore subcollection-of-subcollections). That
+// keeps a single subscribeToReplies() call sufficient to render the
+// whole reply tree for a comment, and keeps replyCount / commentCount
+// bookkeeping below a simple increment/decrement regardless of depth.
 //
 // `mediaPath` is the Storage object path (not the download URL) — keeping
 // it alongside mediaUrl means deletes/edits never have to parse a URL to
@@ -294,7 +303,7 @@ export function subscribeToComments(postId, { take = 100, onChange, onError }) {
  * Add a comment. `mediaFile` is optional — validate with
  * validateMediaFile() before calling this.
  */
-export async function addComment(postId, { authorId, authorName, businessName, body, mediaFile = null }) {
+export async function addComment(postId, { authorId, authorName, businessName, body, mediaFile = null, mentions = [] }) {
   if (!body?.trim() && !mediaFile) throw new Error("Write something or attach a photo/video.");
 
   let mediaUrl = null;
@@ -323,6 +332,7 @@ export async function addComment(postId, { authorId, authorName, businessName, b
     dislikeCount: 0,
     dislikedBy: [],
     replyCount: 0,
+    mentions,
   });
 
   const postRef = doc(db, COMMUNITY_COLLECTION, postId);
@@ -336,11 +346,12 @@ export async function addComment(postId, { authorId, authorName, businessName, b
 export async function updateComment(
   postId,
   commentId,
-  { body, mediaFile = null, removeMedia = false, currentMediaUrl = null, currentMediaPath = null, authorId }
+  { body, mediaFile = null, removeMedia = false, currentMediaUrl = null, currentMediaPath = null, authorId, mentions }
 ) {
   const updates = { editedAt: serverTimestamp() };
 
   if (body !== undefined) updates.body = body?.trim() || "";
+  if (mentions !== undefined) updates.mentions = mentions;
 
   if (mediaFile) {
     const uploaded = await uploadMedia(mediaFile, authorId, "comments");
@@ -370,7 +381,7 @@ export async function updateComment(
  */
 export async function deleteComment(postId, comment) {
   const repliesRef = collection(db, COMMUNITY_COLLECTION, postId, "comments", comment.id, "replies");
-  await deleteSubcollectionDocs(repliesRef);
+  const deletedReplies = await deleteSubcollectionDocs(repliesRef);
 
   if (comment.mediaUrl || comment.mediaPath) {
     await deleteMediaFile(comment.mediaUrl, comment.mediaPath);
@@ -379,8 +390,11 @@ export async function deleteComment(postId, comment) {
   const commentRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", comment.id);
   await deleteDoc(commentRef);
 
+  // The post's commentCount is a total across every level (comment +
+  // replies + replies-to-replies), so losing this comment also loses
+  // every reply that was nested under it, flat subcollection and all.
   const postRef = doc(db, COMMUNITY_COLLECTION, postId);
-  await updateDoc(postRef, { commentCount: increment(-1) });
+  await updateDoc(postRef, { commentCount: increment(-(1 + deletedReplies.length)) });
 }
 
 /** Like a comment. Removes an existing dislike from the same user, if any. */
@@ -411,9 +425,15 @@ export async function toggleCommentDislike(postId, commentId, uid, isCurrentlyDi
   await updateDoc(ref_, updates);
 }
 
-// ── Replies (one level deep — a reply cannot itself be replied to) ────────
+// ── Replies (two levels deep: reply, and reply-to-a-reply) ───────────────
+//
+// Both levels sit in the same flat `replies` subcollection under the
+// comment — see the header comment for why. `parentReplyId` is what
+// tells them apart: null = level 2 (direct reply to the comment),
+// non-null = level 3 (reply to that reply). The UI stops offering a
+// "Reply" affordance once you're at level 3.
 
-export function subscribeToReplies(postId, commentId, { take = 100, onChange, onError }) {
+export function subscribeToReplies(postId, commentId, { take = 200, onChange, onError }) {
   const repliesRef = collection(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies");
   const q = query(repliesRef, orderBy("createdAt", "asc"), limit(take));
 
@@ -428,11 +448,19 @@ export function subscribeToReplies(postId, commentId, { take = 100, onChange, on
 }
 
 /**
- * Add a reply to a comment. `mediaFile` is optional — validate with
- * validateMediaFile() before calling this (same size/duration caps as
- * posts and comments).
+ * Add a reply to a comment, or a reply to another reply. `mediaFile` is
+ * optional — validate with validateMediaFile() before calling this (same
+ * size/duration caps as posts and comments).
+ *
+ * Pass `parentReplyId` + `replyingToName` when this is a level-3 reply
+ * (i.e. replying to a reply rather than to the comment itself). Leave
+ * them null for an ordinary level-2 reply.
  */
-export async function addReply(postId, commentId, { authorId, authorName, businessName, body, mediaFile = null }) {
+export async function addReply(
+  postId,
+  commentId,
+  { authorId, authorName, businessName, body, mediaFile = null, mentions = [], parentReplyId = null, replyingToName = null }
+) {
   if (!body?.trim() && !mediaFile) throw new Error("Write something or attach a photo/video.");
 
   let mediaUrl = null;
@@ -458,21 +486,31 @@ export async function addReply(postId, commentId, { authorId, authorName, busine
     editedAt: null,
     likeCount: 0,
     likedBy: [],
+    mentions,
+    parentReplyId,
+    replyingToName,
   });
 
   const commentRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId);
   await updateDoc(commentRef, { replyCount: increment(1) });
+
+  // Every reply — level 2 or level 3 — counts toward the post's total
+  // comment count, so the number shown on the feed is right without
+  // anyone having to expand the thread first.
+  const postRef = doc(db, COMMUNITY_COLLECTION, postId);
+  await updateDoc(postRef, { commentCount: increment(1) });
 }
 
 export async function updateReply(
   postId,
   commentId,
   replyId,
-  { body, mediaFile = null, removeMedia = false, currentMediaUrl = null, currentMediaPath = null, authorId }
+  { body, mediaFile = null, removeMedia = false, currentMediaUrl = null, currentMediaPath = null, authorId, mentions }
 ) {
   const updates = { editedAt: serverTimestamp() };
 
   if (body !== undefined) updates.body = body?.trim() || "";
+  if (mentions !== undefined) updates.mentions = mentions;
 
   if (mediaFile) {
     const uploaded = await uploadMedia(mediaFile, authorId, "replies");
@@ -496,6 +534,29 @@ export async function updateReply(
 }
 
 export async function deleteReply(postId, commentId, reply) {
+  const repliesRef = collection(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies");
+
+  // Deleting a level-2 reply also takes any level-3 replies addressed to
+  // it with it — otherwise they'd be left dangling, pointing at a
+  // parentReplyId that no longer exists.
+  let deletedChildren = [];
+  if (!reply.parentReplyId) {
+    const childSnap = await getDocs(query(repliesRef, where("parentReplyId", "==", reply.id)));
+    deletedChildren = childSnap.docs;
+
+    await Promise.all(
+      deletedChildren.map((d) => {
+        const data = d.data();
+        return data.mediaUrl || data.mediaPath ? deleteMediaFile(data.mediaUrl, data.mediaPath) : Promise.resolve();
+      })
+    );
+    if (deletedChildren.length) {
+      const batch = writeBatch(db);
+      deletedChildren.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+
   if (reply.mediaUrl || reply.mediaPath) {
     await deleteMediaFile(reply.mediaUrl, reply.mediaPath);
   }
@@ -503,8 +564,12 @@ export async function deleteReply(postId, commentId, reply) {
   const replyRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId, "replies", reply.id);
   await deleteDoc(replyRef);
 
+  const totalRemoved = 1 + deletedChildren.length;
   const commentRef = doc(db, COMMUNITY_COLLECTION, postId, "comments", commentId);
-  await updateDoc(commentRef, { replyCount: increment(-1) });
+  await updateDoc(commentRef, { replyCount: increment(-totalRemoved) });
+
+  const postRef = doc(db, COMMUNITY_COLLECTION, postId);
+  await updateDoc(postRef, { commentCount: increment(-totalRemoved) });
 }
 
 export async function toggleReplyLike(postId, commentId, replyId, uid, isCurrentlyLiked) {
