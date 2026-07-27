@@ -2,6 +2,7 @@
 import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppProvider } from "./context/AppContext";
+import { CommunityUnreadProvider } from "./context/CommunityUnreadContext";
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 import RequirePermission from "./components/auth/RequirePermission";
 import DashboardLayout from "./components/layout/DashboardLayout";
@@ -70,68 +71,72 @@ export default function App() {
   return (
     <BrowserRouter>
       <AppProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
+        {/* ✅ Needs uid from AppProvider, so it nests inside it. Powers the
+            Community unread badge in the TopBar. */}
+        <CommunityUnreadProvider>
+          <Routes>
+            <Route path="/login" element={<Login />} />
 
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout />
-              </ProtectedRoute>
-            }
-          >
-            {/* Dashboard - main page */}
-            <Route index element={<Dashboard />} />
-
-            {/* All nav items with their corresponding pages */}
-            {navItems.map((item) => {
-              const PageComponent = REAL_PAGES[item.to];
-              const path = item.to.slice(1); // Remove leading slash
-
-              return (
-                <Route
-                  key={item.id}
-                  path={path}
-                  element={
-                    <RequirePermission permission={item.permission}>
-                      {PageComponent ? (
-                        <PageComponent />
-                      ) : (
-                        <ComingSoon label={item.label} />
-                      )}
-                    </RequirePermission>
-                  }
-                />
-              );
-            })}
-
-            {/* Sub-routes not in the sidebar nav — reached via navigate(), not a nav link */}
             <Route
-              path="inventory/products/new"
+              path="/"
               element={
-                <RequirePermission permission={P.VIEW_STOCK}>
-                  <ProductForm />
-                </RequirePermission>
+                <ProtectedRoute>
+                  <DashboardLayout />
+                </ProtectedRoute>
               }
-            />
-            <Route
-              path="inventory/products/:productId/edit"
-              element={
-                <RequirePermission permission={P.VIEW_STOCK}>
-                  <ProductForm />
-                </RequirePermission>
-              }
-            />
+            >
+              {/* Dashboard - main page */}
+              <Route index element={<Dashboard />} />
 
-            {/* ✅ Community — not in sidebar nav, reached via the TopBar button */}
-            <Route path="community" element={<Community />} />
-            {/* <Route path="community/:postId" element={<CommunityPostDetail />} /> */}
+              {/* All nav items with their corresponding pages */}
+              {navItems.map((item) => {
+                const PageComponent = REAL_PAGES[item.to];
+                const path = item.to.slice(1); // Remove leading slash
 
-            {/* Catch-all for unknown routes */}
-            <Route path="*" element={<ComingSoon label="Page not found" />} />
-          </Route>
-        </Routes>
+                return (
+                  <Route
+                    key={item.id}
+                    path={path}
+                    element={
+                      <RequirePermission permission={item.permission}>
+                        {PageComponent ? (
+                          <PageComponent />
+                        ) : (
+                          <ComingSoon label={item.label} />
+                        )}
+                      </RequirePermission>
+                    }
+                  />
+                );
+              })}
+
+              {/* Sub-routes not in the sidebar nav — reached via navigate(), not a nav link */}
+              <Route
+                path="inventory/products/new"
+                element={
+                  <RequirePermission permission={P.VIEW_STOCK}>
+                    <ProductForm />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="inventory/products/:productId/edit"
+                element={
+                  <RequirePermission permission={P.VIEW_STOCK}>
+                    <ProductForm />
+                  </RequirePermission>
+                }
+              />
+
+              {/* ✅ Community — not in sidebar nav, reached via the TopBar button */}
+              <Route path="community" element={<Community />} />
+              {/* <Route path="community/:postId" element={<CommunityPostDetail />} /> */}
+
+              {/* Catch-all for unknown routes */}
+              <Route path="*" element={<ComingSoon label="Page not found" />} />
+            </Route>
+          </Routes>
+        </CommunityUnreadProvider>
       </AppProvider>
     </BrowserRouter>
   );

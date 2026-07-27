@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { subscribeToPosts } from "../services/community";
 import { COMMUNITY_CATEGORIES } from "../utils/communityConfig";
 import { useAppContext } from "../context/AppContext";
+import { useCommunityUnread } from "../context/CommunityUnreadContext";
 import PostComposer from "../components/community/PostComposer";
 import PostCard from "../components/community/PostCard";
 import MediaViewer from "../components/community/MediaViewer";
@@ -11,12 +12,22 @@ import "./Community.css";
 
 export default function Community() {
   const { uid, userProfile, businessName } = useAppContext();
+  const { markCommunitySeen } = useCommunityUnread();
   const [activeCategory, setActiveCategory] = useState("all");
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewerPostId, setViewerPostId] = useState(null);
+
+  // Clear the badge on arrival, and again on the way out — the second
+  // call catches anything that posted while this page was open, since
+  // the realtime "new since" query would otherwise start climbing again
+  // the moment new posts land.
+  useEffect(() => {
+    markCommunitySeen();
+    return () => markCommunitySeen();
+  }, [markCommunitySeen]);
 
   useEffect(() => {
     setLoading(true);

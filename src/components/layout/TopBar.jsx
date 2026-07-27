@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Menu, ChevronDown, Lock, LogOut, Repeat, Bell, MessagesSquare } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
+import { useCommunityUnread } from "../../context/CommunityUnreadContext";
 import { ROLE_BADGE_COLORS, ROLE_LABELS } from "../../utils/permissions";
 import SubscriptionCountdownBar from "../common/SubscriptionCountDownBar";
 import "./TopBar.css";
@@ -11,6 +12,7 @@ export default function TopBar({ onOpenMobileNav, title }) {
   const navigate = useNavigate();
   const { businessName, branches, branchId, selectedBranchId, activeStaff, requiresPin, lockSession, logout } =
     useAppContext();
+  const { unreadCount } = useCommunityUnread();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
@@ -60,12 +62,15 @@ export default function TopBar({ onOpenMobileNav, title }) {
         <div className="topbar-right">
           {/* ✅ NEW — Community button */}
           <button
-            className="topbar-icon-btn"
+            className="topbar-icon-btn topbar-icon-btn-badged"
             aria-label="Community"
             title="Community"
             onClick={() => navigate("/community")}
           >
             <MessagesSquare size={18} />
+            {unreadCount > 0 && (
+              <span className="topbar-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
+            )}
           </button>
 
           <button className="topbar-icon-btn" aria-label="Notifications">

@@ -170,6 +170,35 @@ export function subscribeToPosts({ category, take = 50, onChange, onError }) {
   );
 }
 
+// Lightweight companion to subscribeToPosts, used only for the unread
+// badge — we don't need post bodies/media, just how many published
+// posts landed after `sinceDate`. Capped at 50 so a very stale badge
+// can't pull down hundreds of docs just to render a number.
+// NOTE: like subscribeToPosts, this needs a composite index
+// (status ASC, createdAt ASC) — Firestore will log a console link to
+// auto-create it the first time this runs against real data.
+export function subscribeToNewPostsCount(sinceDate, { onChange, onError }) {
+  const postsRef = collection(db, COMMUNITY_COLLECTION);
+  const constraints = [where("status", "==", "published")];
+
+  if (sinceDate) {
+    constraints.push(where("createdAt", ">", sinceDate));
+  }
+  constraints.push(orderBy("createdAt", "desc"));
+  constraints.push(limit(50));
+
+  const q = query(postsRef, ...constraints);
+
+  return onSnapshot(
+    q,
+    (snapshot) => onChange(snapshot.size),
+    (error) => {
+      console.error("subscribeToNewPostsCount error:", error);
+      onError?.(error);
+    }
+  );
+}
+
 /**
  * Create a new post. `mediaFiles` is optional — an array of Files from an
  * <input multiple>. Validate each with validateMediaFile() before calling

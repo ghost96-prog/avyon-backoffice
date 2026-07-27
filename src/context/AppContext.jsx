@@ -1,4 +1,3 @@
-// src/context/AppContext.jsx
 import React, {
   createContext,
   useCallback,
