@@ -1,6 +1,6 @@
 // src/pages/Community.jsx
-import React, { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Search, SlidersHorizontal, ChevronDown } from "lucide-react";
 import { subscribeToPosts } from "../services/community";
 import { COMMUNITY_CATEGORIES } from "../utils/communityConfig";
 import { useAppContext } from "../context/AppContext";
@@ -19,6 +19,8 @@ export default function Community() {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [viewerPostId, setViewerPostId] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterRef = useRef(null);
 
   // Clear the badge on arrival, and again on the way out — the second
   // call catches anything that posted while this page was open, since
@@ -48,6 +50,16 @@ export default function Community() {
     return () => unsubscribe();
   }, [activeCategory]);
 
+  // Close the filter popup on an outside click, same pattern as the
+  // TopBar user menu.
+  useEffect(() => {
+    const onClick = (e) => {
+      if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
   const filteredPosts = searchTerm.trim()
     ? posts.filter((p) => p.body?.toLowerCase().includes(searchTerm.trim().toLowerCase()))
     : posts;
@@ -55,36 +67,61 @@ export default function Community() {
   // Keep the viewer in sync with live post updates (e.g. like count ticking up)
   const viewerPost = viewerPostId ? posts.find((p) => p.id === viewerPostId) || null : null;
 
+  const activeCategoryLabel =
+    COMMUNITY_CATEGORIES.find((c) => c.id === activeCategory)?.label || "All";
+
   return (
     <div className={`community-shell ${viewerPost ? "viewer-open" : ""}`}>
       <div className="community-page">
         <div className="community-header">
-          <h1>Community</h1>
+          <h1>Avyon Community</h1>
           <p>Ask questions, share tips, and connect with other Avyon business owners.</p>
         </div>
 
         <PostComposer onPosted={() => {}} />
 
-        <div className="community-search">
-          <Search size={16} />
-          <input
-            type="text"
-            placeholder="Search posts…"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
+        <div className="community-toolbar">
+          <div className="community-search">
+            <Search size={16} />
+            <input
+              type="text"
+              placeholder="Search posts…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
 
-        <div className="community-categories">
-          {COMMUNITY_CATEGORIES.map((c) => (
+          <div className="community-filter" ref={filterRef}>
             <button
-              key={c.id}
-              className={`community-category-btn ${activeCategory === c.id ? "is-active" : ""}`}
-              onClick={() => setActiveCategory(c.id)}
+              type="button"
+              className={`community-filter-btn ${activeCategory !== "all" ? "is-active" : ""}`}
+              onClick={() => setFilterOpen((o) => !o)}
+              aria-haspopup="true"
+              aria-expanded={filterOpen}
             >
-              {c.label}
+              <SlidersHorizontal size={14} />
+              <span>{activeCategoryLabel}</span>
+              <ChevronDown size={14} className={`community-filter-chevron ${filterOpen ? "is-open" : ""}`} />
             </button>
-          ))}
+
+            {filterOpen && (
+              <div className="community-filter-menu">
+                {COMMUNITY_CATEGORIES.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`community-filter-option ${activeCategory === c.id ? "is-active" : ""}`}
+                    onClick={() => {
+                      setActiveCategory(c.id);
+                      setFilterOpen(false);
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="community-feed">

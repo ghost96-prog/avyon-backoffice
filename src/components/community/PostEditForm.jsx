@@ -1,7 +1,12 @@
 // src/components/community/PostEditForm.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { Image as ImageIcon, Video, X, ChevronLeft, ChevronRight, Play } from "lucide-react";
-import { validateMediaFile, MAX_MEDIA_ITEMS } from "../../utils/mediaValidation";
+import {
+  validateMediaFile,
+  remainingMediaSlots,
+  MAX_IMAGES_PER_POST,
+  MAX_VIDEOS_PER_POST,
+} from "../../utils/mediaValidation";
 import { updatePost } from "../../services/community";
 import "./PostEditForm.css";
 
@@ -35,7 +40,8 @@ function newItemFromFile(file) {
 }
 
 export default function PostEditForm({ post, onDone, onCancel }) {
-  const fileInputRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const videoInputRef = useRef(null);
   const [body, setBody] = useState(post.body || "");
   // Existing and newly-added attachments live in one ordered list so add,
   // remove, and reorder all operate on a single array — the order here
@@ -44,6 +50,8 @@ export default function PostEditForm({ post, onDone, onCancel }) {
   const [error, setError] = useState(null);
   const [checking, setChecking] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  const slots = remainingMediaSlots(galleryItems);
 
   // Revoke any still-outstanding object URLs for newly-added files if the
   // form unmounts (e.g. Cancel) without saving.
@@ -56,6 +64,9 @@ export default function PostEditForm({ post, onDone, onCancel }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Shared handler for both the photo and video inputs — each input's
+  // `accept` attribute steers what the OS picker shows, but the actual
+  // per-type cap is enforced here regardless of which button was used.
   const handlePickFiles = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -63,14 +74,21 @@ export default function PostEditForm({ post, onDone, onCancel }) {
     setError(null);
     setChecking(true);
 
-    const remainingSlots = MAX_MEDIA_ITEMS - galleryItems.length;
-    const toCheck = files.slice(0, remainingSlots);
-    if (files.length > remainingSlots) {
-      setError(`You can attach up to ${MAX_MEDIA_ITEMS} photos/videos per post — added the first ${remainingSlots}.`);
-    }
-
     const accepted = [];
-    for (const file of toCheck) {
+
+    for (const file of files) {
+      const isVideo = file.type.startsWith("video/");
+      const { images, videos } = remainingMediaSlots([...galleryItems, ...accepted]);
+
+      if (isVideo && videos <= 0) {
+        setError(`Only ${MAX_VIDEOS_PER_POST} video allowed per post.`);
+        continue;
+      }
+      if (!isVideo && images <= 0) {
+        setError(`You can attach up to ${MAX_IMAGES_PER_POST} images per post.`);
+        continue;
+      }
+
       try {
         await validateMediaFile(file);
         accepted.push(newItemFromFile(file));
@@ -82,7 +100,8 @@ export default function PostEditForm({ post, onDone, onCancel }) {
     if (accepted.length) {
       setGalleryItems((prev) => [...prev, ...accepted]);
     }
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
     setChecking(false);
   };
 
@@ -193,18 +212,6 @@ export default function PostEditForm({ post, onDone, onCancel }) {
               )}
             </div>
           ))}
-
-          {galleryItems.length < MAX_MEDIA_ITEMS && (
-            <button
-              type="button"
-              className="post-edit-media-add-more"
-              onClick={() => fileInputRef.current?.click()}
-              title="Add another photo/video"
-            >
-              <ImageIcon size={16} />
-              <span>Add</span>
-            </button>
-          )}
         </div>
       )}
 
@@ -213,9 +220,9 @@ export default function PostEditForm({ post, onDone, onCancel }) {
 
       <div className="post-edit-toolbar">
         <input
-          ref={fileInputRef}
+          ref={photoInputRef}
           type="file"
-          accept="image/*,video/*"
+          accept="image/*"
           multiple
           onChange={handlePickFiles}
           style={{ display: "none" }}
@@ -223,18 +230,26 @@ export default function PostEditForm({ post, onDone, onCancel }) {
         <button
           type="button"
           className="post-edit-icon-btn"
-          title={`Add photos (up to ${MAX_MEDIA_ITEMS} total)`}
-          onClick={() => fileInputRef.current?.click()}
-          disabled={galleryItems.length >= MAX_MEDIA_ITEMS}
+          title={`Add photos (up to ${MAX_IMAGES_PER_POST} total)`}
+          onClick={() => photoInputRef.current?.click()}
+          disabled={slots.images <= 0}
         >
           <ImageIcon size={16} />
         </button>
+
+        <input
+          ref={videoInputRef}
+          type="file"
+          accept="video/*"
+          onChange={handlePickFiles}
+          style={{ display: "none" }}
+        />
         <button
           type="button"
           className="post-edit-icon-btn"
-          title="Add video"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={galleryItems.length >= MAX_MEDIA_ITEMS}
+          title={`Add video (up to ${MAX_VIDEOS_PER_POST})`}
+          onClick={() => videoInputRef.current?.click()}
+          disabled={slots.videos <= 0}
         >
           <Video size={16} />
         </button>

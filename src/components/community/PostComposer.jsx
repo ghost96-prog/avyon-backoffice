@@ -5,10 +5,12 @@ import { COMMUNITY_CATEGORIES } from "../../utils/communityConfig";
 import { createPost } from "../../services/community";
 import {
   validateMediaFile,
+  remainingMediaSlots,
   MAX_IMAGE_SIZE_MB,
   MAX_VIDEO_SIZE_MB,
   MAX_VIDEO_SECONDS,
-  MAX_MEDIA_ITEMS,
+  MAX_IMAGES_PER_POST,
+  MAX_VIDEOS_PER_POST,
 } from "../../utils/mediaValidation";
 import { useAppContext } from "../../context/AppContext";
 import "./PostComposer.css";
@@ -17,7 +19,8 @@ const POSTABLE_CATEGORIES = COMMUNITY_CATEGORIES.filter((c) => c.id !== "all");
 
 export default function PostComposer({ onPosted }) {
   const { uid, userProfile, businessName } = useAppContext();
-  const fileInputRef = useRef(null);
+  const photoInputRef = useRef(null);
+  const videoInputRef = useRef(null);
 
   const [body, setBody] = useState("");
   const [category, setCategory] = useState("general_discussion");
@@ -28,10 +31,13 @@ export default function PostComposer({ onPosted }) {
   const [error, setError] = useState(null);
   const [checkingFile, setCheckingFile] = useState(false);
 
+  const slots = remainingMediaSlots(mediaItems);
+
   const clearMedia = () => {
     mediaItems.forEach((m) => URL.revokeObjectURL(m.previewUrl));
     setMediaItems([]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
   };
 
   const removeMediaItem = (index) => {
@@ -42,6 +48,9 @@ export default function PostComposer({ onPosted }) {
     });
   };
 
+  // Shared handler for both the photo and video inputs — each input's
+  // `accept` attribute steers what the OS picker shows, but the actual
+  // per-type cap is enforced here regardless of which button was used.
   const handlePickFiles = async (e) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -49,20 +58,27 @@ export default function PostComposer({ onPosted }) {
     setError(null);
     setCheckingFile(true);
 
-    const remainingSlots = MAX_MEDIA_ITEMS - mediaItems.length;
-    const toCheck = files.slice(0, remainingSlots);
-    if (files.length > remainingSlots) {
-      setError(`You can attach up to ${MAX_MEDIA_ITEMS} photos/videos per post — added the first ${remainingSlots}.`);
-    }
-
     const accepted = [];
-    for (const file of toCheck) {
+
+    for (const file of files) {
+      const isVideo = file.type.startsWith("video/");
+      const { images, videos } = remainingMediaSlots([...mediaItems, ...accepted]);
+
+      if (isVideo && videos <= 0) {
+        setError(`Only ${MAX_VIDEOS_PER_POST} video allowed per post.`);
+        continue;
+      }
+      if (!isVideo && images <= 0) {
+        setError(`You can attach up to ${MAX_IMAGES_PER_POST} images per post.`);
+        continue;
+      }
+
       try {
         await validateMediaFile(file);
         accepted.push({
           file,
           previewUrl: URL.createObjectURL(file),
-          kind: file.type.startsWith("video/") ? "video" : "image",
+          kind: isVideo ? "video" : "image",
         });
       } catch (err) {
         setError(err.message || "That file can't be used.");
@@ -72,7 +88,8 @@ export default function PostComposer({ onPosted }) {
     if (accepted.length) {
       setMediaItems((prev) => [...prev, ...accepted]);
     }
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (photoInputRef.current) photoInputRef.current.value = "";
+    if (videoInputRef.current) videoInputRef.current.value = "";
     setCheckingFile(false);
   };
 
@@ -143,17 +160,6 @@ export default function PostComposer({ onPosted }) {
               </button>
             </div>
           ))}
-          {mediaItems.length < MAX_MEDIA_ITEMS && (
-            <button
-              type="button"
-              className="composer-media-add-more"
-              onClick={() => fileInputRef.current?.click()}
-              title="Add another photo/video"
-            >
-              <ImageIcon size={16} />
-              <span>Add</span>
-            </button>
-          )}
         </div>
       )}
 
@@ -171,9 +177,9 @@ export default function PostComposer({ onPosted }) {
           </select>
 
           <input
-            ref={fileInputRef}
+            ref={photoInputRef}
             type="file"
-            accept="image/*,video/*"
+            accept="image/*"
             multiple
             onChange={handlePickFiles}
             style={{ display: "none" }}
@@ -181,18 +187,26 @@ export default function PostComposer({ onPosted }) {
           <button
             type="button"
             className="composer-icon-btn"
-            title={`Add photos (up to ${MAX_MEDIA_ITEMS}, under ${MAX_IMAGE_SIZE_MB}MB each)`}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={mediaItems.length >= MAX_MEDIA_ITEMS}
+            title={`Add photos (up to ${MAX_IMAGES_PER_POST}, under ${MAX_IMAGE_SIZE_MB}MB each)`}
+            onClick={() => photoInputRef.current?.click()}
+            disabled={slots.images <= 0}
           >
             <ImageIcon size={17} />
           </button>
+
+          <input
+            ref={videoInputRef}
+            type="file"
+            accept="video/*"
+            onChange={handlePickFiles}
+            style={{ display: "none" }}
+          />
           <button
             type="button"
             className="composer-icon-btn"
-            title={`Add video (under ${MAX_VIDEO_SECONDS}s, ${MAX_VIDEO_SIZE_MB}MB)`}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={mediaItems.length >= MAX_MEDIA_ITEMS}
+            title={`Add video (up to ${MAX_VIDEOS_PER_POST}, under ${MAX_VIDEO_SECONDS}s, ${MAX_VIDEO_SIZE_MB}MB)`}
+            onClick={() => videoInputRef.current?.click()}
+            disabled={slots.videos <= 0}
           >
             <Video size={17} />
           </button>

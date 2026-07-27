@@ -60,6 +60,7 @@ import {
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage";
 import { db, storage } from "../firebase/firebase";
+import { compressImageFile } from "../utils/mediaCompression";
 
 const COMMUNITY_COLLECTION = "community";
 
@@ -74,13 +75,18 @@ async function uploadMedia(file, authorId, folder = "posts") {
   const isImage = file.type.startsWith("image/");
   if (!isVideo && !isImage) throw new Error("Only images and videos are supported.");
 
-  const ext = file.name.split(".").pop();
+  // Compress images before they ever touch Storage — this is the one
+  // place every image upload (posts, comments, replies, edits) passes
+  // through, so it's the one place compression needs to live.
+  const fileToUpload = isImage ? await compressImageFile(file) : file;
+
+  const ext = fileToUpload.name.split(".").pop();
   // Path shape must match the deployed storage rule exactly:
   // community-media/{userId}/{fileName} — so `folder` (posts/comments/replies)
   // gets folded into the filename instead of being its own segment.
   const path = `community-media/${authorId}/${folder}-${Date.now()}.${ext}`;
   const storageRef = ref(storage, path);
-  await uploadBytes(storageRef, file);
+  await uploadBytes(storageRef, fileToUpload);
   const url = await getDownloadURL(storageRef);
 
   return { url, path, type: isVideo ? "video" : "image" };
