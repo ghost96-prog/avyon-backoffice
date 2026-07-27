@@ -60,14 +60,15 @@ export default function TopBar({ onOpenMobileNav, title }) {
         </div>
 
         <div className="topbar-right">
-          {/* ✅ NEW — Community button */}
+          {/* ✅ Community button with label on desktop */}
           <button
-            className="topbar-icon-btn topbar-icon-btn-badged"
+            className="topbar-icon-btn topbar-community-btn"
             aria-label="Community"
             title="Community"
             onClick={() => navigate("/community")}
           >
             <MessagesSquare size={18} />
+            <span className="topbar-community-label">Community</span>
             {unreadCount > 0 && (
               <span className="topbar-badge">{unreadCount > 9 ? "9+" : unreadCount}</span>
             )}

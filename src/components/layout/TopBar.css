@@ -200,3 +200,60 @@
     display: flex;
   }
 }
+/* Add these styles to your TopBar.css */
+
+/* Community button with label */
+.topbar-community-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  position: relative;
+  width: auto; /* Override the fixed 36px width from .topbar-icon-btn */
+}
+
+.topbar-community-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  display: none; /* Hidden on mobile by default */
+}
+
+/* Show label on desktop (screens wider than 768px) */
+@media (min-width: 769px) {
+  .topbar-community-label {
+    display: inline;
+  }
+}
+
+/* Adjust badge position for community button */
+.topbar-community-btn .topbar-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+}
+
+/* Override the default icon-btn padding for community button */
+.topbar-community-btn:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+/* Keep icon-only on mobile/tablet */
+@media (max-width: 768px) {
+  .topbar-community-btn {
+    padding: 0 8px;
+    width: 36px; /* Keep it square like other icon buttons */
+  }
+  
+  .topbar-community-label {
+    display: none;
+  }
+}
+
+/* For very small screens */
+@media (max-width: 480px) {
+  .topbar-community-btn {
+    padding: 0 6px;
+  }
+}
