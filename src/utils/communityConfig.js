@@ -4,14 +4,17 @@
 // display labels/colors. Mirrors the structure from the brainstorm doc.
 //
 // ✅ UPDATE: category list expanded to cover topics tied to the actual
-// system (Backoffice web app + in-store POS + remote POS Dashboard app),
-// so people can filter discussion by the feature area they're asking
-// about. Existing ids (support, inventory, sales, hardware, printing,
-// accounting, feature_requests, general_discussion, success_stories)
-// are left untouched so old posts still resolve to the same label.
-// The remote POS Dashboard app gets its own category (`pos_dashboard_app`),
-// split out from in-app Analytics (`analytics_reports`), since it's a
-// distinct product surface.
+// system — three distinct surfaces: the Backoffice web app, the in-store
+// POS app (cashier-facing), and the Dashboard app (separate, owner-facing,
+// for remote access) — so people can filter discussion by the feature
+// area they're asking about. Existing ids (support, inventory, sales,
+// hardware, printing, feature_requests, general_discussion,
+// success_stories) are left untouched so old posts still resolve to the
+// same label. `accounting` was removed — not a real feature, reporting
+// lives under `analytics_reports` ("Analytics & Reports") instead.
+// The Dashboard app gets its own category (`dashboard_app`), split out
+// from in-app Analytics (`analytics_reports`), since it's a distinct
+// app, not a POS feature.
 
 export const COMMUNITY_CATEGORIES = [
   { id: "all", label: "All" },
@@ -22,9 +25,17 @@ export const COMMUNITY_CATEGORIES = [
   // product creation & editing.
   { id: "inventory", label: "Inventory" },
 
-  // Sales — POS sales screen, Sales Dashboard, Top Selling Items, Sales
-  // Analytics (Backoffice + remote Dashboard app).
+  // Sales — POS sales screen, Backoffice Sales Dashboard, Top Selling
+  // Items, Sales Analytics.
   { id: "sales", label: "Sales" },
+
+  // NEW — general POS app issues that don't fit a specific topic below
+  // (crashes, syncing, login, general bugs on the in-store cashier app).
+  { id: "pos_app", label: "POS App" },
+  // NEW — the separate owner-facing Dashboard app (remote access for the
+  // shop owner): remote access, exporting, Inventory History, Inventory
+  // Value, Shifts, Receipts, Top Selling Items viewed remotely.
+  { id: "dashboard_app", label: "Dashboard App" },
 
   // Hardware — POS terminals, scanners, general device setup.
   { id: "hardware", label: "Hardware" },
@@ -40,17 +51,11 @@ export const COMMUNITY_CATEGORIES = [
   // Laybyes screen, called out often enough to deserve its own filter).
   { id: "laybyes", label: "Laybyes" },
 
-  { id: "accounting", label: "Accounting" },
-
   // NEW — Analytics & Reports: Backoffice-side Branch Comparison, Sales/
   // Profit Analytics, Product Performance, Inventory Intelligence,
   // Cashier Performance, Customer Analytics, Receipts reporting.
   { id: "analytics_reports", label: "Analytics & Reports" },
 
-  // NEW — the separate remote POS Dashboard app: remote access,
-  // exporting, Inventory History, Inventory Value, Shifts, Receipts,
-  // Top Selling Items viewed remotely.
-  { id: "pos_dashboard_app", label: "POS Dashboard App" },
 
   { id: "feature_requests", label: "Feature Requests" },
   { id: "general_discussion", label: "General Discussion" },
