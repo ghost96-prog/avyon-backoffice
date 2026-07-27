@@ -1362,46 +1362,53 @@ export default function StockTransfers() {
                 const stock = product.currentStock ?? 0;
                 const exceedsStock = quantity > stock;
                 return (
-                  <div key={product.productId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
-                    <span style={{ flex: 1, fontSize: 12 }}>
-                      {product.name}
-                      {exceedsStock && (
-                        <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700 }}>
-                          ⚠️ Exceeds stock ({stock})
-                        </span>
-                      )}
-                    </span>
-                    <input 
-                      type="number" 
-                      style={{ 
-                        ...fieldInput(), 
-                        width: 60, 
-                        padding: '5px 6px',
-                        borderColor: exceedsStock ? '#EF4444' : '#E2E8F0',
-                      }}
-                      value={quantity === 0 ? '' : quantity}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === '') {
-                          updateCartQty(product.productId, 0);
-                        } else {
-                          const num = Number(val);
-                          if (!isNaN(num) && num >= 0) {
-                            updateCartQty(product.productId, num);
+                  <div key={product.productId} style={{ padding: '8px 0', borderBottom: '1px solid #F8FAFC' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ flex: 1, fontSize: 12 }}>
+                        {product.name}
+                        {exceedsStock && (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700 }}>
+                            ⚠️ Exceeds stock ({stock})
+                          </span>
+                        )}
+                      </span>
+                      <button onClick={() => removeFromCart(product.productId)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={13} color="#EF4444" /></button>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                      <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, marginBottom: 2 }}>Quantity to transfer</div>
+                      <input 
+                        type="number" 
+                        style={{ 
+                          ...fieldInput(), 
+                          width: 80, 
+                          padding: '5px 6px',
+                          borderColor: exceedsStock ? '#EF4444' : '#E2E8F0',
+                        }}
+                        value={quantity === 0 ? '' : quantity}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            updateCartQty(product.productId, 0);
+                          } else {
+                            const num = Number(val);
+                            if (!isNaN(num) && num >= 0) {
+                              updateCartQty(product.productId, num);
+                            }
                           }
-                        }
-                      }}
-                      onBlur={(e) => {
-                        const val = Number(e.target.value);
-                        if (!val || val <= 0) {
-                          removeFromCart(product.productId);
-                        } else if (val > (product.currentStock ?? 0)) {
-                          showToast(`Only ${product.currentStock ?? 0} of ${product.name} available`, 'error');
-                          updateCartQty(product.productId, product.currentStock ?? 0);
-                        }
-                      }}
-                    />
-                    <button onClick={() => removeFromCart(product.productId)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={13} color="#EF4444" /></button>
+                        }}
+                        onBlur={(e) => {
+                          const val = Number(e.target.value);
+                          if (!val || val <= 0) {
+                            removeFromCart(product.productId);
+                          } else if (val > (product.currentStock ?? 0)) {
+                            showToast(`Only ${product.currentStock ?? 0} of ${product.name} available`, 'error');
+                            updateCartQty(product.productId, product.currentStock ?? 0);
+                          }
+                        }}
+                        placeholder="Qty"
+                        title={`Quantity to transfer (${stock} in stock)`}
+                      />
+                    </div>
                   </div>
                 );
               })

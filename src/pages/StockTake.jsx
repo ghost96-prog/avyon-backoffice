@@ -606,32 +606,35 @@ useEffect(() => {
     }
   }, [apiFetch, businessId, selectedBranchId, selectAll, selectedProductIds, createNotes, staffId, staffName, fetchStockTakes, guardAction]);
 
-  const detailTotals = useMemo(() => {
-    if (!detailTake) return { totalVarianceCost: 0, totalVarianceSell: 0, totalSystemValue: 0, totalCountedValue: 0 };
+const detailTotals = useMemo(() => {
+  if (!detailTake) return { totalVarianceCost: 0, totalVarianceSell: 0, totalSystemValue: 0, totalCountedValue: 0 };
+  
+  let totalVarianceCost = 0;
+  let totalVarianceSell = 0;
+  let totalSystemValue = 0;
+  let totalCountedValue = 0;
+  
+  detailTake.items.forEach((it) => {
+    // Get the current counted value from state, not from detailTake
+    const countedVal = countedValues[it.productId];
+    const counted = countedVal !== '' && countedVal !== undefined && countedVal !== null 
+      ? Number(countedVal) 
+      : null;
+    const costPrice = it.costPrice || 0;
+    const sellPrice = it.sellingPrice || 0;
     
-    let totalVarianceCost = 0;
-    let totalVarianceSell = 0;
-    let totalSystemValue = 0;
-    let totalCountedValue = 0;
+    totalSystemValue += it.systemQty * costPrice;
     
-    detailTake.items.forEach((it) => {
-      const counted = it.countedQty !== null && it.countedQty !== undefined ? it.countedQty : null;
-      const costPrice = it.costPrice || 0;
-      const sellPrice = it.sellingPrice || 0;
-      
-      totalSystemValue += it.systemQty * costPrice;
-      
-      if (counted !== null) {
-        totalCountedValue += counted * costPrice;
-        const variance = counted - it.systemQty;
-        totalVarianceCost += variance * costPrice;
-        totalVarianceSell += variance * sellPrice;
-      }
-    });
-    
-    return { totalVarianceCost, totalVarianceSell, totalSystemValue, totalCountedValue };
-  }, [detailTake]);
-
+    if (counted !== null && !isNaN(counted)) {
+      totalCountedValue += counted * costPrice;
+      const variance = counted - it.systemQty;
+      totalVarianceCost += variance * costPrice;
+      totalVarianceSell += variance * sellPrice;
+    }
+  });
+  
+  return { totalVarianceCost, totalVarianceSell, totalSystemValue, totalCountedValue };
+}, [detailTake, countedValues]); // Add countedValues as a dependency
   // ─── ACCESS DENIED ────────────────────────────────────────────────────────
   if (!hasAdvancedInventory) {
     const moduleInfo = getModuleInfo('advanced_inventory');

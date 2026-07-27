@@ -1219,36 +1219,45 @@ useEffect(() => {
                         </span>
                         <button onClick={() => removeFromCart(key)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><Trash2 size={13} color="#EF4444" /></button>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                        <input
-                          type="number"
-                          min="1"
-                          style={{ ...fieldInput(), width: 50, padding: '5px 6px' }}
-                          value={quantityReceived}
-                          onChange={(e) => updateCartField(key, 'quantityReceived', e.target.value)}
-                          placeholder="Qty"
-                          title="Quantity received"
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          style={{ ...fieldInput(), width: 65, padding: '5px 6px' }}
-                          value={unitCost}
-                          onChange={(e) => updateCartField(key, 'unitCost', e.target.value)}
-                          placeholder="Cost"
-                          title={`Unit cost (${baseCurrency?.code || 'USD'})`}
-                        />
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          style={{ ...fieldInput(), width: 65, padding: '5px 6px' }}
-                          value={sellingPrice}
-                          onChange={(e) => updateCartField(key, 'sellingPrice', e.target.value)}
-                          placeholder="Sell"
-                          title={`Selling price (${baseCurrency?.code || 'USD'})`}
-                        />
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, marginBottom: 2 }}>Qty</div>
+                          <input
+                            type="number"
+                            min="1"
+                            style={{ ...fieldInput(), width: 50, padding: '5px 6px' }}
+                            value={quantityReceived}
+                            onChange={(e) => updateCartField(key, 'quantityReceived', e.target.value)}
+                            placeholder="Qty"
+                            title="Quantity received"
+                          />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, marginBottom: 2 }}>Cost Price</div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            style={{ ...fieldInput(), width: 65, padding: '5px 6px' }}
+                            value={unitCost}
+                            onChange={(e) => updateCartField(key, 'unitCost', e.target.value)}
+                            placeholder="Cost"
+                            title={`Unit cost (${baseCurrency?.code || 'USD'})`}
+                          />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: '#94A3B8', fontWeight: 600, marginBottom: 2 }}>Selling Price</div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            style={{ ...fieldInput(), width: 65, padding: '5px 6px' }}
+                            value={sellingPrice}
+                            onChange={(e) => updateCartField(key, 'sellingPrice', e.target.value)}
+                            placeholder="Sell"
+                            title={`Selling price (${baseCurrency?.code || 'USD'})`}
+                          />
+                        </div>
                       </div>
                       <div style={{ fontSize: 11, color: '#16A34A', marginTop: 4, fontWeight: 600 }}>
                         New stock: {currentStock} + {Number(quantityReceived) || 0} = {newStockFor(item)}
