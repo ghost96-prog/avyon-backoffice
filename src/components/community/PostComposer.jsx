@@ -1,9 +1,15 @@
 // src/components/community/PostComposer.jsx
 import React, { useRef, useState } from "react";
-import { Image as ImageIcon, Video, X, Send } from "lucide-react";
+import { Image as ImageIcon, Video, X, Send, Play } from "lucide-react";
 import { COMMUNITY_CATEGORIES } from "../../utils/communityConfig";
 import { createPost } from "../../services/community";
-import { validateMediaFile, MAX_IMAGE_SIZE_MB, MAX_VIDEO_SIZE_MB, MAX_VIDEO_SECONDS } from "../../utils/mediaValidation";
+import {
+  validateMediaFile,
+  MAX_IMAGE_SIZE_MB,
+  MAX_VIDEO_SIZE_MB,
+  MAX_VIDEO_SECONDS,
+  MAX_MEDIA_ITEMS,
+} from "../../utils/mediaValidation";
 import { useAppContext } from "../../context/AppContext";
 import "./PostComposer.css";
 
@@ -15,45 +21,66 @@ export default function PostComposer({ onPosted }) {
 
   const [body, setBody] = useState("");
   const [category, setCategory] = useState("general_discussion");
-  const [mediaFile, setMediaFile] = useState(null);
-  const [mediaPreview, setMediaPreview] = useState(null);
-  const [mediaKind, setMediaKind] = useState(null); // "image" | "video"
+  // Each item: { file, previewUrl, kind: "image" | "video" }
+  const [mediaItems, setMediaItems] = useState([]);
   const [anonymous, setAnonymous] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [checkingFile, setCheckingFile] = useState(false);
 
   const clearMedia = () => {
-    setMediaFile(null);
-    setMediaPreview(null);
-    setMediaKind(null);
+    mediaItems.forEach((m) => URL.revokeObjectURL(m.previewUrl));
+    setMediaItems([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handlePickFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const removeMediaItem = (index) => {
+    setMediaItems((prev) => {
+      const target = prev[index];
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const handlePickFiles = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setError(null);
     setCheckingFile(true);
-    try {
-      await validateMediaFile(file);
-      setMediaFile(file);
-      setMediaKind(file.type.startsWith("video/") ? "video" : "image");
-      setMediaPreview(URL.createObjectURL(file));
-    } catch (err) {
-      setError(err.message || "That file can't be used.");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    } finally {
-      setCheckingFile(false);
+
+    const remainingSlots = MAX_MEDIA_ITEMS - mediaItems.length;
+    const toCheck = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      setError(`You can attach up to ${MAX_MEDIA_ITEMS} photos/videos per post — added the first ${remainingSlots}.`);
     }
+
+    const accepted = [];
+    for (const file of toCheck) {
+      try {
+        await validateMediaFile(file);
+        accepted.push({
+          file,
+          previewUrl: URL.createObjectURL(file),
+          kind: file.type.startsWith("video/") ? "video" : "image",
+        });
+      } catch (err) {
+        setError(err.message || "That file can't be used.");
+      }
+    }
+
+    if (accepted.length) {
+      setMediaItems((prev) => [...prev, ...accepted]);
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setCheckingFile(false);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
 
-    if (!body.trim() && !mediaFile) {
+    if (!body.trim() && mediaItems.length === 0) {
       setError("Write something or attach a photo/video.");
       return;
     }
@@ -68,7 +95,7 @@ export default function PostComposer({ onPosted }) {
         category,
         body,
         anonymous,
-        mediaFile,
+        mediaFiles: mediaItems.map((m) => m.file),
       });
 
       setBody("");
@@ -92,16 +119,41 @@ export default function PostComposer({ onPosted }) {
         rows={2}
       />
 
-      {mediaPreview && (
-        <div className="composer-media-preview">
-          {mediaKind === "video" ? (
-            <video src={mediaPreview} controls muted />
-          ) : (
-            <img src={mediaPreview} alt="Attachment preview" />
+      {mediaItems.length > 0 && (
+        <div className="composer-media-strip">
+          {mediaItems.map((m, i) => (
+            <div className="composer-media-thumb" key={m.previewUrl}>
+              {m.kind === "video" ? (
+                <>
+                  <video src={m.previewUrl} muted />
+                  <span className="composer-media-thumb-playbtn">
+                    <Play size={14} fill="white" />
+                  </span>
+                </>
+              ) : (
+                <img src={m.previewUrl} alt={`Attachment ${i + 1} preview`} />
+              )}
+              <button
+                type="button"
+                className="composer-media-remove"
+                onClick={() => removeMediaItem(i)}
+                aria-label="Remove attachment"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+          {mediaItems.length < MAX_MEDIA_ITEMS && (
+            <button
+              type="button"
+              className="composer-media-add-more"
+              onClick={() => fileInputRef.current?.click()}
+              title="Add another photo/video"
+            >
+              <ImageIcon size={16} />
+              <span>Add</span>
+            </button>
           )}
-          <button type="button" className="composer-media-remove" onClick={clearMedia} aria-label="Remove attachment">
-            <X size={14} />
-          </button>
         </div>
       )}
 
@@ -122,14 +174,16 @@ export default function PostComposer({ onPosted }) {
             ref={fileInputRef}
             type="file"
             accept="image/*,video/*"
-            onChange={handlePickFile}
+            multiple
+            onChange={handlePickFiles}
             style={{ display: "none" }}
           />
           <button
             type="button"
             className="composer-icon-btn"
-            title={`Add photo (under ${MAX_IMAGE_SIZE_MB}MB)`}
+            title={`Add photos (up to ${MAX_MEDIA_ITEMS}, under ${MAX_IMAGE_SIZE_MB}MB each)`}
             onClick={() => fileInputRef.current?.click()}
+            disabled={mediaItems.length >= MAX_MEDIA_ITEMS}
           >
             <ImageIcon size={17} />
           </button>
@@ -138,6 +192,7 @@ export default function PostComposer({ onPosted }) {
             className="composer-icon-btn"
             title={`Add video (under ${MAX_VIDEO_SECONDS}s, ${MAX_VIDEO_SIZE_MB}MB)`}
             onClick={() => fileInputRef.current?.click()}
+            disabled={mediaItems.length >= MAX_MEDIA_ITEMS}
           >
             <Video size={17} />
           </button>

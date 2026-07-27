@@ -150,7 +150,7 @@ export default function ReplyRow({
         )}
         {reply.mediaUrl && reply.mediaType === "video" && (
           <div className="comment-media">
-            <AutoplayVideo src={reply.mediaUrl} compact onOpen={() => setLightboxOpen(true)} />
+            <AutoplayVideo src={reply.mediaUrl} compact onOpen={() => setLightboxOpen(true)} forcePause={lightboxOpen} />
           </div>
         )}
 

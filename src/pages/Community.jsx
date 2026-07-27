@@ -48,7 +48,7 @@ export default function Community() {
     <div className={`community-shell ${viewerPost ? "viewer-open" : ""}`}>
       <div className="community-page">
         <div className="community-header">
-          <h1>AVYON Community</h1>
+          <h1>Community</h1>
           <p>Ask questions, share tips, and connect with other Avyon business owners.</p>
         </div>
 
@@ -95,7 +95,12 @@ export default function Community() {
           {!loading &&
             !error &&
             filteredPosts.map((post) => (
-              <PostCard key={post.id} post={post} onOpenMedia={(p) => setViewerPostId(p.id)} />
+              <PostCard
+                key={post.id}
+                post={post}
+                onOpenMedia={(p) => setViewerPostId(p.id)}
+                isViewerOpen={post.id === viewerPostId}
+              />
             ))}
         </div>
       </div>

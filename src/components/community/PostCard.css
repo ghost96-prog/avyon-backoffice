@@ -2,9 +2,10 @@
 .post-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: 14px 16px;
-  margin-bottom: 14px;
+  border-radius: 22px;
+  padding: 16px 16px 14px;
+  margin-bottom: 20px;
+  box-shadow: 0 10px 24px rgba(20, 23, 28, 0.08);
 }
 
 .post-card--deleting {
@@ -31,8 +32,8 @@
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent-deep);
+  background: linear-gradient(135deg, var(--accent), #7c4dff);
+  color: #fff;
   font-weight: 700;
   font-size: 13px;
   display: flex;
@@ -67,74 +68,266 @@
   margin-bottom: 10px;
 }
 
-.post-card-media {
-  border-radius: var(--r-sm);
+/* ── Media / text frame — the photo/video (or gradient text card) that
+   anchors each post. Media gets a fixed-height frame with the image/video
+   *contained* inside it (never cropped or stretched) against a neutral
+   letterbox background; text-only posts still get the full-bleed
+   gradient look since there's no photo to protect there. ───────────── */
+.post-card-frame {
+  position: relative;
+  border-radius: 18px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  margin-bottom: 10px;
   background: var(--surface-sunken);
+  margin-bottom: 10px;
+  cursor: default;
+}
+
+.post-card-frame--media {
+  height: 320px;
+}
+
+.post-card-frame--media img,
+.post-card-frame--media video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--surface-sunken);
+  display: block;
   cursor: pointer;
 }
-.post-card-media img,
-.post-card-media video {
+
+/* AutoplayVideo normally caps itself at 420px and sizes to its own
+   content — stretch it (and its inner <video>) to fill this frame
+   instead, and move its built-in mute button out of the way of the
+   floating rail, which owns the bottom-right corner. */
+.post-card-frame--media .autoplay-video {
   width: 100%;
-  max-height: 420px;
-  object-fit: contain;
-  display: block;
+  height: 100%;
+  background: var(--surface-sunken);
+}
+.post-card-frame--media .autoplay-video video {
+  height: 100%;
+  max-height: none;
+}
+.post-card-frame--media .autoplay-video-mute {
+  left: 12px;
+  right: auto;
+  bottom: 14px;
 }
 
-.post-card-stats-row {
+.post-card-frame--text {
+  aspect-ratio: auto;
+  min-height: 220px;
+  max-height: 480px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--ink-faint);
-  padding-bottom: 8px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 32px 84px 60px 26px;
+}
+.post-card-frame--text::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.15);
+  pointer-events: none;
 }
 
-.post-card-like-count {
+.post-card-type-chip {
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+  padding: 4px 11px;
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+
+.post-card-quote-icon {
+  position: relative;
+  z-index: 1;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+}
+
+.post-card-frame-text {
+  position: relative;
+  z-index: 1;
+  font-size: 21px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── Carousel — multiple images/video on one post, swiped or clicked
+   through horizontally, TikTok/Linka-style dots + count up top ──────── */
+.post-card-carousel-track {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #e0455f;
+  height: 100%;
+  transition: transform 0.25s ease;
+  touch-action: pan-y;
 }
 
-.post-card-comment-count {
-  background: none;
+.post-card-carousel-slide {
+  flex: none;
+  height: 100%;
+  position: relative;
+}
+
+.post-card-carousel-video-placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--surface-sunken);
+}
+
+.post-card-carousel-dots {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  gap: 5px;
+}
+
+.post-card-carousel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
   border: none;
-  color: var(--ink-faint);
-  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  transition: width 0.2s ease, background 0.2s ease;
 }
-.post-card-comment-count:hover {
-  text-decoration: underline;
-}
-
-.post-card-actions {
-  display: flex;
-  border-top: 1px solid var(--border);
-  padding-top: 6px;
+.post-card-carousel-dot.is-active {
+  width: 20px;
+  background: #fff;
 }
 
-.post-card-action-btn {
-  flex: 1;
+.post-card-carousel-count {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.post-card-carousel-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  cursor: pointer;
+}
+.post-card-carousel-nav--prev {
+  left: 10px;
+}
+.post-card-carousel-nav--next {
+  right: 10px;
+}
+/* Chevrons are a desktop/mouse convenience — swipe already covers touch,
+   and they'd otherwise sit under a thumb mid-drag on small screens. */
+@media (hover: none) {
+  .post-card-carousel-nav {
+    display: none;
+  }
+}
+
+/* ── Floating action rail — like / comment / share, overlaid bottom-
+   right on the frame, TikTok-style ─────────────────────────────────── */
+.post-card-rail {
+  position: absolute;
+  right: 10px;
+  bottom: 16px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.post-card-rail-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   background: none;
   border: none;
-  padding: 8px 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink-faint);
-  border-radius: var(--r-sm);
+  padding: 0;
+  cursor: pointer;
 }
-.post-card-action-btn:hover {
+
+.post-card-rail-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.post-card-rail-btn:active .post-card-rail-icon {
+  transform: scale(0.9);
+}
+.post-card-rail-btn.is-liked .post-card-rail-icon {
+  color: var(--accent);
+  background: rgba(254, 44, 85, 0.24);
+}
+
+.post-card-rail-count {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+
+.post-card-comments-toggle {
+  display: inline-flex;
+  align-items: center;
   background: var(--surface-sunken);
-  color: var(--ink);
+  border: 1px solid var(--border);
+  color: var(--ink-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 999px;
+  margin-bottom: 4px;
 }
-.post-card-action-btn.is-liked {
-  color: #e0455f;
+.post-card-comments-toggle:hover {
+  background: var(--border);
+  color: var(--ink);
 }
 
 .post-card-comments {
@@ -319,11 +512,23 @@
 @media (max-width: 640px) {
   .post-card {
     padding: 12px 14px;
-    border-radius: 10px;
+    border-radius: 16px;
   }
-  .post-card-media img,
-  .post-card-media video {
-    max-height: 320px;
+  .post-card-frame {
+    border-radius: 14px;
+  }
+  .post-card-frame--media {
+    height: 46vh;
+  }
+  .post-card-frame--text {
+    padding: 26px 74px 54px 20px;
+  }
+  .post-card-frame-text {
+    font-size: 18px;
+  }
+  .post-card-rail-icon {
+    width: 32px;
+    height: 32px;
   }
   .comment-media {
     max-width: 160px;

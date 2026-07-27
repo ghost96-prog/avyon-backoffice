@@ -4,7 +4,29 @@
    On desktop, opening the viewer nudges the feed's centered column left so
    the right-docked panel doesn't cover it. On mobile the viewer goes
    fullscreen anyway, so no shift is needed. */
+/* ============================================================
+   Light theme — scoped to the community feed only. PostCard,
+   PostComposer, comments, MediaViewer, and Lightbox all read the same
+   var(--surface)/var(--ink)/var(--accent)/... names the rest of the app
+   uses, so overriding them here re-themes every one of those components
+   at once, without touching the app's global theme or any screen
+   outside Community.
+   ============================================================ */
 .community-shell {
+  --surface: #ffffff;
+  --surface-sunken: #f2f3f5;
+  --border: #e4e6eb;
+  --ink: #16181d;
+  --ink-soft: #4b4f58;
+  --ink-faint: #8a8f99;
+  --accent: #fe2c55;
+  --accent-deep: #e0264b;
+  --accent-soft: rgba(254, 44, 85, 0.08);
+  --accent-soft-2: rgba(254, 44, 85, 0.22);
+  --danger: #e0455f;
+  --danger-soft: rgba(224, 69, 95, 0.1);
+
+  background: #f7f8fa;
   min-height: 100%;
 }
 
@@ -27,9 +49,13 @@
 }
 
 .community-header h1 {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--ink);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, var(--ink), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   margin-bottom: 4px;
 }
 
@@ -44,8 +70,8 @@
   gap: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 9px 12px;
+  border-radius: 999px;
+  padding: 10px 14px;
   margin-bottom: 14px;
   color: var(--ink-faint);
 }
@@ -79,9 +105,10 @@
 }
 
 .community-category-btn.is-active {
-  background: var(--accent-soft);
-  border-color: var(--accent-soft-2);
-  color: var(--accent-deep);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(254, 44, 85, 0.35);
 }
 
 .community-feed {

@@ -5,7 +5,10 @@
 // community/{postId}
 //   authorId, authorName, businessName, anonymous
 //   type, category, title (unused now, kept for back-compat), body
-//   mediaUrl, mediaPath, mediaType ("image" | "video" | null)
+//   media: [{ url, path, type ("image"|"video") }, ...] — 0 or more
+//     attachments, shown as a swipeable carousel when there's more than one.
+//   mediaUrl, mediaPath, mediaType — legacy singular fields, kept in sync
+//     with media[0] for any older code path that still reads them directly.
 //   createdAt, editedAt, commentCount, likeCount, likedBy: [uid, ...]
 //   pinned, status
 //
@@ -34,7 +37,8 @@
 //
 // `mediaPath` is the Storage object path (not the download URL) — keeping
 // it alongside mediaUrl means deletes/edits never have to parse a URL to
-// find the file to remove.
+// find the file to remove. Comments/replies stay single-attachment; only
+// posts support the multi-image `media` array.
 
 import {
   collection,
@@ -82,6 +86,14 @@ async function uploadMedia(file, authorId, folder = "posts") {
   return { url, path, type: isVideo ? "video" : "image" };
 }
 
+// Uploads several files in parallel and returns their { url, path, type }
+// results in the same order they were passed in — order matters here since
+// it becomes the carousel order on the post.
+async function uploadMediaFiles(files, authorId, folder = "posts") {
+  if (!files || files.length === 0) return [];
+  return Promise.all(files.map((file) => uploadMedia(file, authorId, folder)));
+}
+
 // Best-effort delete. Falls back to parsing the path out of a legacy
 // download URL for docs written before mediaPath existed. Never throws —
 // a missing/already-gone file shouldn't block the Firestore delete.
@@ -100,6 +112,14 @@ async function deleteMediaFile(mediaUrl, mediaPath) {
       console.error("deleteMediaFile error:", err);
     }
   }
+}
+
+// Deletes every file in a post's `media` array. Used wherever a post's
+// whole gallery needs to go — full post delete, or an edit that replaces
+// the attachment set entirely.
+async function deleteAllMediaFiles(mediaArray) {
+  if (!Array.isArray(mediaArray) || mediaArray.length === 0) return;
+  await Promise.all(mediaArray.map((m) => deleteMediaFile(m.url, m.path)));
 }
 
 // Deletes every doc in a subcollection ref, plus each doc's attached
@@ -151,8 +171,10 @@ export function subscribeToPosts({ category, take = 50, onChange, onError }) {
 }
 
 /**
- * Create a new post. `mediaFile` is optional (a File from an <input>).
- * Validate the file with validateMediaFile() before calling this.
+ * Create a new post. `mediaFiles` is optional — an array of Files from an
+ * <input multiple>. Validate each with validateMediaFile() before calling
+ * this. Uploaded in the same order as passed, which becomes the carousel
+ * order on the post.
  */
 export async function createPost({
   authorId,
@@ -162,20 +184,13 @@ export async function createPost({
   category,
   body,
   anonymous = false,
-  mediaFile = null,
+  mediaFiles = [],
 }) {
   if (!authorId) throw new Error("Missing authorId");
-  if (!body?.trim() && !mediaFile) throw new Error("Write something or attach a photo/video.");
+  if (!body?.trim() && mediaFiles.length === 0) throw new Error("Write something or attach a photo/video.");
 
-  let mediaUrl = null;
-  let mediaPath = null;
-  let mediaType = null;
-  if (mediaFile) {
-    const uploaded = await uploadMedia(mediaFile, authorId, "posts");
-    mediaUrl = uploaded.url;
-    mediaPath = uploaded.path;
-    mediaType = uploaded.type;
-  }
+  const uploaded = await uploadMediaFiles(mediaFiles, authorId, "posts");
+  const media = uploaded.map((u) => ({ url: u.url, path: u.path, type: u.type }));
 
   const postsRef = collection(db, COMMUNITY_COLLECTION);
   const docRef = await addDoc(postsRef, {
@@ -186,9 +201,12 @@ export async function createPost({
     type: type || "discussion",
     category: category || "general_discussion",
     body: body?.trim() || "",
-    mediaUrl,
-    mediaPath,
-    mediaType,
+    media,
+    // Legacy singular fields, kept in sync with the first attachment for
+    // any older code path that still reads mediaUrl/mediaType directly.
+    mediaUrl: media[0]?.url || null,
+    mediaPath: media[0]?.path || null,
+    mediaType: media[0]?.type || null,
     createdAt: serverTimestamp(),
     editedAt: null,
     commentCount: 0,
@@ -202,37 +220,72 @@ export async function createPost({
 }
 
 /**
- * Edit a post's text and/or attachment.
- * - Pass `mediaFile` to replace the attachment (old one is deleted from Storage).
- * - Pass `removeMedia: true` to drop the attachment entirely.
- * - Otherwise the existing attachment is left untouched.
- * Pass the post's *current* mediaUrl/mediaPath in so the old file can be
- * cleaned up on replace/remove.
+ * Edit a post's text, category, and/or media gallery.
+ *
+ * Pass `media` to set the post's full attachment list, in the order the
+ * post should display it — the edit form supports adding, removing, and
+ * reordering, mixed freely with attachments that were already there.
+ * Each entry is one of:
+ *   - { kind: "existing", url, path, type } — an attachment the post
+ *     already had (keeping it or just moving its position).
+ *   - { kind: "new", file } — a File to upload and insert at this spot.
+ * Pass `media: []` to remove every attachment. Leave `media` undefined
+ * to leave the whole gallery untouched (e.g. a text-only edit).
+ *
+ * Pass the post's *current* `media` array (or, for older posts, its
+ * legacy mediaUrl/mediaPath) as `currentMedia`/`currentMediaUrl`/
+ * `currentMediaPath` — anything in there that didn't make it into the
+ * new `media` list gets cleaned up from Storage.
  */
 export async function updatePost(
   postId,
-  { body, category, mediaFile = null, removeMedia = false, currentMediaUrl = null, currentMediaPath = null, authorId }
+  {
+    body,
+    category,
+    media,
+    currentMedia = [],
+    currentMediaUrl = null,
+    currentMediaPath = null,
+    authorId,
+  }
 ) {
   const updates = { editedAt: serverTimestamp() };
 
   if (body !== undefined) updates.body = body?.trim() || "";
   if (category !== undefined) updates.category = category;
 
-  if (mediaFile) {
-    const uploaded = await uploadMedia(mediaFile, authorId, "posts");
-    updates.mediaUrl = uploaded.url;
-    updates.mediaPath = uploaded.path;
-    updates.mediaType = uploaded.type;
-    if (currentMediaUrl || currentMediaPath) {
-      await deleteMediaFile(currentMediaUrl, currentMediaPath);
-    }
-  } else if (removeMedia) {
-    updates.mediaUrl = null;
-    updates.mediaPath = null;
-    updates.mediaType = null;
-    if (currentMediaUrl || currentMediaPath) {
-      await deleteMediaFile(currentMediaUrl, currentMediaPath);
-    }
+  if (media !== undefined) {
+    const existingBefore = currentMedia.length
+      ? currentMedia
+      : currentMediaUrl || currentMediaPath
+      ? [{ url: currentMediaUrl, path: currentMediaPath }]
+      : [];
+
+    // Upload every "new" entry (in parallel), keeping each result lined
+    // up with its original position so order is preserved once existing
+    // and freshly-uploaded items are merged back together below.
+    const uploads = await Promise.all(
+      media.map((item) => (item.kind === "new" ? uploadMedia(item.file, authorId, "posts") : null))
+    );
+
+    const finalMedia = media.map((item, i) =>
+      item.kind === "new"
+        ? { url: uploads[i].url, path: uploads[i].path, type: uploads[i].type }
+        : { url: item.url, path: item.path, type: item.type }
+    );
+
+    // An existing attachment is identified by its Storage path (falling
+    // back to its URL for older docs that predate mediaPath) so a kept
+    // item that just moved position isn't mistaken for a dropped one.
+    const keyOf = (m) => m.path || m.url;
+    const keptKeys = new Set(finalMedia.map(keyOf).filter(Boolean));
+    const dropped = existingBefore.filter((m) => !keptKeys.has(keyOf(m)));
+    if (dropped.length) await deleteAllMediaFiles(dropped);
+
+    updates.media = finalMedia;
+    updates.mediaUrl = finalMedia[0]?.url || null;
+    updates.mediaPath = finalMedia[0]?.path || null;
+    updates.mediaType = finalMedia[0]?.type || null;
   }
 
   const ref_ = doc(db, COMMUNITY_COLLECTION, postId);
@@ -267,7 +320,9 @@ export async function deletePost(post) {
     await batch.commit();
   }
 
-  if (post.mediaUrl || post.mediaPath) {
+  if (Array.isArray(post.media) && post.media.length > 0) {
+    await deleteAllMediaFiles(post.media);
+  } else if (post.mediaUrl || post.mediaPath) {
     await deleteMediaFile(post.mediaUrl, post.mediaPath);
   }
 

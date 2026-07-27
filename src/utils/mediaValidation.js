@@ -9,6 +9,12 @@ export const MAX_IMAGE_SIZE_MB = 8;
 export const MAX_VIDEO_SIZE_MB = 60;
 export const MAX_VIDEO_SECONDS = 60;
 
+// Same cap everywhere a post's gallery is built or edited — enough for a
+// real "before/after/detail" set without turning a single post into an
+// upload marathon. Shared here so the composer and the edit form can't
+// drift apart.
+export const MAX_MEDIA_ITEMS = 6;
+
 function readVideoDuration(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);

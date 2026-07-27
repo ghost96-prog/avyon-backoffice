@@ -179,7 +179,7 @@ export default function CommentRow({
         )}
         {comment.mediaUrl && comment.mediaType === "video" && (
           <div className="comment-media">
-            <AutoplayVideo src={comment.mediaUrl} compact onOpen={() => setLightboxOpen(true)} />
+            <AutoplayVideo src={comment.mediaUrl} compact onOpen={() => setLightboxOpen(true)} forcePause={lightboxOpen} />
           </div>
         )}
 

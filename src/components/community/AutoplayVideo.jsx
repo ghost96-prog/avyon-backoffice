@@ -9,7 +9,7 @@ import { Volume2, VolumeX, Play } from "lucide-react";
 import { useInView } from "../../hooks/useInView";
 import "./AutoplayVideo.css";
 
-export default function AutoplayVideo({ src, onOpen, compact = false }) {
+export default function AutoplayVideo({ src, onOpen, compact = false, forcePause = false }) {
   const [wrapperRef, inView] = useInView({ threshold: 0.55 });
   const videoRef = useRef(null);
   const [muted, setMuted] = useState(true);
@@ -19,7 +19,10 @@ export default function AutoplayVideo({ src, onOpen, compact = false }) {
     const video = videoRef.current;
     if (!video) return;
 
-    if (inView) {
+    // forcePause wins regardless of scroll position — set when this same
+    // video is open in the MediaViewer/Lightbox, so the feed's copy
+    // doesn't keep playing behind/underneath it.
+    if (inView && !forcePause) {
       const playPromise = video.play();
       if (playPromise?.then) {
         playPromise.then(() => setPaused(false)).catch(() => setPaused(true));
@@ -28,7 +31,7 @@ export default function AutoplayVideo({ src, onOpen, compact = false }) {
       video.pause();
       setPaused(true);
     }
-  }, [inView]);
+  }, [inView, forcePause]);
 
   const toggleMute = (e) => {
     e.stopPropagation();
