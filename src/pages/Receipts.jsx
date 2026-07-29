@@ -1,7 +1,7 @@
 // src/pages/Receipts.jsx
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Store, Download, FileText, Search, X, Receipt, RefreshCw, AlertTriangle, Lock } from 'lucide-react';
+import { ChevronLeft, Store, Download, FileText, Search, X, Receipt, RefreshCw, AlertTriangle, Lock, Tag } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useDateRange } from '../hooks/useDateRange';
 import DateRangeNav from '../components/common/DateRangeNav';
@@ -114,11 +114,16 @@ export default function Receipts() {
     let payments = [];
     let items = [];
     let baseTotals = {};
+    let hasDiscount = false;
     try {
       totals = typeof r.totals === 'string' ? JSON.parse(r.totals) : (r.totals || {});
       payments = typeof r.payments === 'string' ? JSON.parse(r.payments) : (r.payments || []);
       items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
       baseTotals = typeof r.baseTotals === 'string' ? JSON.parse(r.baseTotals) : (r.baseTotals || {});
+      
+      // ✅ Check if any item has a discount
+      hasDiscount = items.some(item => (item.discountAmount || 0) > 0);
+      
     } catch (e) { /* ignore */ }
     const payment = payments[0];
     return {
@@ -132,6 +137,7 @@ export default function Receipts() {
       baseTotals,
       payments,
       items,
+      hasDiscount, // ✅ Add hasDiscount flag
       customerName: r.customerName || 'Walk-in Customer',
       cashierName: r.cashierName || 'Admin',
       status: r.status || 'completed',
@@ -250,7 +256,7 @@ export default function Receipts() {
     if (isExporting || !filteredReceipts.length) return;
     setIsExporting(true);
     try {
-      const header = ['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Total'];
+      const header = ['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Total', 'Has Discount'];
       const rows = filteredReceipts.map(r => [
         r.receiptNumber,
         r.store,
@@ -260,6 +266,7 @@ export default function Receipts() {
         r.method || 'cash',
         r.status,
         (r.total || 0).toFixed(2),
+        r.hasDiscount ? 'Yes' : 'No',
       ]);
       const branchTag = selectedBranchId === 'all' ? 'all-stores' : selectedBranchName.toLowerCase().replace(/\s+/g, '-');
       const filename = `receipts_${branchTag}_${toApiDate(startDate)}_to_${toApiDate(endDate)}.csv`;
@@ -290,7 +297,7 @@ export default function Receipts() {
       doc.text(`${branchLabel} • ${toApiDate(startDate)} to ${toApiDate(endDate)}`, 32, 46);
       doc.setTextColor(20, 24, 30);
 
-      const tableHead = [['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Total']];
+      const tableHead = [['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Total', 'Discount']];
       const tableBody = filteredReceipts.map(r => [
         r.receiptNumber,
         r.store,
@@ -300,6 +307,7 @@ export default function Receipts() {
         r.method || 'cash',
         r.status || 'completed',
         formatMoney(r.total, baseCurrency),
+        r.hasDiscount ? '✓' : '',
       ]);
 
       autoTable(doc, {
@@ -677,7 +685,28 @@ export default function Receipts() {
                 return (
                   <div key={r.id} className="reports-list-item" onClick={() => handleReceiptClick(r)}>
                     <div className="reports-list-item-info">
-                      <div className="reports-list-item-title">{r.receiptNumber}</div>
+                      <div className="reports-list-item-title">
+                        {r.receiptNumber}
+                        {/* ✅ Discount Badge */}
+                        {r.hasDiscount && (
+                          <span style={{
+                            marginLeft: 8,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                            fontSize: 9,
+                            fontWeight: 700,
+                            color: '#B45309',
+                            background: '#FEF3C7',
+                            padding: '1px 8px',
+                            borderRadius: 12,
+                            border: '1px solid #FDE68A',
+                          }}>
+                            <Tag size={10} />
+                            Discount
+                          </span>
+                        )}
+                      </div>
                       <div className="reports-list-item-sub">
                         <span>{r.store}</span>
                         <span>{new Date(r.createdAt).toLocaleString()}</span>
