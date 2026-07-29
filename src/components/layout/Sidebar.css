@@ -72,6 +72,7 @@
 .sidebar-brand-details {
   display: flex;
   flex-direction: column;
+  min-height:  40px;
   gap: 1px;
   margin-top: 2px;
   min-width: 0;

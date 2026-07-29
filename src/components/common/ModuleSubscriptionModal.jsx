@@ -18,8 +18,11 @@ const SUPPORT_PHONE = '+263783556354';
 const SUPPORT_EMAIL = 'gkmangezi09@gmail.com';
 
 export default function ModuleSubscriptionModal({ moduleId, moduleState, onClose }) {
-  const { businessId, businessName, branchId, selectedBranchId, branches } = useAppContext();
+  const { apiFetch, businessId, businessName, branchId, selectedBranchId, branches } = useAppContext();
   const [copied, setCopied] = useState(false);
+  const [trialLoading, setTrialLoading] = useState(false);
+  const [trialError, setTrialError] = useState(null);
+  const [trialJustStarted, setTrialJustStarted] = useState(false);
 
   const info = getModuleInfo(moduleId);
   if (!info) return null;
@@ -30,10 +33,36 @@ export default function ModuleSubscriptionModal({ moduleId, moduleState, onClose
   // this modal names the wrong branch even when moduleState itself is
   // correct for the branch the user is really on.
   const branchName = branches?.find((b) => b.branchId === (selectedBranchId || branchId))?.name || '';
+  const activeBranchId = selectedBranchId || branchId;
 
-  const status = moduleState?.status || 'inactive';
+  const status = moduleState?.status || 'not_started';
   const isExpired = status === 'expired';
   const isSuspended = status === 'suspended';
+  // ✅ Only a module that has NEVER been started is trial-eligible — once
+  // used, expired, active, or suspended, this is permanently false and
+  // the modal falls back to the "contact support" flow below.
+  const canStartTrial = status === 'not_started';
+
+  const handleStartTrial = async () => {
+    if (trialLoading || !businessId || !activeBranchId) return;
+    setTrialLoading(true);
+    setTrialError(null);
+    try {
+      await apiFetch(
+        `/business/${businessId}/branches/${activeBranchId}/${moduleId}/start-trial`,
+        { method: 'POST' }
+      );
+      // Tell every mounted useModuleSubscriptions instance to refetch so
+      // the gate re-checks hasModuleAccess with the new trial in place.
+      window.dispatchEvent(new Event('module-subscriptions:refresh'));
+      setTrialJustStarted(true);
+      setTimeout(() => onClose?.(), 1100);
+    } catch (error) {
+      setTrialError(error.message || 'Could not start trial. Please try again.');
+    } finally {
+      setTrialLoading(false);
+    }
+  };
 
   const supportMessage = `Hi, I'd like to subscribe to the "${info.label}" module${
     branchName ? ` for ${branchName}` : ''
@@ -112,21 +141,50 @@ export default function ModuleSubscriptionModal({ moduleId, moduleState, onClose
           </div>
         </div>
 
-        {/* Footer — support actions */}
-        <div className="msm-footer">
-          <div className="msm-footer-label">Ready to subscribe? Contact support to activate:</div>
-          <div className="msm-support-actions">
-            <a className="msm-support-btn msm-support-btn--whatsapp" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-              <MessageCircle size={16} /> WhatsApp
-            </a>
-            <a className="msm-support-btn msm-support-btn--call" href={telUrl}>
-              <Phone size={16} /> Call
-            </a>
-            <a className="msm-support-btn msm-support-btn--email" href={emailUrl}>
-              <Mail size={16} /> Email
-            </a>
+        {/* ✅ Trial CTA — only for a module that's never been started */}
+        {canStartTrial && (
+          <div className="msm-trial-block">
+            {trialJustStarted ? (
+              <div className="msm-trial-success">
+                <Check size={15} color="#16A34A" />
+                <span>Trial started — you're all set for 14 days.</span>
+              </div>
+            ) : (
+              <>
+                <button
+                  className="msm-trial-btn"
+                  style={{ background: info.color }}
+                  onClick={handleStartTrial}
+                  disabled={trialLoading}
+                >
+                  {trialLoading ? 'Starting trial…' : 'Start 14-day free trial'}
+                </button>
+                {trialError && <div className="msm-trial-error">{trialError}</div>}
+                <div className="msm-trial-hint">No payment needed. Full access for 14 days.</div>
+              </>
+            )}
           </div>
-        </div>
+        )}
+
+        {/* Footer — support actions (skip trial / renew / resolve suspension) */}
+        {!trialJustStarted && (
+          <div className="msm-footer">
+            <div className="msm-footer-label">
+              {canStartTrial ? "Prefer to subscribe directly? Contact support:" : "Ready to subscribe? Contact support to activate:"}
+            </div>
+            <div className="msm-support-actions">
+              <a className="msm-support-btn msm-support-btn--whatsapp" href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+                <MessageCircle size={16} /> WhatsApp
+              </a>
+              <a className="msm-support-btn msm-support-btn--call" href={telUrl}>
+                <Phone size={16} /> Call
+              </a>
+              <a className="msm-support-btn msm-support-btn--email" href={emailUrl}>
+                <Mail size={16} /> Email
+              </a>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

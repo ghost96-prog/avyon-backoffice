@@ -10,6 +10,7 @@ import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/expo
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
 import '../styles/ReportsShared.css';
 import { useSelectedBranch } from '../hooks/useSelectedBranch';
+
 // ─── Loading Bar Component ──────────────────────────────────────────────
 function LoadingBar({ visible }) {
   if (!visible) return null;
@@ -62,6 +63,7 @@ const METHOD_ICONS = {
   card: { label: 'Card', bg: '#eff6ff', color: '#0891b2' },
   mobile: { label: 'Mobile Pay', bg: '#f5f3ff', color: '#7c3aed' },
 };
+
 const RECEIPT_TYPE_CONFIG = {
   sale: { label: 'Sale', bg: '#E0E7FF', color: '#6366F1' },
   laybye_deposit: { label: 'LAYBYE DEPOSIT', bg: '#effcdc', color: '#6366F1' },
@@ -111,10 +113,12 @@ export default function Receipts() {
     let totals = {};
     let payments = [];
     let items = [];
+    let baseTotals = {};
     try {
       totals = typeof r.totals === 'string' ? JSON.parse(r.totals) : (r.totals || {});
       payments = typeof r.payments === 'string' ? JSON.parse(r.payments) : (r.payments || []);
       items = typeof r.items === 'string' ? JSON.parse(r.items) : (r.items || []);
+      baseTotals = typeof r.baseTotals === 'string' ? JSON.parse(r.baseTotals) : (r.baseTotals || {});
     } catch (e) { /* ignore */ }
     const payment = payments[0];
     return {
@@ -123,7 +127,9 @@ export default function Receipts() {
       store: branchName || r.store || 'Store',
       method: payment?.method || r.method || 'cash',
       total: totals.grandTotal || totals.total || r.total || 0,
+      baseTotal: baseTotals.grandTotal ?? (totals.grandTotal || totals.total || r.total || 0),
       totals,
+      baseTotals,
       payments,
       items,
       customerName: r.customerName || 'Walk-in Customer',
@@ -221,7 +227,9 @@ export default function Receipts() {
 
   const receiptStats = useMemo(() => {
     const total = filteredReceipts.length;
-    const totalSales = filteredReceipts.reduce((sum, r) => sum + (r.total || 0), 0);
+    const totalSales = filteredReceipts
+      .filter(r => r.status !== 'voided')
+      .reduce((sum, r) => sum + (r.baseTotal || 0), 0);
     const completedCount = filteredReceipts.filter(r => r.status === 'completed').length;
     const refundedCount = filteredReceipts.filter(r => r.status === 'refunded' || r.status === 'partially_refunded').length;
     return { total, totalSales, completedCount, refundedCount };
@@ -303,7 +311,6 @@ export default function Receipts() {
         margin: { left: 32, right: 32 },
       });
 
-      // Summary section
       const finalY = doc.lastAutoTable.finalY + 20;
       doc.setFontSize(10);
       doc.setTextColor(20, 24, 30);
@@ -398,22 +405,123 @@ export default function Receipts() {
             {r.items?.map((item, i) => {
               const unitPrice = item.unitPrice ?? item.customPrice ?? item.price ?? 0;
               const lineTotal = item.finalSubtotal ?? (unitPrice * (item.qty ?? 1));
+              
+              const discountAmount = item.discountAmount ?? 0;
+              const hasDiscount = discountAmount > 0;
+
+              const refundedQty = item.refundedQty ?? 0;
+              const originalQty = item.qty ?? 1;
+              const isPartiallyRefunded = refundedQty > 0 && refundedQty < originalQty;
+              const isFullyRefunded = refundedQty >= originalQty;
+              const isRefunded = isPartiallyRefunded || isFullyRefunded;
+
               return (
-                <div key={item.id ?? i} className="reports-modal-row" style={{ alignItems: 'center', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                <div 
+                  key={item.id ?? i} 
+                  className="reports-modal-row" 
+                  style={{ 
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    backgroundColor: isRefunded ? '#FEF2F2' : 'transparent',
+                    borderLeft: isRefunded ? '3px solid #EF4444' : 'none',
+                    paddingLeft: isRefunded ? 8 : 0,
+                    paddingTop: isRefunded ? 4 : 0,
+                    paddingBottom: isRefunded ? 4 : 0,
+                    borderRadius: isRefunded ? '4px' : '0',
+                    opacity: isFullyRefunded ? 0.7 : 1,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
                     {item.image ? (
-                      <img src={item.image} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', background: '#F1F5F9' }} />
+                      <img src={item.image} alt="" style={{ width: 32, height: 32, borderRadius: 6, objectFit: 'cover', background: '#F1F5F9', flexShrink: 0 }} />
                     ) : (
-                      <div style={{ width: 32, height: 32, borderRadius: 6, background: '#F1F5F9' }} />
+                      <div style={{ width: 32, height: 32, borderRadius: 6, background: '#F1F5F9', flexShrink: 0 }} />
                     )}
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
-                      <div style={{ fontSize: 11, color: '#94A3B8' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ 
+                        fontSize: 13, 
+                        fontWeight: 500, 
+                        color: isRefunded ? '#64748B' : '#0F172A',
+                        textDecoration: isRefunded ? 'line-through' : 'none',
+                      }}>
+                        {item.name}
+                        {isPartiallyRefunded && (
+                          <span style={{ 
+                            marginLeft: 6, 
+                            fontSize: 10, 
+                            fontWeight: 700, 
+                            color: '#B45309',
+                            background: '#FEF3C7',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            display: 'inline-block',
+                          }}>
+                            {refundedQty}/{originalQty} refunded
+                          </span>
+                        )}
+                        {isFullyRefunded && (
+                          <span style={{ 
+                            marginLeft: 6, 
+                            fontSize: 10, 
+                            fontWeight: 700, 
+                            color: '#16A34A',
+                            background: '#DCFCE7',
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            display: 'inline-block',
+                          }}>
+                            Fully refunded
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Line 1: Qty × Price */}
+                      <div style={{ 
+                        fontSize: 11, 
+                        color: isRefunded ? '#94A3B8' : '#94A3B8',
+                        marginTop: 1,
+                      }}>
                         {item.qty} × {sym}{Number(unitPrice).toFixed(2)}{item.unit && item.unit !== 'each' ? ` / ${item.unit}` : ''}
                       </div>
+
+                      {/* Line 2: Discount (if any) - BELOW the qty × price */}
+                      {hasDiscount && (
+                        <div style={{ 
+                          fontSize: 10, 
+                          color: isRefunded ? '#94A3B8' : '#EF4444',
+                          fontWeight: 600,
+                          marginTop: 1,
+                          textDecoration: isRefunded ? 'line-through' : 'none',
+                        }}>
+                          -{sym}{Number(discountAmount).toFixed(2)} discount
+                        </div>
+                      )}
+
+                      {/* Line 3: Partial refund note */}
+                      {isPartiallyRefunded && (
+                        <div style={{ fontSize: 10, color: '#B45309', marginTop: 1 }}>
+                          {refundedQty} unit{refundedQty !== 1 ? 's' : ''} refunded · {originalQty - refundedQty} remaining
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{sym}{Number(lineTotal).toFixed(2)}</span>
+                  
+                  {/* Right side - Total and refund amount */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, flexShrink: 0 }}>
+                    <span style={{ 
+                      fontSize: 13, 
+                      fontWeight: 600,
+                      color: isRefunded ? '#94A3B8' : '#1E293B',
+                      textDecoration: isRefunded ? 'line-through' : 'none',
+                    }}>
+                      {sym}{Number(lineTotal).toFixed(2)}
+                    </span>
+                    {isPartiallyRefunded && (
+                      <span style={{ fontSize: 10, fontWeight: 600, color: '#EF4444' }}>
+                        -{sym}{Number((unitPrice * refundedQty)).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -422,7 +530,7 @@ export default function Receipts() {
 
           <div className="reports-modal-row"><span className="reports-modal-row-label">Subtotal</span><span>{sym}{Number(r.totals?.lineTotal ?? r.totals?.subtotal ?? 0).toFixed(2)}</span></div>
           {(r.totals?.totalDiscount || 0) > 0 && (
-            <div className="reports-modal-row"><span className="reports-modal-row-label">Discount</span><span style={{ color: '#16a34a' }}>-{sym}{Number(r.totals.totalDiscount).toFixed(2)}</span></div>
+            <div className="reports-modal-row"><span className="reports-modal-row-label">Total Discount</span><span style={{ color: '#EF4444' }}>-{sym}{Number(r.totals.totalDiscount).toFixed(2)}</span></div>
           )}
           {(r.totals?.tax || 0) > 0 && (
             <div className="reports-modal-row"><span className="reports-modal-row-label">Tax</span><span>{sym}{Number(r.totals.tax).toFixed(2)}</span></div>

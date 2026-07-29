@@ -14,9 +14,9 @@ import { useAppContext } from '../context/AppContext';
 import { readCache, writeCache, reresolveAgainstClock, STALE_AFTER_MS } from '../utils/moduleSubscriptionCache';
 
 const EMPTY_MODULES = {
-  inventory_mgmt: { status: 'inactive', hasAccess: false, accessExpiresAt: null, msRemaining: null },
-  advanced_inventory: { status: 'inactive', hasAccess: false, accessExpiresAt: null, msRemaining: null },
-  analytics: { status: 'inactive', hasAccess: false, accessExpiresAt: null, msRemaining: null },
+  inventory_mgmt: { status: 'not_started', hasAccess: false, accessExpiresAt: null, msRemaining: null },
+  advanced_inventory: { status: 'not_started', hasAccess: false, accessExpiresAt: null, msRemaining: null },
+  analytics: { status: 'not_started', hasAccess: false, accessExpiresAt: null, msRemaining: null },
 };
 
 export function useModuleSubscriptions() {
@@ -107,6 +107,17 @@ export function useModuleSubscriptions() {
       setModules((prev) => reresolveAgainstClock(prev));
     }, 60 * 1000);
     return () => clearInterval(clockTick);
+  }, [fetchLive]);
+
+  // ✅ NEW — ModuleSubscriptionModal starting a trial changes server
+  // state that this hook's own interval/cache can't know about. Rather
+  // than prop-drill a refresh callback through every page that renders
+  // the modal, the modal just dispatches this event after a successful
+  // start-trial call and every mounted instance of this hook refetches.
+  useEffect(() => {
+    const handler = () => fetchLive();
+    window.addEventListener('module-subscriptions:refresh', handler);
+    return () => window.removeEventListener('module-subscriptions:refresh', handler);
   }, [fetchLive]);
 
   const hasModuleAccess = useCallback(
