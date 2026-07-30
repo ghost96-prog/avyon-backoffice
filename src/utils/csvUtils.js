@@ -149,8 +149,11 @@ export function triggerCsvDownload(filename, rows) {
 // ─── Template: headers + one example row ──────────────────────────────────────
 export function downloadProductTemplate() {
   const headers = PRODUCT_CSV_COLUMNS.map((c) => c.label);
+  // ✅ CHANGED — sample SKU is now a plain numeric value starting at 10000
+  // (matches the app's own auto-generated SKU numbering, e.g. getHighestSKU()
+  // in realm/schema.js), instead of the old prefixed "SKU1001" placeholder.
   const example = [
-    '', 'SKU1001', 'Sample Product', '', 'No Category', 'each', '',
+    '', '10000', 'Sample Product', '', 'No Category', 'each', '',
     'Optional description', '9.99', '5.00', 'TRUE', '20', '5', 'active',
     'FALSE', '', '0', 'FALSE',
   ];

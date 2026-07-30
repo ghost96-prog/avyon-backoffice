@@ -1,6 +1,6 @@
 // src/components/pin/PinGate.jsx
 import React, { useCallback, useEffect, useState, useMemo } from "react";
-import { Delete, ShieldCheck, LogOut, RefreshCw } from "lucide-react";
+import { Delete, ShieldCheck, LogOut, RefreshCw, X } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { backofficeSessionManager } from "../../services/backofficeSessionManager";
 import { ROLE_LABELS } from "../../utils/permissions";
@@ -170,19 +170,84 @@ export default function PinGate({ mode = "initial" }) {
         {error && <p className="pingate-error">{error}</p>}
         {verifying && <p className="pingate-verifying">Verifying…</p>}
 
+        {/* Android-inspired keypad */}
         <div className="pingate-keypad">
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-            <button 
-              key={n} 
-              className="pingate-key" 
-              onClick={() => press(String(n))} 
-              disabled={verifying}
-            >
-              {n}
-            </button>
-          ))}
-          <button className="pingate-key pingate-key-action" onClick={clear} disabled={verifying || !pin.length}>
-            Clear
+          {/* Row 1: 1, 2, 3 */}
+          <button 
+            className="pingate-key" 
+            onClick={() => press("1")} 
+            disabled={verifying}
+          >
+            1
+          </button>
+          <button 
+            className="pingate-key" 
+            onClick={() => press("2")} 
+            disabled={verifying}
+          >
+            2
+          </button>
+          <button 
+            className="pingate-key" 
+            onClick={() => press("3")} 
+            disabled={verifying}
+          >
+            3
+          </button>
+
+          {/* Row 2: 4, 5, 6 */}
+          <button 
+            className="pingate-key" 
+            onClick={() => press("4")} 
+            disabled={verifying}
+          >
+            4
+          </button>
+          <button 
+            className="pingate-key" 
+            onClick={() => press("5")} 
+            disabled={verifying}
+          >
+            5
+          </button>
+          <button 
+            className="pingate-key" 
+            onClick={() => press("6")} 
+            disabled={verifying}
+          >
+            6
+          </button>
+
+          {/* Row 3: 7, 8, 9 */}
+          <button 
+            className="pingate-key" 
+            onClick={() => press("7")} 
+            disabled={verifying}
+          >
+            7
+          </button>
+          <button 
+            className="pingate-key" 
+            onClick={() => press("8")} 
+            disabled={verifying}
+          >
+            8
+          </button>
+          <button 
+            className="pingate-key" 
+            onClick={() => press("9")} 
+            disabled={verifying}
+          >
+            9
+          </button>
+
+          {/* Row 4: Clear, 0, Backspace */}
+          <button
+            className="pingate-key pingate-key-action"
+            onClick={clear}
+            disabled={verifying || !pin.length}
+          >
+            <X size={18} />
           </button>
           <button 
             className="pingate-key" 
@@ -197,7 +262,7 @@ export default function PinGate({ mode = "initial" }) {
             disabled={verifying || !pin.length}
             aria-label="Backspace"
           >
-            <Delete size={16} />
+            <Delete size={18} />
           </button>
         </div>
 

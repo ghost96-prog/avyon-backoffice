@@ -47,16 +47,20 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   BASE (mobile-first) — small phones, ~360–480px wide
+   ───────────────────────────────────────────────────────────────────────── */
+
 .pingate-card {
   position: relative;
   z-index: 1;
-  width: 100%;
-  max-width: 300px;
+  width: 92vw;
+  max-width: 340px;
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(10px);
-  border-radius: var(--r-lg);
+  border-radius: 24px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  padding: 20px 20px 18px;
+  padding: 24px 20px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -64,20 +68,53 @@
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.pingate-refresh-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(248, 250, 252, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.pingate-refresh-btn:hover:not(:disabled) {
+  color: var(--accent-deep);
+  background: rgba(248, 250, 252, 1);
+  transform: scale(1.05);
+}
+.pingate-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.pingate-spin {
+  animation: pingate-spin 1s linear infinite;
+}
+@keyframes pingate-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .pingate-icon {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   box-shadow: 0 4px 12px rgba(53, 122, 189, 0.3);
 }
 
 .pingate-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--ink);
   margin: 0;
@@ -85,28 +122,34 @@
 
 .pingate-subtitle {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--ink-soft);
 }
 
 .pingate-active {
   margin-top: 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--accent-deep);
   background: var(--accent-soft);
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: var(--r-pill);
+}
+
+.pingate-sync-indicator {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--ink-faint);
 }
 
 .pingate-dots {
   display: flex;
-  gap: 12px;
-  margin: 18px 0 4px;
+  gap: 16px;
+  margin: 22px 0 6px;
 }
 
 .pingate-dot {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   border: 2px solid var(--border-strong);
   transition: all var(--dur-fast) var(--ease);
@@ -123,114 +166,319 @@
 
 .pingate-error {
   color: var(--danger);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  min-height: 14px;
-  margin: 2px 0;
+  min-height: 16px;
+  margin: 4px 0;
 }
 
 .pingate-verifying {
   color: var(--ink-faint);
-  font-size: 11px;
-  min-height: 14px;
-  margin: 2px 0;
+  font-size: 12px;
+  min-height: 16px;
+  margin: 4px 0;
 }
 
+/* ─── Android-inspired Keypad ────────────────────────────────────────── */
+
 .pingate-keypad {
-  margin-top: 14px;
+  margin-top: 16px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 12px;
   width: 100%;
-  max-width: 200px;
+  max-width: 260px;
 }
 
 .pingate-key {
   aspect-ratio: 1;
   border: none;
-  border-radius: var(--r-sm);
-  background: rgba(248, 250, 252, 0.8);
+  border-radius: 12px;
+  background: #F1F5F9;
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
   color: var(--ink);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-  min-height: 44px;
-  backdrop-filter: blur(4px);
+  transition: all 0.15s ease;
+  min-height: 56px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  width: 100%;
 }
+
 .pingate-key:hover:not(:disabled) {
-  background: var(--accent-soft);
-  color: var(--accent-deep);
+  background: #E8EDF5;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.08);
 }
+
 .pingate-key:active:not(:disabled) {
   transform: scale(0.94);
+  background: #DCE3ED;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
+
 .pingate-key:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
 }
+
 .pingate-key-action {
-  font-size: 11px;
+  background: #F8FAFC;
   color: var(--ink-soft);
+  font-size: 14px;
+}
+
+.pingate-key-action:hover:not(:disabled) {
+  background: #F1F5F9;
+  color: var(--ink);
+}
+
+.pingate-key-action svg {
+  stroke-width: 2;
 }
 
 .pingate-signout {
-  margin-top: 16px;
+  margin-top: 18px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
   background: none;
   border: none;
   color: var(--ink-faint);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   transition: color var(--dur-fast) var(--ease);
+  padding: 6px 4px;
+  cursor: pointer;
 }
 .pingate-signout:hover {
   color: var(--danger);
 }
-.pingate-card {
-  position: relative; /* anchor for refresh button */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EXTRA-SMALL PHONES — ≤360px
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 360px) {
+  .pingate-card {
+    width: 94vw;
+    max-width: 100%;
+    padding: 20px 14px 16px;
+  }
+  .pingate-keypad {
+    max-width: 220px;
+    gap: 10px;
+  }
+  .pingate-key {
+    min-height: 48px;
+    font-size: 18px;
+    border-radius: 10px;
+  }
+  .pingate-title {
+    font-size: 16px;
+  }
 }
 
-.pingate-refresh-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(248, 250, 252, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-soft);
-  cursor: pointer;
-}
-.pingate-refresh-btn:hover:not(:disabled) {
-  color: var(--accent-deep);
-}
-.pingate-refresh-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-.pingate-spin {
-  animation: pingate-spin 1s linear infinite;
-}
-@keyframes pingate-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.pingate-badge-row {
-  margin-top: 8px;
+/* ─────────────────────────────────────────────────────────────────────────
+   TABLET — ≥600px
+   ───────────────────────────────────────────────────────────────────────── */
+@media (min-width: 600px) {
+  .pingate-card {
+    width: 360px;
+    max-width: 360px;
+    padding: 28px 28px 24px;
+  }
+  .pingate-icon {
+    width: 48px;
+    height: 48px;
+  }
+  .pingate-title {
+    font-size: 20px;
+  }
+  .pingate-subtitle {
+    font-size: 13px;
+  }
+  .pingate-keypad {
+    max-width: 240px;
+    gap: 12px;
+  }
+  .pingate-key {
+    min-height: 60px;
+    font-size: 22px;
+    border-radius: 14px;
+  }
 }
 
-.pingate-sync-indicator {
-  margin-top: 6px;
-  font-size: 10px;
-  color: var(--ink-faint);
+/* ─────────────────────────────────────────────────────────────────────────
+   DESKTOP / PC — ≥1024px - WIDER BUTTONS (width only!)
+   ───────────────────────────────────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .pingate-card {
+    width: 380px;
+    max-width: 380px;
+    padding: 32px 32px 26px;
+    border-radius: 28px;
+  }
+  .pingate-icon {
+    width: 52px;
+    height: 52px;
+    margin-bottom: 14px;
+  }
+  .pingate-title {
+    font-size: 22px;
+  }
+  .pingate-subtitle {
+    font-size: 13px;
+  }
+  .pingate-active {
+    font-size: 13px;
+  }
+  .pingate-dots {
+    gap: 18px;
+    margin: 24px 0 8px;
+  }
+  .pingate-dot {
+    width: 11px;
+    height: 11px;
+  }
+  /* ✅ ONLY CHANGE: wider keypad - buttons get wider not taller! */
+  .pingate-keypad {
+    max-width: 350px; /* Wider container */
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .pingate-key {
+    aspect-ratio: 1.3; /* Rectangle - wider than tall */
+    min-height: 56px; /* Keep height same */
+    font-size: 22px;
+    border-radius: 14px;
+  }
+  .pingate-signout {
+    margin-top: 20px;
+  }
+  .pingate-refresh-btn {
+    width: 32px;
+    height: 32px;
+    top: 14px;
+    right: 14px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   LARGE DESKTOP — ≥1440px - EVEN WIDER BUTTONS
+   ───────────────────────────────────────────────────────────────────────── */
+@media (min-width: 1440px) {
+  .pingate-card {
+    width: 420px;
+    max-width: 420px;
+  }
+  /* ✅ ONLY CHANGE: even wider keypad - buttons get wider not taller! */
+  .pingate-keypad {
+    max-width: 390px; /* Even wider container */
+    gap: 14px;
+  }
+  .pingate-key {
+    aspect-ratio: 1.4; /* Even wider rectangle */
+    min-height: 56px; /* Keep height same */
+    font-size: 24px;
+    border-radius: 16px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SHORT VIEWPORTS (landscape phones, small laptop windows)
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-height: 560px) {
+  .pingate-card {
+    padding-top: 16px;
+    padding-bottom: 14px;
+  }
+  .pingate-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 6px;
+  }
+  .pingate-dots {
+    margin: 12px 0 4px;
+    gap: 12px;
+  }
+  .pingate-dot {
+    width: 10px;
+    height: 10px;
+  }
+  .pingate-keypad {
+    margin-top: 10px;
+    gap: 8px;
+    max-width: 200px;
+  }
+  .pingate-key {
+    min-height: 40px;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+  .pingate-signout {
+    margin-top: 10px;
+  }
+  .pingate-key-action svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   LANDSCAPE TABLET / DESKTOP LAYOUT — when viewport is wide and short
+   ───────────────────────────────────────────────────────────────────────── */
+@media (min-width: 768px) and (max-height: 600px) {
+  .pingate-card {
+    max-width: 500px;
+    padding: 20px 28px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .pingate-icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 0;
+  }
+  
+  .pingate-title,
+  .pingate-subtitle {
+    flex: 0 0 auto;
+  }
+  
+  .pingate-title {
+    font-size: 18px;
+  }
+  
+  .pingate-dots {
+    margin: 0;
+    gap: 12px;
+    flex: 0 0 100%;
+  }
+  
+  .pingate-keypad {
+    max-width: 280px;
+    gap: 8px;
+    margin-top: 4px;
+    flex: 0 0 100%;
+  }
+  
+  .pingate-key {
+    min-height: 44px;
+    font-size: 18px;
+  }
+  
+  .pingate-signout {
+    margin-top: 4px;
+  }
 }
