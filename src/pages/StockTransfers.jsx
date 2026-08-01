@@ -183,6 +183,167 @@ function useIncrementalReveal(totalLength, step = 40, resetKey) {
   };
 }
 
+// ✅ NEW — replacement for the plain <select> used in the accept modal's
+// "Receive Into" column. Renders as a tappable button; tapping it opens a
+// fixed, full-viewport popup (its own dark backdrop, centered card, z-index
+// above the AcceptModal itself) so it's never clipped by the table's
+// overflow-x/overflow-y scroll containers or the modal's own scroll area.
+// The search field lives INSIDE the popup — not on the row/button — and
+// results are only rendered once the person has actually typed something;
+// with an empty query the popup shows a "start typing" hint instead of
+// pre-listing the whole catalog. Matches reveal 40 at a time via
+// useIncrementalReveal as the popup's own list is scrolled.
+const SearchableProductSelect = ({ products, loading, value, onChange, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const inputRef = React.useRef(null);
+
+  const selectedProduct = products.find((p) => p.productId === value);
+
+  useEffect(() => {
+    if (open) {
+      setQuery('');
+      const t = setTimeout(() => inputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
+  const trimmedQuery = query.trim();
+  const filtered = useMemo(() => {
+    const q = trimmedQuery.toLowerCase();
+    if (!q) return [];
+    return products.filter(
+      (p) => p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q)
+    );
+  }, [products, trimmedQuery]);
+
+  const reveal = useIncrementalReveal(filtered.length, 40, trimmedQuery);
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          padding: '6px 8px',
+          borderRadius: 6,
+          fontSize: 12,
+          border: `1px solid ${value ? '#E2E8F0' : '#FCA5A5'}`,
+          background: disabled ? '#F8FAFC' : (value ? '#fff' : '#FEF2F2'),
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 6,
+          boxSizing: 'border-box',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {loading ? 'Loading products…' : selectedProduct ? `${selectedProduct.name} (${selectedProduct.sku})` : 'Tap to select product'}
+        </span>
+        <Search size={12} color="#94A3B8" style={{ flexShrink: 0 }} />
+      </button>
+
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.55)',
+            zIndex: 10050,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: '#fff',
+              borderRadius: 12,
+              width: '100%',
+              maxWidth: 420,
+              maxHeight: '70vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.3)',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 16px', borderBottom: '1px solid #F1F5F9' }}>
+              <Search size={16} color="#94A3B8" style={{ flexShrink: 0 }} />
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search product name or SKU…"
+                style={{ flex: 1, border: 'none', outline: 'none', fontSize: 14, padding: '4px 0' }}
+              />
+              <button
+                onClick={() => setOpen(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8', fontSize: 20, lineHeight: 1, flexShrink: 0 }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div data-lazy-scroll-root style={{ overflowY: 'auto' }}>
+              {!trimmedQuery && (
+                <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 12, color: '#94A3B8' }}>
+                  Start typing to search{products.length ? ` ${products.length} products` : ' products'} by name or SKU
+                </div>
+              )}
+              {trimmedQuery && filtered.length === 0 && (
+                <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 12, color: '#94A3B8' }}>
+                  No products match "{trimmedQuery}"
+                </div>
+              )}
+              {trimmedQuery && filtered.slice(0, reveal.visibleCount).map((p) => (
+                <div
+                  key={p.productId}
+                  onClick={() => { onChange(p.productId); setOpen(false); }}
+                  style={{
+                    padding: '10px 16px',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    background: p.productId === value ? '#EFF6FF' : 'transparent',
+                    borderBottom: '1px solid #F8FAFC',
+                  }}
+                  onMouseEnter={(e) => { if (p.productId !== value) e.currentTarget.style.background = '#F8FAFC'; }}
+                  onMouseLeave={(e) => { if (p.productId !== value) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <div style={{ fontWeight: 600 }}>{p.name}</div>
+                  <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{p.sku} — {p.currentStock ?? 0} in stock</div>
+                </div>
+              ))}
+              {trimmedQuery && filtered.length > 0 && !reveal.isDone && (
+                <div ref={reveal.sentinelRef} style={{ padding: '10px 16px', textAlign: 'center', fontSize: 11, color: '#94A3B8' }}>
+                  Loading more…
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 // Accept/Reject Modal
 const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch, businessId }) => {
   const [rejectReason, setRejectReason] = useState('');
@@ -204,12 +365,12 @@ const AcceptModal = ({ transfer, onAccept, onReject, onClose, loading, apiFetch,
   // and StockTake.jsx / GRV.jsx — so large destination catalogs load
   // progressively instead of one giant request.
   //
-  // Note: destination products are rendered as native <select><option>
-  // lists below (one per incoming line item), not as a long custom-rendered
-  // row list, so there's no DOM-dump problem here the way there is for the
-  // create-flow table — the browser's own <select> handles large option
-  // counts fine. Lazy-reveal-on-scroll is applied to the create-flow table
-  // instead (see filteredCreateProducts / transferProductReveal below).
+  // Note: destination products are rendered via SearchableProductSelect
+  // (one per incoming line item) — a text input + lazily-revealed dropdown,
+  // same lazy-reveal pattern (useIncrementalReveal, 40 rows at a time) used
+  // by the create-flow table below (filteredCreateProducts /
+  // transferProductReveal). This lets users type to filter a large
+  // destination catalog instead of scanning a giant native <select>.
 useEffect(() => {
   if (!transfer?.toBranchId || !businessId) return;
   let cancelled = false;
@@ -348,23 +509,13 @@ useEffect(() => {
                       </td>
                       <td style={{ padding: '6px', textAlign: 'right' }}>{item.quantity}</td>
                       <td style={{ padding: '6px' }}>
-                        <select
+                        <SearchableProductSelect
+                          products={destProducts}
+                          loading={productsLoading}
                           value={mapping[item.productId] || ''}
-                          onChange={(e) => setMapping((prev) => ({ ...prev, [item.productId]: e.target.value || undefined }))}
+                          onChange={(productId) => setMapping((prev) => ({ ...prev, [item.productId]: productId }))}
                           disabled={productsLoading}
-                          style={{
-                            width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 12,
-                            border: `1px solid ${isMapped ? '#E2E8F0' : '#FCA5A5'}`,
-                            background: isMapped ? '#fff' : '#FEF2F2',
-                          }}
-                        >
-                          <option value="">{productsLoading ? 'Loading products…' : 'Select a product'}</option>
-                          {destProducts.map((p) => (
-                            <option key={p.productId} value={p.productId}>
-                              {p.name} ({p.sku}) — {p.currentStock ?? 0} in stock
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </td>
                     </tr>
                   );
