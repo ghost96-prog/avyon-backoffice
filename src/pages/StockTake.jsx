@@ -64,7 +64,7 @@ const Toast = ({ message, type, onClose }) => {
   );
 };
 
-// ✅ NEW — thin inline progress bar shown while the product picker loads
+// Thin inline progress bar shown while the product picker loads
 // (same visual language / estimate curve as Products.jsx's InlineLoadProgress).
 const InlineLoadProgress = ({ loading, loadedCount }) => {
   const [percent, setPercent] = useState(0);
@@ -112,15 +112,21 @@ const InlineLoadProgress = ({ loading, loadedCount }) => {
   );
 };
 
-// ✅ NEW — reveals items from a (potentially long) array in small batches as
-// the user scrolls, instead of rendering the whole array into the DOM in
-// one go. A sentinel element is placed after the last rendered row; when it
-// enters the viewport of the nearest `[data-lazy-scroll-root]` ancestor,
-// another `step` items are revealed. `resetKey` should change whenever the
+// Reveals items from a (potentially long) array in small batches as the
+// user scrolls, instead of rendering the whole array into the DOM in one
+// go — this is what keeps the picker fast even with 10,000+ products.
+// A sentinel element is placed after the last rendered row; when it enters
+// the viewport of the nearest `[data-lazy-scroll-root]` ancestor, another
+// `step` items are revealed. `resetKey` should change whenever the
 // underlying filtered list changes shape (new search term, new category,
 // etc.) so the picker snaps back to the top of the list instead of keeping
 // a stale scroll position/reveal count.
-function useIncrementalReveal(totalLength, step = 40, resetKey) {
+//
+// NOTE: this only controls what's painted to the screen. Selection
+// (selectAllFiltered / toggleProduct) always operates on the full
+// `filteredCreateProducts` array, not the currently-revealed slice — so
+// "Select All" correctly selects items that haven't scrolled into view yet.
+function useIncrementalReveal(totalLength, step = 20, resetKey) {
   const [visibleCount, setVisibleCount] = useState(step);
   const sentinelRef = useRef(null);
 
@@ -190,7 +196,7 @@ export default function StockTake() {
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
-  // ✅ Module gate for Advanced Inventory Management
+  // Module gate for Advanced Inventory Management
   const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
   const hasAdvancedInventory = hasModuleAccess('advanced_inventory');
 
@@ -219,7 +225,7 @@ export default function StockTake() {
   const [creating, setCreating] = useState(false);
   const [productSearch, setProductSearch] = useState('');
   const [createCategoryFilter, setCreateCategoryFilter] = useState('All');
-  // ✅ NEW — drives the inline progress bar while the product picker loads
+  // Drives the inline progress bar while the product picker loads
   const [createProductsLoading, setCreateProductsLoading] = useState(false);
   const [createProductsLoadedCount, setCreateProductsLoadedCount] = useState(0);
 
@@ -452,62 +458,60 @@ export default function StockTake() {
     setView('create');
   };
 
-  // ✅ FIXED — /business/.../products now returns a paginated object
-  // ({ products, count, hasMore, nextCursor }), not a raw array. The old
-  // code did `Array.isArray(prodRes) ? prodRes.filter(...) : []`, which
-  // was ALWAYS false against that object, so createProducts silently
-  // stayed empty and the picker showed nothing. This now walks cursor
-  // pagination — same pattern as Products.jsx / InventoryScreen.js — so
-  // the picker fills in page by page instead of pulling the whole
-  // (~5k item) catalog in a single request. createProductsLoading /
-  // createProductsLoadedCount feed the InlineLoadProgress bar below.
-const STOCKTAKE_PRODUCTS_PAGE_SIZE = 250;
+  // /business/.../products returns a paginated object
+  // ({ products, count, hasMore, nextCursor }). This walks cursor pagination
+  // (same pattern as Products.jsx / InventoryScreen.js) so the picker fills
+  // in page by page instead of pulling the whole (~5k+ item) catalog in a
+  // single request. createProductsLoading / createProductsLoadedCount feed
+  // the InlineLoadProgress bar below.
+  const STOCKTAKE_PRODUCTS_PAGE_SIZE = 250;
 
-useEffect(() => {
-  if (view !== 'create' || !businessId || !selectedBranchId) return;
-  let cancelled = false;
-  (async () => {
-    setCreateProductsLoading(true);
-    setCreateProductsLoadedCount(0);
-    setCreateProducts([]);
-    try {
-      const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
-      if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+  useEffect(() => {
+    if (view !== 'create' || !businessId || !selectedBranchId) return;
+    let cancelled = false;
+    (async () => {
+      setCreateProductsLoading(true);
+      setCreateProductsLoadedCount(0);
+      setCreateProducts([]);
+      try {
+        const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
 
-      let cursor = null;
-      let hasMore = true;
-      let accumulated = [];
-      while (hasMore && !cancelled) {
-        const params = new URLSearchParams();
-        params.append('status', 'active');
-        params.append('limit', String(STOCKTAKE_PRODUCTS_PAGE_SIZE));
-        if (cursor) params.append('cursor', cursor);
-        const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
-        const trackedOnly = (data.products || []).filter((p) => p.trackInventory);
-        accumulated = accumulated.concat(trackedOnly);
-        hasMore = !!data.hasMore;
-        cursor = data.nextCursor || null;
-        if (!cancelled) {
-          // Sort accumulated products alphabetically by name
-          const sorted = [...accumulated].sort((a, b) => {
-            const nameA = (a.name || '').toLowerCase();
-            const nameB = (b.name || '').toLowerCase();
-            return nameA.localeCompare(nameB);
-          });
-          setCreateProducts(sorted);
-          setCreateProductsLoadedCount(accumulated.length);
+        let cursor = null;
+        let hasMore = true;
+        let accumulated = [];
+        while (hasMore && !cancelled) {
+          const params = new URLSearchParams();
+          params.append('status', 'active');
+          params.append('limit', String(STOCKTAKE_PRODUCTS_PAGE_SIZE));
+          if (cursor) params.append('cursor', cursor);
+          const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+          const trackedOnly = (data.products || []).filter((p) => p.trackInventory);
+          accumulated = accumulated.concat(trackedOnly);
+          hasMore = !!data.hasMore;
+          cursor = data.nextCursor || null;
+          if (!cancelled) {
+            // Sort accumulated products alphabetically by name
+            const sorted = [...accumulated].sort((a, b) => {
+              const nameA = (a.name || '').toLowerCase();
+              const nameB = (b.name || '').toLowerCase();
+              return nameA.localeCompare(nameB);
+            });
+            setCreateProducts(sorted);
+            setCreateProductsLoadedCount(accumulated.length);
+          }
+          if (!cursor) break;
         }
-        if (!cursor) break;
+      } catch (e) {
+        console.error('Load products for stock take error:', e);
+        showToast('Failed to load products', 'error');
+      } finally {
+        if (!cancelled) setCreateProductsLoading(false);
       }
-    } catch (e) {
-      console.error('Load products for stock take error:', e);
-      showToast('Failed to load products', 'error');
-    } finally {
-      if (!cancelled) setCreateProductsLoading(false);
-    }
-  })();
-  return () => { cancelled = true; };
-}, [view, businessId, selectedBranchId, apiFetch]);
+    })();
+    return () => { cancelled = true; };
+  }, [view, businessId, selectedBranchId, apiFetch]);
+
   const filteredCreateProducts = useMemo(() => {
     let result = createProducts;
     if (createCategoryFilter !== 'All') {
@@ -520,15 +524,16 @@ useEffect(() => {
     return result;
   }, [createProducts, createCategoryFilter, productSearch]);
 
-  // ✅ NEW — the picker below used to render every entry in
-  // `filteredCreateProducts` (up to the whole ~5k-product catalog) into the
-  // DOM the moment it loaded. This reveals them 40 at a time as the user
-  // scrolls the picker, and resets to the top whenever the search term or
-  // category filter changes (so the list doesn't feel "stuck" showing a
-  // stale window into a different filter's results).
+  // Reveals matching products 20 at a time as the user scrolls the picker
+  // (instead of dumping the whole filtered list — which could be 10,000+
+  // rows — into the DOM at once), and resets to the top whenever the
+  // search term or category filter changes. Selection below always works
+  // against `filteredCreateProducts` (the full filtered array), never just
+  // the currently-revealed slice, so "Select All" / individual selection
+  // correctly includes products that haven't scrolled into view yet.
   const productPickerReveal = useIncrementalReveal(
     filteredCreateProducts.length,
-    40,
+    20,
     `${createCategoryFilter}|${productSearch}|${createProducts.length}`
   );
 
@@ -543,6 +548,9 @@ useEffect(() => {
     }
   };
 
+  // Selects every product matching the current search/category filter —
+  // not just the ones currently rendered on screen — so this works
+  // correctly even against a 10,000-item catalog.
   const selectAllFiltered = () => {
     setSelectedProductIds(new Set(filteredCreateProducts.map((p) => p.productId)));
   };
@@ -606,41 +614,42 @@ useEffect(() => {
     }
   }, [apiFetch, businessId, selectedBranchId, selectAll, selectedProductIds, createNotes, staffId, staffName, fetchStockTakes, guardAction]);
 
-const detailTotals = useMemo(() => {
-  if (!detailTake) return { totalVarianceCost: 0, totalVarianceSell: 0, totalSystemValue: 0, totalCountedValue: 0 };
-  
-  let totalVarianceCost = 0;
-  let totalVarianceSell = 0;
-  let totalSystemValue = 0;
-  let totalCountedValue = 0;
-  
-  detailTake.items.forEach((it) => {
-    // Get the current counted value from state, not from detailTake
-    const countedVal = countedValues[it.productId];
-    const counted = countedVal !== '' && countedVal !== undefined && countedVal !== null 
-      ? Number(countedVal) 
-      : null;
-    const costPrice = it.costPrice || 0;
-    const sellPrice = it.sellingPrice || 0;
+  const detailTotals = useMemo(() => {
+    if (!detailTake) return { totalVarianceCost: 0, totalVarianceSell: 0, totalSystemValue: 0, totalCountedValue: 0 };
     
-    totalSystemValue += it.systemQty * costPrice;
+    let totalVarianceCost = 0;
+    let totalVarianceSell = 0;
+    let totalSystemValue = 0;
+    let totalCountedValue = 0;
     
-    if (counted !== null && !isNaN(counted)) {
-      totalCountedValue += counted * costPrice;
-      const variance = counted - it.systemQty;
-      totalVarianceCost += variance * costPrice;
-      totalVarianceSell += variance * sellPrice;
-    }
-  });
-  
-  return { totalVarianceCost, totalVarianceSell, totalSystemValue, totalCountedValue };
-}, [detailTake, countedValues]); // Add countedValues as a dependency
+    detailTake.items.forEach((it) => {
+      // Get the current counted value from state, not from detailTake
+      const countedVal = countedValues[it.productId];
+      const counted = countedVal !== '' && countedVal !== undefined && countedVal !== null 
+        ? Number(countedVal) 
+        : null;
+      const costPrice = it.costPrice || 0;
+      const sellPrice = it.sellingPrice || 0;
+      
+      totalSystemValue += it.systemQty * costPrice;
+      
+      if (counted !== null && !isNaN(counted)) {
+        totalCountedValue += counted * costPrice;
+        const variance = counted - it.systemQty;
+        totalVarianceCost += variance * costPrice;
+        totalVarianceSell += variance * sellPrice;
+      }
+    });
+    
+    return { totalVarianceCost, totalVarianceSell, totalSystemValue, totalCountedValue };
+  }, [detailTake, countedValues]); // Add countedValues as a dependency
+
   // ─── ACCESS DENIED ────────────────────────────────────────────────────────
   if (!hasAdvancedInventory) {
     const moduleInfo = getModuleInfo('advanced_inventory');
     return (
       <div className="reports-page">
-        {/* ✅ Store selector ALWAYS visible, even when access denied */}
+        {/* Store selector ALWAYS visible, even when access denied */}
         <div className="reports-header">
           <div className="reports-header-left">
             <div>
@@ -703,7 +712,7 @@ const detailTotals = useMemo(() => {
           </div>
         </div>
 
-        {/* ✅ Module gate modal */}
+        {/* Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}
@@ -848,7 +857,7 @@ const detailTotals = useMemo(() => {
         )}
       </div>
 
-      {/* ✅ Module gate modal */}
+      {/* Module gate modal */}
       {gateModalModuleId && (
         <ModuleSubscriptionModal
           moduleId={gateModalModuleId}
@@ -935,6 +944,18 @@ const detailTotals = useMemo(() => {
         {createStep === 1 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
             <div className="reports-list-card" style={{ padding: 16 }}>
+              {/* ✅ MOVED — "Next: Review" used to sit at the very bottom of
+                  this card, below the (potentially 1000+ row) product list
+                  and the Notes field. It's now pinned to the top, aligned
+                  right on desktop, so it's always visible without scrolling
+                  past the list. */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+                <button onClick={() => setCreateStep(2)} disabled={!canGoToReview}
+                  style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: canGoToReview ? '#0891B2' : '#CBD5E1', color: '#fff', fontWeight: 700, cursor: canGoToReview ? 'pointer' : 'not-allowed', minWidth: 160 }}>
+                  Next: Review
+                </button>
+              </div>
+
               <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 <button onClick={() => setSelectAll(true)}
                   style={{ flex: 1, minWidth: '120px', padding: '10px 14px', borderRadius: 8, border: `1px solid ${selectAll ? '#0891B2' : '#E2E8F0'}`, background: selectAll ? '#EFF6FF' : '#fff', color: selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
@@ -970,12 +991,13 @@ const detailTotals = useMemo(() => {
                     <span style={{ fontSize: 12, color: '#64748B', marginLeft: 'auto', alignSelf: 'center' }}>{selectedProductIds.size} selected</span>
                   </div>
 
-                  {/* ✅ CHANGED — data-lazy-scroll-root marks this as the
+                  {/* data-lazy-scroll-root marks this as the
                       IntersectionObserver's scroll container; rows are
-                      revealed 40 at a time via productPickerReveal as the
+                      revealed 20 at a time via productPickerReveal as the
                       user scrolls, with a visible "End of list" marker once
                       everything's been shown (rather than rendering all
-                      matching products into the DOM immediately). */}
+                      matching products into the DOM immediately — this is
+                      what keeps this picker fast at 10,000+ products). */}
                   <div data-lazy-scroll-root style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #E2E8F0', borderRadius: 8 }}>
                     {filteredCreateProducts.slice(0, productPickerReveal.visibleCount).map((p) => (
                       <div key={p.productId} onClick={() => toggleProduct(p.productId)}
@@ -1008,17 +1030,33 @@ const detailTotals = useMemo(() => {
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Notes</label>
                 <textarea style={{ ...fieldInput(), minHeight: 60 }} value={createNotes} onChange={(e) => setCreateNotes(e.target.value)} placeholder="Optional" />
               </div>
-
-              <button onClick={() => setCreateStep(2)} disabled={!canGoToReview}
-                style={{ marginTop: 16, width: '100%', padding: '11px 24px', borderRadius: 8, border: 'none', background: canGoToReview ? '#0891B2' : '#CBD5E1', color: '#fff', fontWeight: 700, cursor: canGoToReview ? 'pointer' : 'not-allowed' }}>
-                Next: Review
-              </button>
             </div>
           </div>
         )}
 
         {createStep === 2 && (
           <div className="reports-list-card" style={{ padding: 20, maxWidth: 820 }}>
+            {/* ✅ MOVED — Back / Start Stock Take used to sit at the very
+                bottom of the review card, below a potentially long product
+                table. They now live at the top of the review step so
+                they're visible without scrolling. `flexWrap: 'wrap'` +
+                `justifyContent: 'flex-end'` means: on a wide (desktop)
+                viewport the two buttons sit side-by-side aligned to the
+                right; on a narrow viewport they wrap naturally instead of
+                overflowing. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'flex-end', marginBottom: 18 }}>
+              <button onClick={() => setCreateStep(1)}
+                style={{ flex: '0 1 140px', minWidth: 120, padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 700, cursor: 'pointer' }}>
+                Back
+              </button>
+              <button 
+                onClick={handleCreateStockTake} 
+                disabled={creating || reviewProducts.length === 0} 
+                style={{ flex: '0 1 220px', minWidth: 170, padding: 12, borderRadius: 10, border: 'none', background: (creating || reviewProducts.length === 0) ? '#CBD5E1' : '#0891B2', color: '#fff', fontWeight: 700, cursor: (creating || reviewProducts.length === 0) ? 'not-allowed' : 'pointer', opacity: (creating || reviewProducts.length === 0) ? 0.7 : 1 }}>
+                {creating ? 'Creating...' : 'Start Stock Take'}
+              </button>
+            </div>
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 18, paddingBottom: 18, borderBottom: '1px solid #F1F5F9' }}>
               <div>
                 <div style={{ fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', fontWeight: 700 }}>Store</div>
@@ -1107,20 +1145,10 @@ const detailTotals = useMemo(() => {
                 )}
               </>
             )}
-
-            <div style={{ display: 'flex', gap: 10, flexDirection: 'column', '@media (min-width: 481px)': { flexDirection: 'row' } }}>
-              <button onClick={() => setCreateStep(1)} style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 700, cursor: 'pointer', width: '100%', '@media (min-width: 481px)': { width: 'auto' } }}>Back</button>
-              <button 
-                onClick={handleCreateStockTake} 
-                disabled={creating || reviewProducts.length === 0} 
-                style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: (creating || reviewProducts.length === 0) ? '#CBD5E1' : '#0891B2', color: '#fff', fontWeight: 700, cursor: (creating || reviewProducts.length === 0) ? 'not-allowed' : 'pointer', opacity: (creating || reviewProducts.length === 0) ? 0.7 : 1, width: '100%', '@media (min-width: 481px)': { width: 'auto' } }}>
-                {creating ? 'Creating...' : 'Start Stock Take'}
-              </button>
-            </div>
           </div>
         )}
 
-        {/* ✅ Module gate modal */}
+        {/* Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}
@@ -1348,7 +1376,7 @@ const detailTotals = useMemo(() => {
           />
         )}
 
-        {/* ✅ Module gate modal */}
+        {/* Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}
