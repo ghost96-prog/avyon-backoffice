@@ -944,18 +944,6 @@ export default function StockTake() {
         {createStep === 1 && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
             <div className="reports-list-card" style={{ padding: 16 }}>
-              {/* ✅ MOVED — "Next: Review" used to sit at the very bottom of
-                  this card, below the (potentially 1000+ row) product list
-                  and the Notes field. It's now pinned to the top, aligned
-                  right on desktop, so it's always visible without scrolling
-                  past the list. */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-                <button onClick={() => setCreateStep(2)} disabled={!canGoToReview}
-                  style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: canGoToReview ? '#0891B2' : '#CBD5E1', color: '#fff', fontWeight: 700, cursor: canGoToReview ? 'pointer' : 'not-allowed', minWidth: 160 }}>
-                  Next: Review
-                </button>
-              </div>
-
               <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 <button onClick={() => setSelectAll(true)}
                   style={{ flex: 1, minWidth: '120px', padding: '10px 14px', borderRadius: 8, border: `1px solid ${selectAll ? '#0891B2' : '#E2E8F0'}`, background: selectAll ? '#EFF6FF' : '#fff', color: selectAll ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
@@ -1030,6 +1018,11 @@ export default function StockTake() {
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Notes</label>
                 <textarea style={{ ...fieldInput(), minHeight: 60 }} value={createNotes} onChange={(e) => setCreateNotes(e.target.value)} placeholder="Optional" />
               </div>
+
+              <button onClick={() => setCreateStep(2)} disabled={!canGoToReview}
+                style={{ marginTop: 16, width: '100%', padding: '11px 24px', borderRadius: 8, border: 'none', background: canGoToReview ? '#0891B2' : '#CBD5E1', color: '#fff', fontWeight: 700, cursor: canGoToReview ? 'pointer' : 'not-allowed' }}>
+                Next: Review
+              </button>
             </div>
           </div>
         )}
