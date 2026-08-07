@@ -9,7 +9,8 @@ import {
   Package, 
   DollarSign, 
   X,
-  Lock
+  Lock,
+  Search
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useDateRange } from '../hooks/useDateRange';
@@ -84,6 +85,8 @@ export default function TopSellingItems() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [storeModalOpen, setStoreModalOpen] = useState(false);
+  // ✅ NEW — search box state for filtering items by name/SKU
+  const [itemSearch, setItemSearch] = useState('');
 
   const branchOptions = useMemo(
     () => [{ value: 'all', label: 'All Stores' }, ...(branches || []).map((b) => ({ value: b.branchId, label: b.name }))],
@@ -159,11 +162,29 @@ export default function TopSellingItems() {
     return copy;
   }, [topItems, sortBy]);
 
-  const visibleItems = useMemo(() => sortedItems.slice(0, visibleCount), [sortedItems, visibleCount]);
+  // ✅ NEW — filters the sorted list by item name or SKU. Runs after
+  // sorting so rank numbers stay meaningful, before the visibleCount slice
+  // so "Load more" and the count label reflect the filtered results.
+  const filteredItems = useMemo(() => {
+    if (!itemSearch.trim()) return sortedItems;
+    const q = itemSearch.trim().toLowerCase();
+    return sortedItems.filter((item) =>
+      item.name?.toLowerCase().includes(q) || item.sku?.toLowerCase().includes(q)
+    );
+  }, [sortedItems, itemSearch]);
+
+  // ✅ NEW — reset how many rows are shown whenever the search term changes,
+  // so a new search always starts from the top instead of showing a
+  // truncated view left over from the previous filter/search.
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [itemSearch]);
+
+  const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount]);
 
   const handleLoadMore = useCallback(() => {
-    setVisibleCount((prev) => Math.min(prev + 15, sortedItems.length));
-  }, [sortedItems.length]);
+    setVisibleCount((prev) => Math.min(prev + 15, filteredItems.length));
+  }, [filteredItems.length]);
 
   const handleExportCsv = useCallback(async () => {
     if (isExporting || !topItems.length) return;
@@ -350,6 +371,25 @@ export default function TopSellingItems() {
           </div>
         </div>
 
+        {/* ✅ NEW — search box to filter the item list below by name/SKU */}
+        <div className="reports-search" style={{ marginBottom: 12 }}>
+          <Search size={14} />
+          <input
+            placeholder="Search items by name or SKU..."
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+          />
+          {itemSearch && (
+            <button
+              onClick={() => setItemSearch('')}
+              aria-label="Clear search"
+              style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#8b97a7', display: 'flex', alignItems: 'center', padding: 0 }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, color: '#8b97a7', fontWeight: 500 }}>Sort by</span>
           <div style={{ display: 'flex', gap: 4, background: '#f0f2f5', borderRadius: 6, padding: 2 }}>
@@ -366,7 +406,7 @@ export default function TopSellingItems() {
             ))}
           </div>
           <span style={{ fontSize: 12, color: '#8b97a7', marginLeft: 'auto' }}>
-            {visibleItems.length} of {sortedItems.length} items
+            {visibleItems.length} of {filteredItems.length} items
           </span>
         </div>
 
@@ -382,8 +422,8 @@ export default function TopSellingItems() {
           ) : visibleItems.length === 0 ? (
             <div className="reports-empty">
               <Package size={32} />
-              <div className="reports-empty-title">No items found</div>
-              <div className="reports-empty-sub">Try a different date range or store</div>
+              <div className="reports-empty-title">{itemSearch ? 'No matching items' : 'No items found'}</div>
+              <div className="reports-empty-sub">{itemSearch ? 'Try a different search term' : 'Try a different date range or store'}</div>
             </div>
           ) : (
             <>
@@ -411,7 +451,7 @@ export default function TopSellingItems() {
                   </div>
                 </div>
               ))}
-              {visibleItems.length < sortedItems.length && (
+              {visibleItems.length < filteredItems.length && (
                 <div style={{ padding: '12px 16px', textAlign: 'center' }}>
                   <button
                     onClick={handleLoadMore}
