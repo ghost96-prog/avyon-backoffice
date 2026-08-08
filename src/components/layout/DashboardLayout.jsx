@@ -5,10 +5,13 @@ import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import { NAV_SECTIONS } from "../../utils/navConfig";
 import "./DashboardLayout.css";
-// Add near the top of DashboardLayout.jsx
+
 import { useBranchNotifications } from '../../hooks/useBranchNotification';
+import { useInsights } from '../../hooks/useInsights';
 import ToastStack from '../common/ToastStack';
+import InsightToastStack from '../common/InsightToastStack';
 import { useAppContext } from '../../context/AppContext';
+
 function titleForPath(pathname) {
   for (const section of NAV_SECTIONS) {
     for (const item of section.items) {
@@ -25,8 +28,24 @@ export default function DashboardLayout() {
   });
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
-const { branchId } = useAppContext();
-const { toasts, dismissToast, markRead } = useBranchNotifications(branchId);
+
+  // ⚠️ Was `branchId` (the static home/login branch — fixed at login,
+  // and typically null for owner/admin accounts that have no single home
+  // branch). That meant useBranchNotifications silently never fired for
+  // exactly the accounts most likely to be watching the backoffice.
+  // `selectedBranchId` is the shared, actively-viewed branch (same one
+  // the Dashboard store switcher writes to), so it tracks whatever's
+  // actually on screen.
+  //
+  // useInsights is business-wide now (not branch-scoped) — it polls
+  // every branch under the business at once, so it doesn't take a
+  // branchId at all. That's what makes insight toasts fire regardless of
+  // which branch is selected and regardless of which screen the owner is
+  // currently on.
+  const { selectedBranchId } = useAppContext();
+  const { toasts, dismissToast, markRead } = useBranchNotifications(selectedBranchId);
+  const { toasts: insightToasts, dismissToast: dismissInsightToast, markRead: markInsightRead } = useInsights();
+
   useEffect(() => {
     localStorage.setItem("bo:sidebarCollapsed", collapsed ? "1" : "0");
   }, [collapsed]);
@@ -45,7 +64,8 @@ const { toasts, dismissToast, markRead } = useBranchNotifications(branchId);
       />
       <div className="shell-main">
         <TopBar onOpenMobileNav={() => setMobileOpen(true)} title={titleForPath(location.pathname)} />
-          <ToastStack toasts={toasts} onDismiss={dismissToast} onMarkRead={markRead} />
+        <ToastStack toasts={toasts} onDismiss={dismissToast} onMarkRead={markRead} />
+        <InsightToastStack toasts={insightToasts} onDismiss={dismissInsightToast} onMarkRead={markInsightRead} />
 
         <main className="shell-content">
           <Outlet />

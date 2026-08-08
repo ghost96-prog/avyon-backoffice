@@ -1,0 +1,196 @@
+/* src/components/dashboard/InsightModal.css */
+
+.insight-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(22, 32, 43, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: insight-fade-in var(--dur) var(--ease);
+}
+
+.insight-modal {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  padding: 28px 24px 20px;
+  animation: insight-slide-up var(--dur) var(--ease);
+}
+
+.insight-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.insight-modal-close:hover {
+  background: var(--border);
+}
+
+.insight-modal-eyebrow {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.insight-modal-headline {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.insight-modal-headline-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.insight-modal-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 600;
+}
+.insight-modal-delta--up {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.insight-modal-delta--down {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.insight-modal-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+.insight-modal-stat {
+  flex: 1;
+  padding: 12px 14px;
+  background: var(--surface-sunken);
+  border-radius: var(--r-md);
+}
+.insight-modal-stat-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.insight-modal-stat-value--with-icon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.insight-modal-stat-label {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+.insight-modal-list {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.insight-modal-list-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.insight-modal-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-sunken);
+}
+.insight-modal-item--danger { border-left-color: var(--danger); }
+.insight-modal-item--warning { border-left-color: var(--warning); }
+.insight-modal-item--success { border-left-color: var(--success); }
+.insight-modal-item--default { border-left-color: var(--accent); }
+
+.insight-modal-item-text { flex: 1; min-width: 0; }
+.insight-modal-item-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.insight-modal-item-body {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+
+.insight-modal-item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.insight-modal-item-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+.insight-modal-item-dismiss {
+  border: none;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+}
+
+@keyframes insight-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes insight-slide-up {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

@@ -444,14 +444,15 @@ const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: 
               <span className="reports-modal-row-label"><Calendar size={11} style={{ verticalAlign: -2, marginRight: 4 }} />Created</span>
               <span>{fmtDateTime(lb.createdAt)}</span>
             </div>
-            {lb.nextPaymentDue && (
-              <div className="reports-modal-row">
-                <span className="reports-modal-row-label">Next Payment</span>
-                <span style={isOverdue ? { color: '#EF4444', fontWeight: 700 } : undefined}>
-                  {fmtDate(lb.nextPaymentDue)}{isOverdue ? ' (Overdue)' : ''}
-                </span>
-              </div>
-            )}
+            {/* ✅ FIX — was wrapped in {lb.nextPaymentDue && (...)}, which hid
+                the entire row (including the label) whenever the laybye had
+                no due date. Now always renders, falling back to '—'. */}
+            <div className="reports-modal-row">
+              <span className="reports-modal-row-label">Final Payment Due</span>
+              <span style={isOverdue ? { color: '#EF4444', fontWeight: 700 } : undefined}>
+                {lb.nextPaymentDue ? fmtDate(lb.nextPaymentDue) : '—'}{isOverdue ? ' (Overdue)' : ''}
+              </span>
+            </div>
             {lb.notes && (
               <div className="reports-modal-row">
                 <span className="reports-modal-row-label">Notes</span>
@@ -718,16 +719,19 @@ const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: 
               width: '100%',
             }}>
               <span style={{ fontSize: 11, color: '#64748B' }}>{lb.store}</span>
-              
-              {lb.nextPaymentDue && (
-                <span style={{ 
-                  fontSize: 11, 
-                  color: isOverdue ? '#EF4444' : '#64748B',
-                  fontWeight: isOverdue ? 600 : 400,
-                }}>
-                  Due {fmtDate(lb.nextPaymentDue)}
-                </span>
-              )}
+
+              {/* ✅ FIX — was wrapped in {lb.nextPaymentDue && (...)}, so the
+                  "Due ..." text (and thus the label) never appeared for
+                  laybyes with no due date set. Now always renders, showing
+                  "Due —" when empty, same fallback pattern used everywhere
+                  else in the app. */}
+              <span style={{ 
+                fontSize: 11, 
+                color: isOverdue ? '#EF4444' : '#64748B',
+                fontWeight: isOverdue ? 600 : 400,
+              }}>
+                Due {lb.nextPaymentDue ? fmtDate(lb.nextPaymentDue) : '—'}
+              </span>
               
               {/* Status Badge */}
               <div style={{ 

@@ -76,12 +76,6 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const {
     apiFetch, businessId, branches, baseCurrency, hasBackofficePermission,
-    // ✅ Shared, persisted "currently selected branch" (see AppContext /
-    // useModuleSubscriptions). Dashboard's own filter below still supports
-    // an "All Stores" option that the shared value can't represent, but we
-    // read/write through to it whenever a single real branch is chosen, so
-    // switching stores here is remembered on Products (and vice-versa) and
-    // module gating always tracks whichever branch was picked last.
     selectedBranchId: sharedSelectedBranchId,
     setSelectedBranchId: setSharedSelectedBranchId,
   } = useAppContext();
@@ -98,9 +92,6 @@ export default function Dashboard() {
 
   const [selectedBranchId, setLocalSelectedBranchId] = useState(sharedSelectedBranchId || "all");
 
-  // Picking a specific store here also becomes the app-wide selected
-  // branch; picking "All Stores" only affects this report view (module
-  // gating elsewhere keeps using whatever branch was last picked for real).
   const setSelectedBranchId = useCallback(
     (value) => {
       setLocalSelectedBranchId(value);
@@ -129,7 +120,6 @@ export default function Dashboard() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // ✅ Check if user has permission to view sales reports
   const canViewSales = useMemo(() => {
     return hasBackofficePermission(BACKOFFICE_PERMISSIONS.VIEW_SALES_REPORTS);
   }, [hasBackofficePermission]);
@@ -178,7 +168,6 @@ export default function Dashboard() {
     }
   }, [apiFetch, businessId, startDate, endDate, selectedBranchId]);
 
-  // ─── Reload persisted date range on focus ────────────────────────────────
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -189,7 +178,6 @@ export default function Dashboard() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [reloadDateRange]);
 
-  // ─── Reload persisted date range on browser back/forward ────────────────
   useEffect(() => {
     const handlePopState = () => {
       reloadDateRange();
@@ -198,7 +186,6 @@ export default function Dashboard() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [reloadDateRange]);
 
-  // ─── Single source of truth for fetching ─────────────────────────────────
   useEffect(() => {
     if (businessId) {
       load();
@@ -291,7 +278,6 @@ export default function Dashboard() {
   const worstBranchRow = sortedBranchRows[sortedBranchRows.length - 1];
   const branchRowsMax = sortedBranchRows.length ? Math.max(...sortedBranchRows.map((r) => r.sales || 0)) : 0;
 
-  // ✅ Show access denied if user doesn't have permission
   if (!canViewSales) {
     return (
       <div className="dashboard-access-denied">
@@ -326,7 +312,6 @@ export default function Dashboard() {
             onOptionSelect={handleOptionSelect}
           />
         </div>
-
         <div className="dashboard-toolbar-right">
           <Button variant="secondary" size="sm" icon={Download} onClick={handleExportCsv} disabled={loading || !dailyRows.length}>
             CSV

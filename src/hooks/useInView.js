@@ -1,3 +1,4 @@
+
 // src/hooks/useInView.js
 //
 // Small reusable hook wrapping IntersectionObserver. Used to drive
