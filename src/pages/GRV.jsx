@@ -256,8 +256,12 @@ const IconInput = ({ icon: Icon, ...props }) => (
   </div>
 );
 
-const NewItemModal = ({ draft, setDraft, categories, baseCurrency, onCancel, onAdd }) => {
-  const canAdd = draft.name.trim().length > 0 && draft.sku.trim().length > 0;
+const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onCancel, onAdd }) => {
+  const trimmedSku = draft.sku.trim();
+  const skuIsCheckedValue = skuCheck.sku === trimmedSku;
+  const skuTaken = skuIsCheckedValue && skuCheck.exists;
+  const skuChecking = skuIsCheckedValue && skuCheck.checking;
+  const canAdd = draft.name.trim().length > 0 && trimmedSku.length > 0 && !skuTaken && !skuChecking;
   const currencySymbol = baseCurrency?.symbol || '$';
 
   const sellingNum = Number(draft.sellingPrice) || 0;
@@ -337,7 +341,22 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, onCancel, onA
                   value={draft.sku}
                   onChange={(e) => setDraft((d) => ({ ...d, sku: e.target.value }))}
                   placeholder="Auto-generated"
+                  style={skuTaken ? { borderColor: '#EF4444' } : undefined}
                 />
+                {/* ✅ NEW — live SKU-availability feedback. Refuses to let the
+                    item be added while the typed SKU already belongs to
+                    another product or another line already in this GRV. */}
+                {trimmedSku && (
+                  <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600 }}>
+                    {skuChecking ? (
+                      <span style={{ color: '#94A3B8' }}>Checking availability…</span>
+                    ) : skuTaken ? (
+                      <span style={{ color: '#EF4444' }}>This SKU already exists — use a different one</span>
+                    ) : skuIsCheckedValue ? (
+                      <span style={{ color: '#16A34A' }}>SKU available</span>
+                    ) : null}
+                  </div>
+                )}
               </div>
               <div>
                 <FieldLabel>Barcode</FieldLabel>
@@ -452,6 +471,7 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, onCancel, onA
             <button
               onClick={onAdd}
               disabled={!canAdd}
+              title={skuTaken ? 'This SKU already exists — choose a different one' : undefined}
               style={{
                 flex: 1, padding: '11px 18px', borderRadius: 10, border: 'none',
                 background: canAdd ? 'linear-gradient(135deg, #0891B2 0%, #0E7490 100%)' : '#CBD5E1',
@@ -645,6 +665,15 @@ export default function GRV() {
   const [draftGrvId, setDraftGrvId] = useState(null);
   const [savingDraft, setSavingDraft] = useState(false);
 
+  // ✅ NEW — live SKU-uniqueness check backing the "New Item Not In
+  // Catalog" modal. { sku, checking, exists } describes the most recently
+  // checked SKU. Refuses to let a new item be added to the GRV while its
+  // SKU already belongs to another product on the server OR to another
+  // line already sitting in this cart (existing product OR another new
+  // item added earlier in the same GRV) — see isSkuTakenInCart below.
+  const [skuCheck, setSkuCheck] = useState({ sku: '', checking: false, exists: false });
+  const skuCheckTimerRef = useRef(null);
+
   const isStepComplete = (step) => {
     if (step === 1) return supplierName.trim().length > 0;
     if (step === 2) return cartItems.some((item) => Number(item.quantityReceived) > 0);
@@ -789,6 +818,17 @@ useEffect(() => {
   const cartCount = cartItems.filter((item) => Number(item.quantityReceived) > 0).length;
   const newItemCount = cartItems.filter((item) => item.isNewProduct && Number(item.quantityReceived) > 0).length;
 
+  // ✅ NEW — true if `sku` already belongs to another line already sitting
+  // in this cart: either an existing catalog product that's been selected,
+  // or a previous "new item" added earlier in this same GRV. This is the
+  // part a server-side sku-check call CAN'T catch, since those "new item"
+  // lines don't exist as real products yet.
+  const isSkuTakenInCart = useCallback((sku) => {
+    const normalized = sku.trim().toUpperCase();
+    if (!normalized) return false;
+    return cartItems.some((item) => (itemSku(item) || '').trim().toUpperCase() === normalized);
+  }, [cartItems]);
+
   const toggleCart = (product) => {
     const key = `p:${product.productId}`;
     setCart((prev) => {
@@ -871,10 +911,73 @@ useEffect(() => {
   const openNewItemModal = useCallback(async () => {
     const newSku = await generateNextSKU(apiFetch, businessId, selectedBranchId);
     setNewItemDraft({ ...emptyNewItemDraft, sku: newSku });
+    setSkuCheck({ sku: '', checking: false, exists: false });
     setNewItemModalOpen(true);
   }, [apiFetch, businessId, selectedBranchId]);
 
+  // ✅ NEW — debounced live SKU-availability check while the "New Item"
+  // modal is open. Checks the cart first (instant, no network call) and
+  // falls back to the server's /products/sku-check endpoint for SKUs
+  // that already belong to a saved product this device may not have
+  // loaded into createProducts yet.
+  useEffect(() => {
+    if (!newItemModalOpen) return;
+    const sku = newItemDraft.sku.trim();
+    if (!sku) {
+      setSkuCheck({ sku: '', checking: false, exists: false });
+      return;
+    }
+
+    if (skuCheckTimerRef.current) clearTimeout(skuCheckTimerRef.current);
+
+    if (isSkuTakenInCart(sku)) {
+      setSkuCheck({ sku, checking: false, exists: true });
+      return;
+    }
+
+    setSkuCheck((prev) => ({ ...prev, sku, checking: true }));
+    skuCheckTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(
+          `/business/${businessId}/branches/${selectedBranchId}/products/sku-check?sku=${encodeURIComponent(sku)}`
+        );
+        setSkuCheck({ sku, checking: false, exists: !!res?.exists });
+      } catch (e) {
+        console.error('SKU check error:', e);
+        // Network failure — don't silently mark it "available". addNewItemToCart
+        // does one last cart-only check before committing, but a saved
+        // duplicate on the server wouldn't be caught in that case; surfacing
+        // "checking" indefinitely is safer than a false "available".
+        setSkuCheck({ sku, checking: false, exists: false });
+        showToast('Could not verify SKU availability — check your connection', 'warning');
+      }
+    }, 400);
+
+    return () => {
+      if (skuCheckTimerRef.current) clearTimeout(skuCheckTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newItemDraft.sku, newItemModalOpen, apiFetch, businessId, selectedBranchId, isSkuTakenInCart]);
+
   const addNewItemToCart = () => {
+    const sku = newItemDraft.sku.trim();
+    if (!newItemDraft.name.trim()) {
+      showToast('Product name is required', 'error');
+      return;
+    }
+    if (!sku) {
+      showToast('SKU is required', 'error');
+      return;
+    }
+    // ✅ Final guard — refuse to add if this SKU is already taken, either
+    // by another line in this cart or (per the last server check) by an
+    // existing saved product. This is a hard stop, not a silent fix: the
+    // person must pick a different SKU for a brand-new item.
+    if (isSkuTakenInCart(sku) || (skuCheck.sku === sku && skuCheck.exists) || (skuCheck.sku === sku && skuCheck.checking)) {
+      showToast(`SKU "${sku.toUpperCase()}" already exists — please use a different SKU`, 'error');
+      return;
+    }
+
     const key = `n:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setCart((prev) => ({
       ...prev,
@@ -882,13 +985,14 @@ useEffect(() => {
         itemKey: key,
         isNewProduct: true,
         product: null,
-        newProduct: { ...newItemDraft },
+        newProduct: { ...newItemDraft, sku: sku.toUpperCase() },
         quantityReceived: 1,
         unitCost: newItemDraft.costPrice || '0.00',
         sellingPrice: newItemDraft.sellingPrice || '0.00',
       },
     }));
     setNewItemModalOpen(false);
+    setSkuCheck({ sku: '', checking: false, exists: false });
   };
 
   const canGoToProducts = supplierName.trim().length > 0;
@@ -1509,6 +1613,7 @@ useEffect(() => {
           setDraft={setNewItemDraft}
           categories={createCategories}
           baseCurrency={baseCurrency}
+          skuCheck={skuCheck}
           onCancel={() => setNewItemModalOpen(false)}
           onAdd={addNewItemToCart}
         />
