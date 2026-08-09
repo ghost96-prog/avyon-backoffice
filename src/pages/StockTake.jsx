@@ -10,6 +10,7 @@ import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
+import ConfirmDialog from '../components/community/ConfirmDialog';
 
 const STATUS_CONFIG = {
   draft: { label: 'In Progress', bg: '#FEF3C7', color: '#0891B2' },
@@ -254,6 +255,31 @@ export default function StockTake() {
       setLoading(false);
     }
   }, [apiFetch, businessId, selectedBranchId]);
+
+  // ✅ NEW — delete an in-progress (draft) stock take that's no longer needed.
+  // Backend rejects this once a stock take is completed (it's already
+  // reconciled stock and written movements, so it's a permanent record).
+  // Confirmation goes through ConfirmDialog (modal) instead of window.confirm.
+  const [stockTakePendingDelete, setStockTakePendingDelete] = useState(null);
+  const [deletingStockTake, setDeletingStockTake] = useState(false);
+
+  const confirmDeleteStockTake = useCallback(async () => {
+    if (!stockTakePendingDelete) return;
+    setDeletingStockTake(true);
+    try {
+      await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/stock-takes/${stockTakePendingDelete.stockTakeId}`, {
+        method: 'DELETE',
+      });
+      setStockTakes((prev) => prev.filter((x) => x.stockTakeId !== stockTakePendingDelete.stockTakeId));
+      showToast('Stock take deleted', 'success');
+      setStockTakePendingDelete(null);
+    } catch (e) {
+      console.error('Delete stock take error:', e);
+      showToast(e.message || 'Failed to delete stock take', 'error');
+    } finally {
+      setDeletingStockTake(false);
+    }
+  }, [apiFetch, businessId, selectedBranchId, stockTakePendingDelete]);
 
   useEffect(() => {
     if (view === 'list' && hasAdvancedInventory) {
@@ -782,6 +808,7 @@ export default function StockTake() {
                     <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Progress</th>
                     <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Date</th>
                     <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Started By</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -806,6 +833,22 @@ export default function StockTake() {
                         <td style={{ padding: '10px 14px' }}>{countedCount} / {st.items.length}</td>
                         <td style={{ padding: '10px 14px', color: '#64748B' }}>{new Date(st.createdAt).toLocaleString()}</td>
                         <td style={{ padding: '10px 14px', color: '#64748B' }}>{st.startedByName}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                          {st.status === 'draft' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setStockTakePendingDelete(st); }}
+                              title="Delete stock take"
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#94A3B8', padding: 6, borderRadius: 6, display: 'inline-flex',
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#DC2626'; e.currentTarget.style.background = '#FEF2F2'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = '#94A3B8'; e.currentTarget.style.background = 'none'; }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -847,6 +890,18 @@ export default function StockTake() {
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontSize: 11, color: '#64748B' }}>ID: {st.stockTakeId?.slice(-6)}</div>
+                        {st.status === 'draft' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setStockTakePendingDelete(st); }}
+                            title="Delete stock take"
+                            style={{
+                              marginTop: 6, background: 'none', border: 'none', cursor: 'pointer',
+                              color: '#DC2626', padding: 4, borderRadius: 6, display: 'inline-flex',
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -865,6 +920,19 @@ export default function StockTake() {
           onClose={closeGateModal}
         />
       )}
+
+      {/* ✅ Delete stock take confirmation — modal, not window.confirm */}
+      <ConfirmDialog
+        open={!!stockTakePendingDelete}
+        variant="confirm"
+        danger
+        title="Delete stock take?"
+        message={stockTakePendingDelete ? `Delete "${stockTakePendingDelete.stockTakeNumber}"? This cannot be undone.` : ''}
+        confirmLabel={deletingStockTake ? 'Deleting…' : 'Delete'}
+        cancelLabel="Cancel"
+        onConfirm={confirmDeleteStockTake}
+        onCancel={() => { if (!deletingStockTake) setStockTakePendingDelete(null); }}
+      />
     </div>
   );
 

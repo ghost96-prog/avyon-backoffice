@@ -14,6 +14,7 @@ import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
+import ConfirmDialog from '../components/community/ConfirmDialog';
 
 function fieldInput(props) {
   return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
@@ -555,6 +556,31 @@ export default function GRV() {
       setLoading(false);
     }
   }, [apiFetch, businessId, selectedBranchId]);
+
+  // ✅ NEW — delete an order list (draft GRV) that's no longer needed.
+  // Backend rejects this for completed GRVs (permanent records), so this
+  // is only ever reachable/shown for status === 'draft'. Confirmation goes
+  // through ConfirmDialog (modal) instead of window.confirm.
+  const [grvPendingDelete, setGrvPendingDelete] = useState(null);
+  const [deletingGrv, setDeletingGrv] = useState(false);
+
+  const confirmDeleteGrv = useCallback(async () => {
+    if (!grvPendingDelete) return;
+    setDeletingGrv(true);
+    try {
+      await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/grv/${grvPendingDelete.grvId}`, {
+        method: 'DELETE',
+      });
+      setGrvs((prev) => prev.filter((x) => x.grvId !== grvPendingDelete.grvId));
+      showToast('Order list deleted', 'success');
+      setGrvPendingDelete(null);
+    } catch (e) {
+      console.error('Delete GRV error:', e);
+      showToast(e.message || 'Failed to delete order list', 'error');
+    } finally {
+      setDeletingGrv(false);
+    }
+  }, [apiFetch, businessId, selectedBranchId, grvPendingDelete]);
 
   useEffect(() => {
     if (view === 'list' && hasAccess) {
@@ -1521,6 +1547,7 @@ useEffect(() => {
                     <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Date</th>
                     <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Received By</th>
                     <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Total</th>
+                    <th style={{ padding: '10px 14px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1537,6 +1564,22 @@ useEffect(() => {
                         <td style={{ padding: '10px 14px', color: '#64748B' }}>{new Date(g.createdAt).toLocaleString()}</td>
                         <td style={{ padding: '10px 14px', color: '#64748B' }}>{g.receivedByName || '—'}</td>
                         <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700 }}>{formatMoney(g.totalCost, baseCurrency)}</td>
+                        <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                          {g.status === 'draft' && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setGrvPendingDelete(g); }}
+                              title="Delete order list"
+                              style={{
+                                background: 'none', border: 'none', cursor: 'pointer',
+                                color: '#94A3B8', padding: 6, borderRadius: 6, display: 'inline-flex',
+                              }}
+                              onMouseEnter={(e) => { e.currentTarget.style.color = '#DC2626'; e.currentTarget.style.background = '#FEF2F2'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.color = '#94A3B8'; e.currentTarget.style.background = 'none'; }}
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -1573,6 +1616,18 @@ useEffect(() => {
                       <div style={{ textAlign: 'right', flexShrink: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 15, color: '#0F172A' }}>{formatMoney(g.totalCost, baseCurrency)}</div>
                         <div style={{ fontSize: 11, color: '#64748B' }}>ID: {g.grvId?.slice(-6)}</div>
+                        {g.status === 'draft' && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setGrvPendingDelete(g); }}
+                            title="Delete order list"
+                            style={{
+                              marginTop: 6, background: 'none', border: 'none', cursor: 'pointer',
+                              color: '#DC2626', padding: 4, borderRadius: 6, display: 'inline-flex',
+                            }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1591,6 +1646,19 @@ useEffect(() => {
           onClose={closeGateModal}
         />
       )}
+
+      {/* ✅ Delete order list confirmation — modal, not window.confirm */}
+      <ConfirmDialog
+        open={!!grvPendingDelete}
+        variant="confirm"
+        danger
+        title="Delete order list?"
+        message={grvPendingDelete ? `Delete "${grvPendingDelete.grvNumber}"? This cannot be undone.` : ''}
+        confirmLabel={deletingGrv ? 'Deleting…' : 'Delete'}
+        cancelLabel="Cancel"
+        onConfirm={confirmDeleteGrv}
+        onCancel={() => { if (!deletingGrv) setGrvPendingDelete(null); }}
+      />
     </div>
   );
 
