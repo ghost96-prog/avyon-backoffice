@@ -1,5 +1,6 @@
 // src/pages/StockTransfers.jsx
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Store, Plus, X, ArrowLeftRight, Package, Trash2, Check, XCircle, Ban,
   ChevronLeft, Search, FileText, Clock, User, MessageSquare, Bell, Lock,
@@ -580,6 +581,12 @@ export default function StockTransfers() {
   // ✅ Use the shared selected branch hook
   const { selectedBranchId: viewBranchId, setSelectedBranchId: setViewBranchId } = useSelectedBranch();
 
+  // ✅ NEW — deep-link support: a toast for an incoming transfer request
+  // (fired app-wide from DashboardLayout's ToastStack) links here with
+  // ?transferId=..., so a click on that toast can jump straight into the
+  // Accept/Reject modal instead of just landing on the list.
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // ─── ALL STATE HOOKS FIRST ──────────────────────────────────────────────
   
   const [toast, setToast] = useState(null);
@@ -700,6 +707,38 @@ export default function StockTransfers() {
     const interval = setInterval(checkAllBranchesForIncoming, 30000);
     return () => clearInterval(interval);
   }, [businessId, branches, hasAdvancedInventory, checkAllBranchesForIncoming]);
+
+  // ✅ NEW — deep link from the app-wide "incoming transfer" toast
+  // (?transferId=...). Fetches that one transfer directly (works no
+  // matter which branch is currently selected) and jumps into the detail
+  // view — navigateToTransfer switches the selected branch to the
+  // transfer's destination branch and auto-opens the Accept/Reject modal
+  // when it's still in_transit. The param is cleared once consumed so a
+  // refresh/back-nav doesn't re-trigger it.
+  useEffect(() => {
+    const transferId = searchParams.get('transferId');
+    if (!transferId || !businessId || !hasAdvancedInventory) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const t = await apiFetch(`/business/${businessId}/stock-transfers/${transferId}`);
+        if (!cancelled && t) navigateToTransfer(t);
+      } catch (e) {
+        console.error('Deep-link transfer fetch error:', e);
+        if (!cancelled) showToast('Could not find that transfer', 'error');
+      } finally {
+        if (!cancelled) {
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('transferId');
+            return next;
+          }, { replace: true });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, businessId, hasAdvancedInventory]);
 
   // ─── useMemo hooks ──────────────────────────────────────────────────────
   

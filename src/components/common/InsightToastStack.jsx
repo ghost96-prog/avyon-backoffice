@@ -6,12 +6,11 @@
 // the two stacks never overlap on screen even when both are showing.
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, TrendingUp, AlertTriangle, Clock3, Sparkles, ShoppingCart, RotateCcw, HandCoins, Lock, GitCompareArrows } from 'lucide-react';
+import { X, TrendingUp, Clock3, Sparkles, ShoppingCart, RotateCcw, HandCoins, Lock, GitCompareArrows } from 'lucide-react';
 
 const ICONS = {
   sales_milestone: { Icon: TrendingUp, color: '#1C9D6C', bg: '#E4F7EF' },
   large_sale: { Icon: ShoppingCart, color: '#1C9D6C', bg: '#E4F7EF' },
-  conflict_sale: { Icon: AlertTriangle, color: '#D64545', bg: '#FBE9E9' },
   laybye_nudge: { Icon: Clock3, color: '#B8720A', bg: '#FDF1DE' },
   refund_processed: { Icon: RotateCcw, color: '#B8720A', bg: '#FDF1DE' },
   laybye_created: { Icon: HandCoins, color: '#357ABD', bg: '#EAF1FA' },

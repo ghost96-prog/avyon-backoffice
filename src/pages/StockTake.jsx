@@ -1,6 +1,6 @@
 // src/pages/Inventory/StockTake.jsx
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { Store, Plus, X, ClipboardCheck, Search, Check, ChevronLeft, FileText, Clock, User, MessageSquare, AlertTriangle, Trash2, Package, Lock } from 'lucide-react';
+import { Store, Plus, X, ClipboardCheck, Search, Check, ChevronLeft, FileText, Clock, User, MessageSquare, AlertTriangle, Trash2, Package, Lock, RotateCcw } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { formatMoney } from '../utils/exportUtils';
 import jsPDF from 'jspdf';
@@ -215,6 +215,7 @@ export default function StockTake() {
   const [completing, setCompleting] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
   const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false);
+  const [confirmZeroOpen, setConfirmZeroOpen] = useState(false); // ✅ NEW — confirmation for "Zero All Counts"
 
   // Create flow state
   const [createStep, setCreateStep] = useState(1);
@@ -296,6 +297,7 @@ export default function StockTake() {
     setCountedValues(initial);
     setItemSearch('');
     setConfirmCompleteOpen(false);
+    setConfirmZeroOpen(false); // ✅ NEW
     setView('detail');
   };
 
@@ -388,6 +390,20 @@ export default function StockTake() {
       setCompleting(false);
     }
   }, [apiFetch, businessId, selectedBranchId, detailTake, countedValues, staffId, staffName, fetchStockTakes]);
+
+  // ✅ NEW — set every item's counted qty to 0 in one go, for staff doing a
+  // fresh recount who want to start from zero rather than clearing each
+  // row by hand. Only touches local countedValues (nothing is persisted
+  // until "Save Progress" / "Complete" is pressed) — goes through the same
+  // PUT .../stock-takes/:id draft-only validation as manual entry.
+  const handleZeroAllCounts = useCallback(() => {
+    if (!detailTake) return;
+    const zeroed = {};
+    detailTake.items.forEach((i) => { zeroed[i.productId] = '0'; });
+    setCountedValues(zeroed);
+    setConfirmZeroOpen(false);
+    showToast('All counts set to 0 — remember to Save Progress', 'info');
+  }, [detailTake]);
 
   const handleExportPdf = useCallback(() => {
     if (!guardAction('advanced_inventory')) return;
@@ -1285,8 +1301,27 @@ export default function StockTake() {
         <div className="reports-list-card" style={{ padding: 20, maxWidth: 820, marginTop: 16 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12, '@media (min-width: 481px)': { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' } }}>
             <h4 style={{ margin: 0 }}>Items ({st.items.length})</h4>
-            <div style={{ fontSize: 12, color: '#64748B' }}>
-              {st.items.filter(i => i.countedQty !== null && i.countedQty !== undefined).length} counted
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, color: '#64748B' }}>
+                {st.items.filter(i => i.countedQty !== null && i.countedQty !== undefined).length} counted
+              </div>
+              {/* ✅ NEW — bulk-reset all counted quantities to 0. Local-only
+                  until Save/Complete is pressed; only shown while the take
+                  is still editable. */}
+              {st.status === 'draft' && (
+                <button
+                  onClick={() => setConfirmZeroOpen(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '5px 12px', borderRadius: 7,
+                    border: '1px solid #FDE68A', background: '#FFFBEB', color: '#D97706',
+                    fontWeight: 600, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                  title="Set every item's counted quantity to 0"
+                >
+                  <RotateCcw size={13} /> Zero All Counts
+                </button>
+              )}
             </div>
           </div>
 
@@ -1436,6 +1471,19 @@ export default function StockTake() {
             completing={completing}
           />
         )}
+
+        {/* ✅ NEW — confirmation for "Zero All Counts" */}
+        <ConfirmDialog
+          open={confirmZeroOpen}
+          variant="confirm"
+          danger
+          title="Zero all counts?"
+          message={`This sets the counted quantity to 0 for all ${st.items.length} item${st.items.length !== 1 ? 's' : ''} in this stock take, overwriting any counts already entered. Nothing is saved until you press "Save Progress" or "Complete & Reconcile". Continue?`}
+          confirmLabel="Zero all"
+          cancelLabel="Cancel"
+          onConfirm={handleZeroAllCounts}
+          onCancel={() => setConfirmZeroOpen(false)}
+        />
 
         {/* Module gate modal */}
         {gateModalModuleId && (
