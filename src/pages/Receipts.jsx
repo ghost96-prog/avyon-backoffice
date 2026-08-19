@@ -1,5 +1,5 @@
 // src/pages/Receipts.jsx
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Store, Download, FileText, Search, X, Receipt, RefreshCw, AlertTriangle, Lock, Tag } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -71,6 +71,112 @@ const RECEIPT_TYPE_CONFIG = {
   laybye_final: { label: 'LAYBYE FINAL PAYMENT', bg: '#fce3dc', color: '#7C3AED' },
 };
 
+// ─── Printable single-receipt template ──────────────────────────────────
+// Rendered off-screen (not display:none — html2canvas needs real layout)
+// at a fixed thermal-paper-ish width. Deliberately plain/monospace so the
+// exported PDF reads like an actual receipt, not the styled admin modal.
+const PRINT_WIDTH_PX = 320;
+
+function PrintRow({ label, value, bold }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: bold ? 700 : 400, fontSize: bold ? 13 : 12 }}>
+      <span>{label}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function ReceiptPrintTemplate({ receipt }) {
+  if (!receipt) return null;
+  const r = receipt;
+  const sym = r.currencySymbol || '$';
+  const method = METHOD_ICONS[r.method] || METHOD_ICONS.cash;
+  const receiptType = r.receiptType || 'sale';
+  const typeConfig = RECEIPT_TYPE_CONFIG[receiptType] || RECEIPT_TYPE_CONFIG.sale;
+  const isLaybyeReceipt = ['laybye_deposit', 'laybye_payment', 'laybye_final'].includes(receiptType);
+
+  return (
+    <div
+      style={{
+        width: PRINT_WIDTH_PX,
+        boxSizing: 'border-box',
+        padding: 20,
+        background: '#fff',
+        color: '#000',
+        fontFamily: "'Courier New', Courier, monospace",
+        fontSize: 12,
+        lineHeight: 1.5,
+      }}
+    >
+      <div style={{ textAlign: 'center', marginBottom: 10 }}>
+        <div style={{ fontSize: 16, fontWeight: 700 }}>{r.store}</div>
+        {isLaybyeReceipt && (
+          <div style={{ fontSize: 10, fontWeight: 700, marginTop: 4 }}>{typeConfig.label}</div>
+        )}
+      </div>
+
+      <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '6px 0', marginBottom: 8, textAlign: 'center' }}>
+        <div>{r.receiptNumber}</div>
+        <div>{new Date(r.createdAt).toLocaleDateString()}</div>
+        <div>{new Date(r.createdAt).toLocaleTimeString()}</div>
+      </div>
+
+      <div style={{ marginBottom: 8 }}>
+        <div>Cashier: {r.cashierName}</div>
+        <div>Customer: {r.customerName}</div>
+      </div>
+
+      <div style={{ borderTop: '1px dashed #000', paddingTop: 6, marginBottom: 8 }}>
+        {(r.items || []).map((item, i) => {
+          const unitPrice = item.unitPrice ?? item.customPrice ?? item.price ?? 0;
+          const lineTotal = item.finalSubtotal ?? (unitPrice * (item.qty ?? 1));
+          const discountAmount = item.discountAmount ?? 0;
+          const refundedQty = item.refundedQty ?? 0;
+          const originalQty = item.qty ?? 1;
+          const isRefunded = refundedQty > 0;
+          return (
+            <div key={item.id ?? i} style={{ marginBottom: 5, opacity: isRefunded && refundedQty >= originalQty ? 0.6 : 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span>{item.name}</span>
+                <span>{sym}{Number(lineTotal).toFixed(2)}</span>
+              </div>
+              <div style={{ fontSize: 10 }}>
+                {originalQty} x {sym}{Number(unitPrice).toFixed(2)}
+                {item.unit && item.unit !== 'each' ? ` / ${item.unit}` : ''}
+                {discountAmount > 0 ? `   -${sym}${Number(discountAmount).toFixed(2)} disc` : ''}
+              </div>
+              {isRefunded && (
+                <div style={{ fontSize: 10 }}>
+                  {refundedQty}/{originalQty} refunded
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ borderTop: '1px dashed #000', paddingTop: 6 }}>
+        <PrintRow label="Subtotal" value={`${sym}${Number(r.totals?.lineTotal ?? r.totals?.subtotal ?? 0).toFixed(2)}`} />
+        {(r.totals?.totalDiscount || 0) > 0 && (
+          <PrintRow label="Discount" value={`-${sym}${Number(r.totals.totalDiscount).toFixed(2)}`} />
+        )}
+        {(r.totals?.tax || 0) > 0 && (
+          <PrintRow label="Tax" value={`${sym}${Number(r.totals.tax).toFixed(2)}`} />
+        )}
+        <div style={{ borderTop: '1px dashed #000', marginTop: 4, paddingTop: 4 }}>
+          <PrintRow label="TOTAL" value={`${sym}${Number(r.totals?.grandTotal ?? r.totals?.total ?? 0).toFixed(2)}`} bold />
+        </div>
+      </div>
+
+      <div style={{ borderTop: '1px dashed #000', marginTop: 8, paddingTop: 6 }}>
+        <PrintRow label="Method" value={method.label} />
+        <PrintRow label="Paid" value={`${sym}${Number(r.totals?.paid ?? r.payments?.[0]?.amount ?? 0).toFixed(2)}`} />
+        <PrintRow label="Change" value={`${sym}${Number(r.totals?.change ?? 0).toFixed(2)}`} />
+      </div>
+    </div>
+  );
+}
+
 export default function Receipts() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency, hasBackofficePermission } = useAppContext();
@@ -100,8 +206,15 @@ export default function Receipts() {
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingReceiptPdf, setExportingReceiptPdf] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+
+  // ✅ NEW — off-screen node holding the receipt-styled template for
+  // whichever receipt is currently selected. html2canvas rasterizes this
+  // node (not the styled admin modal) so the exported PDF looks like an
+  // actual receipt rather than a screenshot of the dashboard UI.
+  const receiptPrintRef = useRef(null);
 
   const branchOptions = useMemo(
     () => [{ value: 'all', label: 'All Stores' }, ...(branches || []).map((b) => ({ value: b.branchId, label: b.name }))],
@@ -278,7 +391,7 @@ export default function Receipts() {
     }
   }, [filteredReceipts, selectedBranchId, selectedBranchName, startDate, endDate, isExporting]);
 
-  // ─── PDF EXPORT ───────────────────────────────────────────────────────────
+  // ─── PDF EXPORT (full filtered list, table) ───────────────────────────────
   const handleExportPdf = useCallback(async () => {
     if (exportingPdf || !filteredReceipts.length) return;
     setExportingPdf(true);
@@ -337,6 +450,52 @@ export default function Receipts() {
     }
   }, [filteredReceipts, receiptStats, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf]);
 
+  // ─── PDF EXPORT (single receipt, styled like an actual receipt) ──────────
+  // Renders receiptPrintRef (the off-screen ReceiptPrintTemplate for
+  // selectedReceipt) to a canvas via html2canvas, then drops that image
+  // into a narrow, receipt-paper-shaped jsPDF page — as opposed to
+  // handleExportPdf above, which builds an unrelated table of every
+  // filtered receipt.
+  const handleExportReceiptPdf = useCallback(async () => {
+    if (!selectedReceipt || exportingReceiptPdf) return;
+    setExportingReceiptPdf(true);
+    try {
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
+
+      const node = receiptPrintRef.current;
+      if (!node) return;
+
+      const canvas = await html2canvas(node, {
+        scale: 3,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+
+      // Convert canvas pixels to a receipt-paper-shaped PDF page (~80mm
+      // wide) in points, preserving aspect ratio so nothing is stretched.
+      const pdfWidthPt = 227;
+      const pdfHeightPt = (canvas.height / canvas.width) * pdfWidthPt;
+
+      const doc = new jsPDF({
+        unit: 'pt',
+        format: [pdfWidthPt, pdfHeightPt],
+      });
+
+      doc.addImage(imgData, 'PNG', 0, 0, pdfWidthPt, pdfHeightPt);
+      doc.save(`receipt_${selectedReceipt.receiptNumber}.pdf`);
+    } catch (err) {
+      console.error('Error exporting receipt PDF:', err);
+      setError('Could not export this receipt. Make sure html2canvas and jspdf are installed.');
+    } finally {
+      setExportingReceiptPdf(false);
+    }
+  }, [selectedReceipt, exportingReceiptPdf]);
+
   const renderStoreModal = () => {
     if (!storeModalOpen) return null;
     return (
@@ -394,7 +553,24 @@ export default function Receipts() {
               </span>
             )}
           </div>
-          <button className="reports-modal-close" onClick={() => setModalOpen(false)}><X size={18} /></button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <button
+              onClick={handleExportReceiptPdf}
+              disabled={exportingReceiptPdf}
+              title="Export this receipt as PDF"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                fontSize: 12, fontWeight: 600, color: '#357ABD',
+                background: '#EAF1FA', border: 'none', borderRadius: 6,
+                padding: '5px 10px', cursor: exportingReceiptPdf ? 'default' : 'pointer',
+                opacity: exportingReceiptPdf ? 0.6 : 1,
+              }}
+            >
+              <Download size={13} />
+              {exportingReceiptPdf ? 'Exporting...' : 'PDF'}
+            </button>
+            <button className="reports-modal-close" onClick={() => setModalOpen(false)}><X size={18} /></button>
+          </div>
         </div>
 
         <div className="reports-modal-body">
@@ -585,7 +761,7 @@ export default function Receipts() {
   }
 
   // ─── Show loading bar instead of full screen spinner ──────────────────
-  const showLoadingBar = loading || refreshing || isExporting || exportingPdf;
+  const showLoadingBar = loading || refreshing || isExporting || exportingPdf || exportingReceiptPdf;
 
   return (
     <>
@@ -738,6 +914,19 @@ export default function Receipts() {
         {modalOpen && (
           <div className="reports-modal-overlay" onClick={() => setModalOpen(false)}>
             {renderReceiptDetail()}
+          </div>
+        )}
+
+        {/* ✅ NEW — off-screen print target for handleExportReceiptPdf.
+            Kept mounted whenever a receipt is selected (not just while
+            modalOpen) so re-exporting works even if the modal was closed
+            without clearing selectedReceipt. Positioned far off-canvas
+            rather than display:none — html2canvas needs real layout. */}
+        {selectedReceipt && (
+          <div style={{ position: 'fixed', top: 0, left: -99999, zIndex: -1, pointerEvents: 'none' }} aria-hidden="true">
+            <div ref={receiptPrintRef}>
+              <ReceiptPrintTemplate receipt={selectedReceipt} />
+            </div>
           </div>
         )}
       </div>

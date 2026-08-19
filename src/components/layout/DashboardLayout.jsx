@@ -10,6 +10,7 @@ import { useBranchNotifications } from '../../hooks/useBranchNotification';
 import { useInsights } from '../../hooks/useInsights';
 import ToastStack from '../common/ToastStack';
 import InsightToastStack from '../common/InsightToastStack';
+import AskAvyonButton from '../common/AskAvyonButton'; // ✅ NEW — floating "Ask Avyon" button
 import { useAppContext } from '../../context/AppContext';
 
 function titleForPath(pathname) {
@@ -71,6 +72,8 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+
+      <AskAvyonButton />
     </div>
   );
 }
