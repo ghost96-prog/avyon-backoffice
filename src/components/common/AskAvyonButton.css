@@ -2,10 +2,12 @@
 
 :root {
   --ask-avyon-bg: #ffffff;
-  --ask-avyon-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  --ask-avyon-radius: 16px;
-  
-  /* Color variables for consistency */
+  --ask-avyon-shadow: 0 8px 32px rgba(15, 23, 42, 0.14);
+  --ask-avyon-radius: 18px;
+
+  /* Legacy names kept for backward compatibility with anything else in the
+     app that may reference them — the actual Ask Avyon UI below is built
+     entirely on the --av-* tokens beneath, so the two can't drift. */
   --danger: #e74c3c;
   --danger-soft: #fde8e8;
   --danger-bg: #fde8e8;
@@ -22,6 +24,53 @@
   --ink-faint: #7f8c8d;
   --surface: #f8f9fa;
   --surface-sunken: #edf2f7;
+
+  /* ── Avyon token system ────────────────────────────────────────────── */
+
+  /* Ink & surfaces */
+  --av-ink: #161b26;
+  --av-ink-soft: #4b5565;
+  --av-ink-faint: #8993a4;
+  --av-surface: #ffffff;
+  --av-surface-sunken: #f5f7fb;
+  --av-border: #e7eaf1;
+
+  /* Brand gradient — Avyon's one signature element (FAB + header badge
+     only). Everything else stays quiet so this stays meaningful. */
+  --av-brand-1: #4f46e5;
+  --av-brand-2: #7c3aed;
+  --av-brand-3: #06b6d4;
+  --av-brand-gradient: linear-gradient(135deg, var(--av-brand-1) 0%, var(--av-brand-2) 55%, var(--av-brand-3) 100%);
+
+  /* Severity */
+  --av-critical: #e11d48;
+  --av-critical-bg: #fef1f3;
+  --av-critical-border: #fbd0da;
+  --av-warning: #d97706;
+  --av-warning-bg: #fffaeb;
+  --av-warning-border: #fbe3ad;
+  --av-success: #059669;
+  --av-success-bg: #ecfdf5;
+  --av-success-border: #b7f0d6;
+  --av-info: #4f46e5;
+  --av-info-bg: #eef2ff;
+  --av-info-border: #d7dcfb;
+
+  /* Category accents — one per question category (tap-list icon chips) */
+  --av-cat-overview: #4f46e5;
+  --av-cat-overview-bg: #eef0ff;
+  --av-cat-inventory: #b45309;
+  --av-cat-inventory-bg: #fef3e2;
+  --av-cat-sales: #047857;
+  --av-cat-sales-bg: #e9fbf3;
+  --av-cat-profit: #7c3aed;
+  --av-cat-profit-bg: #f4efff;
+  --av-cat-customers: #be185d;
+  --av-cat-customers-bg: #fdf0f6;
+  --av-cat-staff: #0369a1;
+  --av-cat-staff-bg: #eaf6ff;
+  --av-cat-stores: #0f766e;
+  --av-cat-stores-bg: #e9fbf8;
 }
 
 /* ── FAB ────────────────────────────────────────────── */
@@ -34,29 +83,32 @@
   height: 56px;
   border-radius: 50%;
   border: none;
-  background: #2c3e50;
+  background: var(--av-brand-gradient);
   color: #fff;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 6px 22px rgba(79, 70, 229, 0.38);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition: filter 0.2s, transform 0.2s, box-shadow 0.2s;
   z-index: 1000;
 }
 
 .ask-avyon-fab:hover {
-  background: #1a2632;
-  transform: scale(1.04);
-  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.3);
+  filter: brightness(1.08);
+  transform: scale(1.05);
+  box-shadow: 0 8px 28px rgba(79, 70, 229, 0.45);
 }
 
 .ask-avyon-fab--open {
-  background: #e74c3c;
+  background: var(--av-critical);
+  box-shadow: 0 6px 22px rgba(225, 29, 72, 0.35);
 }
 
 .ask-avyon-fab--open:hover {
-  background: #c0392b;
+  filter: none;
+  background: #be123c;
+  box-shadow: 0 8px 28px rgba(225, 29, 72, 0.4);
 }
 
 /* ── Panel ────────────────────────────────────────────── */
@@ -67,7 +119,7 @@
   right: 28px;
   width: 420px;
   max-width: calc(100vw - 48px);
-  max-height: 70vh;
+  max-height: 72vh;
   background: var(--ask-avyon-bg);
   border-radius: var(--ask-avyon-radius);
   box-shadow: var(--ask-avyon-shadow);
@@ -75,13 +127,13 @@
   flex-direction: column;
   overflow: hidden;
   z-index: 999;
-  animation: slideUp 0.25s ease;
+  animation: slideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(16px) scale(0.96);
+    transform: translateY(14px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -95,70 +147,143 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
-  border-bottom: 1px solid #eef2f6;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--av-border);
   flex-shrink: 0;
-  background: #fafbfc;
+  background: #fbfbfd;
+  gap: 10px;
 }
 
 .ask-avyon-panel-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 15px;
-  color: #2c3e50;
+  gap: 9px;
+  font-weight: 700;
+  font-size: 14.5px;
+  color: var(--av-ink);
+  min-width: 0;
+  letter-spacing: -0.1px;
 }
 
-.ask-avyon-title-icon {
-  color: #3498db;
+.ask-avyon-brand-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--av-brand-gradient);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(79, 70, 229, 0.35);
 }
 
 .ask-avyon-back {
-  background: none;
+  background: var(--av-surface-sunken);
   border: none;
+  border-radius: 8px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   cursor: pointer;
-  color: #7f8c8d;
+  color: var(--av-ink-soft);
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
 }
 
 .ask-avyon-back:hover {
-  color: #2c3e50;
+  background: var(--av-border);
+  color: var(--av-ink);
 }
 
-.ask-avyon-scope-toggle {
-  display: flex;
-  gap: 4px;
-  background: #eef2f6;
-  border-radius: 20px;
-  padding: 3px;
+/* ── Branch switcher ──────────────────────────────────── */
+
+.ask-avyon-branch-switcher {
+  position: relative;
+  flex-shrink: 0;
 }
 
-.ask-avyon-scope-toggle button {
-  background: transparent;
-  border: none;
-  padding: 4px 12px;
-  border-radius: 18px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #7f8c8d;
-  cursor: pointer;
+.ask-avyon-branch-trigger {
   display: flex;
   align-items: center;
-  gap: 4px;
-  transition: background 0.2s, color 0.2s;
+  gap: 6px;
+  background: var(--av-surface-sunken);
+  border: 1px solid var(--av-border);
+  border-radius: 20px;
+  padding: 6px 11px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--av-ink);
+  cursor: pointer;
+  max-width: 160px;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.ask-avyon-scope-toggle button.active {
+.ask-avyon-branch-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-avyon-branch-trigger:hover,
+.ask-avyon-branch-trigger--open {
   background: #fff;
-  color: #2c3e50;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  border-color: var(--av-brand-1);
+  color: var(--av-brand-1);
 }
 
-.ask-avyon-scope-toggle button:hover:not(.active) {
-  background: #e2e8f0;
+.ask-avyon-branch-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.ask-avyon-branch-trigger--open .ask-avyon-branch-chevron {
+  transform: rotate(180deg);
+}
+
+.ask-avyon-branch-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 190px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--av-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.16);
+  padding: 6px;
+  z-index: 1001;
+}
+
+.ask-avyon-branch-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--av-ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.ask-avyon-branch-option:hover {
+  background: var(--av-surface-sunken);
+}
+
+.ask-avyon-branch-option.active {
+  background: var(--av-info-bg);
+  color: var(--av-brand-1);
+  font-weight: 700;
 }
 
 /* ── Body ────────────────────────────────────────────── */
@@ -172,83 +297,123 @@
 /* ── Question List ────────────────────────────────────── */
 
 .ask-avyon-prompt-label {
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 11.5px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #7f8c8d;
+  color: var(--av-ink-faint);
   margin: 0 0 10px 0;
 }
 
 .ask-avyon-question-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .ask-avyon-question {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
-  border: none;
-  border-radius: 10px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 13px;
   background: transparent;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
-  color: #2c3e50;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  color: var(--av-ink);
   font-size: 14px;
   width: 100%;
 }
 
 .ask-avyon-question:hover {
-  background: #f0f4f8;
+  background: var(--av-surface-sunken);
+  border-color: var(--av-border);
+}
+
+.ask-avyon-question:active {
+  transform: scale(0.99);
 }
 
 .ask-avyon-question-icon {
   flex-shrink: 0;
-  color: #3498db;
+  width: 37px;
+  height: 37px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
+  justify-content: center;
+}
+
+.ask-avyon-question-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .ask-avyon-question-label {
-  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--av-ink);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-avyon-question-category {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .ask-avyon-question-arrow {
   flex-shrink: 0;
-  color: #b0bec5;
+  color: var(--av-ink-faint);
+  transition: transform 0.15s, color 0.15s;
+}
+
+.ask-avyon-question:hover .ask-avyon-question-arrow {
+  color: var(--av-brand-1);
+  transform: translateX(2px);
 }
 
 .ask-avyon-question-skeleton {
-  height: 44px;
-  border-radius: 10px;
-  background: #f0f4f8;
+  height: 46px;
+  border-radius: 13px;
+  background: var(--av-surface-sunken);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.5; }
+  0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }
 }
 
 .ask-avyon-show-more {
-  margin-top: 12px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: none;
   border: none;
-  color: #3498db;
-  font-size: 13px;
-  font-weight: 500;
+  color: var(--av-brand-1);
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
-  padding: 6px 0;
-  transition: color 0.2s;
+  padding: 6px 2px;
 }
 
 .ask-avyon-show-more:hover {
-  color: #1f6fa5;
-  text-decoration: underline;
+  color: var(--av-brand-2);
+}
+
+.ask-avyon-show-more-chevron--up {
+  transform: rotate(180deg);
 }
 
 /* ── Answer View ────────────────────────────────────────── */
@@ -270,57 +435,102 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid transparent;
   flex-shrink: 0;
 }
 
 .ask-avyon-answer-badge {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 12px;
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 5px 11px;
   border-radius: 20px;
-  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+  letter-spacing: 0.1px;
   display: flex;
   align-items: center;
+  gap: 5px;
 }
 
 .ask-avyon-answer-headline {
   font-size: 16px;
-  font-weight: 600;
-  margin: 4px 0 2px 0;
+  font-weight: 700;
+  margin: 6px 0 2px 0;
   line-height: 1.4;
+  color: var(--av-ink);
+  letter-spacing: -0.1px;
 }
 
 .ask-avyon-answer-summary {
   font-size: 13px;
-  line-height: 1.5;
-  color: #34495e;
+  line-height: 1.55;
+  color: var(--av-ink-soft);
+  border: 1px solid;
+  border-left-width: 3px;
+  padding: 10px 13px;
+  border-radius: 10px;
+  margin-top: 6px;
 }
 
 /* ── Metrics Grid ──────────────────────────────────────── */
 
 .ask-avyon-metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: 8px;
-  margin: 8px 0 4px 0;
+  margin: 10px 0 4px 0;
 }
 
 .ask-avyon-metric {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  background: var(--av-surface-sunken);
+  border: 1px solid var(--av-border);
+  border-radius: 11px;
+  padding: 10px 12px;
 }
 
 .ask-avyon-metric-value {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
+  color: var(--av-ink);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ask-avyon-metric-label {
   font-size: 11px;
-  color: #7f8c8d;
+  color: var(--av-ink-faint);
+  font-weight: 500;
+}
+
+.ask-avyon-metric--good {
+  background: var(--av-success-bg);
+  border-color: var(--av-success-border);
+}
+.ask-avyon-metric--good .ask-avyon-metric-value {
+  color: var(--av-success);
+}
+
+.ask-avyon-metric--mid {
+  background: var(--av-warning-bg);
+  border-color: var(--av-warning-border);
+}
+.ask-avyon-metric--mid .ask-avyon-metric-value {
+  color: var(--av-warning);
+}
+
+.ask-avyon-metric--bad {
+  background: var(--av-critical-bg);
+  border-color: var(--av-critical-border);
+}
+.ask-avyon-metric--bad .ask-avyon-metric-value {
+  color: var(--av-critical);
 }
 
 /* ── Items List ────────────────────────────────────────── */
@@ -328,7 +538,8 @@
 .ask-avyon-items {
   display: flex;
   flex-direction: column;
-  margin: 4px 0;
+  gap: 6px;
+  margin: 10px 0 4px;
 }
 
 .ask-avyon-item {
@@ -336,6 +547,11 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  padding: 10px 13px;
+  border-radius: 11px;
+  background: var(--av-surface-sunken);
+  border: 1px solid var(--av-border);
+  border-left: 3px solid var(--av-border);
 }
 
 .ask-avyon-item-main {
@@ -345,32 +561,39 @@
 
 .ask-avyon-item-label {
   font-size: 13px;
-  font-weight: 500;
-  color: #2c3e50;
+  font-weight: 600;
+  color: var(--av-ink);
+  display: block;
 }
 
 .ask-avyon-item-detail {
   font-size: 12px;
-  color: #7f8c8d;
+  color: var(--av-ink-soft);
+  display: block;
+  margin-top: 2px;
+  line-height: 1.45;
 }
 
 .ask-avyon-item-right {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
   flex-shrink: 0;
 }
 
 .ask-avyon-item-value {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
+  color: var(--av-ink);
+  white-space: nowrap;
 }
 
 .ask-avyon-item-tag {
-  font-size: 11px;
-  font-weight: 500;
-  padding: 2px 10px;
-  border-radius: 12px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -380,32 +603,70 @@
 /* ── Recommendation ────────────────────────────────────── */
 
 .ask-avyon-recommendation {
-  margin-top: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--av-info-bg);
+  border: 1px solid var(--av-info-border);
+}
+
+.ask-avyon-recommendation-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--av-brand-gradient);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.ask-avyon-recommendation-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--av-brand-1);
+  margin: 0 0 3px;
+}
+
+.ask-avyon-recommendation-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--av-ink);
+  margin: 0;
 }
 
 /* ── Action Button ─────────────────────────────────────── */
 
 .ask-avyon-action-btn {
-  background: #2c3e50;
   color: #fff;
   border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: 600;
+  padding: 11px 20px;
+  border-radius: 11px;
+  font-weight: 700;
   font-size: 14px;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   cursor: pointer;
-  margin-top: 8px;
+  margin-top: 10px;
   width: 100%;
-  justify-content: center;
-  transition: background 0.2s, transform 0.1s;
+  transition: filter 0.15s, transform 0.1s;
 }
 
 .ask-avyon-action-btn:hover {
-  background: #1a2632;
-  transform: scale(1.01);
+  filter: brightness(0.92);
+}
+
+.ask-avyon-action-btn:active {
+  transform: scale(0.99);
 }
 
 /* ── Error ────────────────────────────────────────────── */
@@ -414,23 +675,31 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 16px 0;
-  color: #e74c3c;
+  gap: 10px;
+  padding: 20px 8px;
+  color: var(--av-critical);
+  text-align: center;
+}
+
+.ask-avyon-error p {
+  font-size: 13.5px;
+  color: var(--av-ink-soft);
+  margin: 0;
 }
 
 .ask-avyon-error button {
-  background: #eef2f6;
-  border: none;
-  padding: 8px 20px;
+  background: var(--av-surface-sunken);
+  border: 1px solid var(--av-border);
+  padding: 8px 18px;
   border-radius: 20px;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
-  color: #2c3e50;
+  color: var(--av-ink);
 }
 
 .ask-avyon-error button:hover {
-  background: #e2e8f0;
+  background: var(--av-border);
 }
 
 /* ── Skeleton ────────────────────────────────────────────── */
@@ -444,7 +713,7 @@
 .skel-line {
   height: 14px;
   border-radius: 6px;
-  background: #f0f4f8;
+  background: var(--av-surface-sunken);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
@@ -466,27 +735,31 @@
 
 .skel-metric {
   height: 60px;
-  border-radius: 8px;
-  background: #f0f4f8;
+  border-radius: 11px;
+  background: var(--av-surface-sunken);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
 /* ── Scrollbar ──────────────────────────────────────────── */
 
-.ask-avyon-panel-body::-webkit-scrollbar {
+.ask-avyon-panel-body::-webkit-scrollbar,
+.ask-avyon-branch-menu::-webkit-scrollbar {
   width: 4px;
 }
 
-.ask-avyon-panel-body::-webkit-scrollbar-track {
+.ask-avyon-panel-body::-webkit-scrollbar-track,
+.ask-avyon-branch-menu::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.ask-avyon-panel-body::-webkit-scrollbar-thumb {
+.ask-avyon-panel-body::-webkit-scrollbar-thumb,
+.ask-avyon-branch-menu::-webkit-scrollbar-thumb {
   background: #d0d8e0;
   border-radius: 4px;
 }
 
-.ask-avyon-panel-body::-webkit-scrollbar-thumb:hover {
+.ask-avyon-panel-body::-webkit-scrollbar-thumb:hover,
+.ask-avyon-branch-menu::-webkit-scrollbar-thumb:hover {
   background: #b0bec5;
 }
 
@@ -498,62 +771,30 @@
     right: 12px;
     left: 12px;
     width: auto;
-    max-height: 60vh;
-    border-radius: 14px;
+    max-height: 62vh;
+    border-radius: 16px;
   }
-  
+
   .ask-avyon-panel-header {
     padding: 12px 14px;
   }
-  
+
   .ask-avyon-panel-body {
     padding: 12px 14px 14px;
   }
-  
+
   .ask-avyon-metrics {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .ask-avyon-fab {
     bottom: 20px;
     right: 20px;
     width: 50px;
     height: 50px;
   }
-}
 
-/* ── Animations ──────────────────────────────────────────── */
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.96);
+  .ask-avyon-branch-trigger {
+    max-width: 118px;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes pulse {
-  0%, 100% {
-    opacity: 0.6;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* ── Trend indicators ────────────────────────────────────── */
-
-.trend-up {
-  color: var(--success);
-}
-
-.trend-down {
-  color: var(--danger);
-}
-
-.trend-neutral {
-  color: var(--ink-faint);
 }

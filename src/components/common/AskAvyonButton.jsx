@@ -9,17 +9,25 @@
 // This component's only job is to render whatever "smart card" shape
 // that engine hands back (headline / metrics / ranked items /
 // recommendation / a button that jumps to the relevant report screen).
-import React, { useState, useEffect, useCallback } from 'react';
+//
+// Visual system lives in AskAvyonButton.css under --av-* tokens:
+//   - a brand gradient (indigo → violet → cyan) is Avyon's one signature
+//     element — used on the FAB and the header badge, nowhere else, so it
+//     stays meaningful instead of decorative.
+//   - severity colors (critical/warning/success/info) drive the answer
+//     badge, summary panel, and item tags.
+//   - category colors (inventory/sales/profit/customers/staff/stores/
+//     overview) tint each question's icon chip in the tap list, so a
+//     16-question list is scannable by type at a glance.
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Sparkles, X, ChevronLeft, ArrowRight, Store, Building2,
+  Sparkles, X, ChevronLeft, ChevronDown, ArrowRight, Store, Building2,
   PackagePlus, TrendingDown, Wallet, UserCircle, Target, TrendingUp,
   UserCog, AlertTriangle, ArrowDownRight, Trophy, Users, ShieldAlert,
   ArrowLeftRight, PackageX, Gauge, HelpCircle, TrendingUp as TrendingUpIcon,
-  TrendingDown as TrendingDownIcon, Minus, Circle, CheckCircle, AlertCircle,
-  BarChart3, DollarSign, ShoppingBag, Package, Users as UsersIcon,
-  Clock, Flame, Star, Zap, AlertOctagon, AlertCircle as AlertCircleIcon,
-  ThumbsUp, ThumbsDown, Info,
+  TrendingDown as TrendingDownIcon, Circle, CheckCircle2, AlertOctagon,
+  AlertCircle,
 } from 'lucide-react';
 import { useAskAvyon } from '../../hooks/useAskAvyon';
 import './AskAvyonButton.css';
@@ -39,38 +47,35 @@ function QuestionIcon({ name, size = 16, ...props }) {
   return <Icon size={size} {...props} />;
 }
 
+// ── Severity — drives the answer badge, summary panel, and item tags ──────
 const SEVERITY_META = {
-  critical: { color: 'var(--danger)', soft: 'var(--danger-soft)', label: 'Needs attention', bg: 'var(--danger-bg)', icon: AlertOctagon },
-  warning: { color: 'var(--warning)', soft: 'var(--warning-soft)', label: 'Worth a look', bg: 'var(--warning-bg)', icon: AlertCircleIcon },
-  success: { color: 'var(--success)', soft: 'var(--success-soft)', label: 'Looking good', bg: 'var(--success-bg)', icon: CheckCircle },
-  info: { color: 'var(--accent)', soft: 'var(--accent-soft)', label: 'Heads up', bg: 'var(--accent-bg)', icon: Info },
+  critical: { color: 'var(--av-critical)', soft: 'var(--av-critical-bg)', border: 'var(--av-critical-border)', label: 'Needs attention', icon: AlertOctagon },
+  warning: { color: 'var(--av-warning)', soft: 'var(--av-warning-bg)', border: 'var(--av-warning-border)', label: 'Worth a look', icon: AlertCircle },
+  success: { color: 'var(--av-success)', soft: 'var(--av-success-bg)', border: 'var(--av-success-border)', label: 'Looking good', icon: CheckCircle2 },
+  info: { color: 'var(--av-info)', soft: 'var(--av-info-bg)', border: 'var(--av-info-border)', label: 'Heads up', icon: AlertCircle },
 };
 
+// ── Item tags (ranked-list rows within an answer) ──────────────────────────
 const TAG_META = {
-  critical: { color: 'var(--danger)', soft: 'var(--danger-soft)', bg: 'var(--danger-bg)', icon: AlertOctagon },
-  high: { color: 'var(--warning)', soft: 'var(--warning-soft)', bg: 'var(--warning-bg)', icon: AlertCircleIcon },
-  medium: { color: 'var(--accent)', soft: 'var(--accent-soft)', bg: 'var(--accent-bg)', icon: Circle },
-  low: { color: 'var(--ink-faint)', soft: 'var(--surface-sunken)', bg: 'var(--surface-sunken)', icon: Circle },
-  up: { color: 'var(--success)', soft: 'var(--success-soft)', bg: 'var(--success-bg)', icon: TrendingUpIcon },
-  down: { color: 'var(--danger)', soft: 'var(--danger-soft)', bg: 'var(--danger-bg)', icon: TrendingDownIcon },
-  warning: { color: 'var(--warning)', soft: 'var(--warning-soft)', bg: 'var(--warning-bg)', icon: AlertCircleIcon },
+  critical: { color: 'var(--av-critical)', bg: 'var(--av-critical-bg)', icon: AlertOctagon, text: 'Critical' },
+  high: { color: 'var(--av-warning)', bg: 'var(--av-warning-bg)', icon: AlertCircle, text: 'High' },
+  medium: { color: 'var(--av-info)', bg: 'var(--av-info-bg)', icon: Circle, text: 'Medium' },
+  low: { color: 'var(--av-ink-faint)', bg: 'var(--av-surface-sunken)', icon: Circle, text: 'Low' },
+  up: { color: 'var(--av-success)', bg: 'var(--av-success-bg)', icon: TrendingUpIcon, text: 'Rising' },
+  down: { color: 'var(--av-critical)', bg: 'var(--av-critical-bg)', icon: TrendingDownIcon, text: 'Falling' },
+  warning: { color: 'var(--av-warning)', bg: 'var(--av-warning-bg)', icon: AlertCircle, text: 'Worth a look' },
 };
 
-// Color mapping for metric values
-const getMetricColor = (value, label) => {
-  if (typeof value === 'string' && value.includes('%')) {
-    const num = parseFloat(value);
-    if (num > 0) return 'var(--success)';
-    if (num < 0) return 'var(--danger)';
-    return 'var(--ink-faint)';
-  }
-  if (label?.toLowerCase().includes('score')) {
-    const num = typeof value === 'number' ? value : parseInt(value);
-    if (num >= 80) return 'var(--success)';
-    if (num >= 50) return 'var(--warning)';
-    return 'var(--danger)';
-  }
-  return 'var(--ink)';
+// ── Category colors — one per question category, tints the icon chip in
+// the tap list so owners can scan 16 questions by type. ────────────────────
+const CATEGORY_META = {
+  overview: { color: 'var(--av-cat-overview)', bg: 'var(--av-cat-overview-bg)', label: 'Overview' },
+  inventory: { color: 'var(--av-cat-inventory)', bg: 'var(--av-cat-inventory-bg)', label: 'Inventory' },
+  sales: { color: 'var(--av-cat-sales)', bg: 'var(--av-cat-sales-bg)', label: 'Sales' },
+  profit: { color: 'var(--av-cat-profit)', bg: 'var(--av-cat-profit-bg)', label: 'Profit' },
+  customers: { color: 'var(--av-cat-customers)', bg: 'var(--av-cat-customers-bg)', label: 'Customers' },
+  staff: { color: 'var(--av-cat-staff)', bg: 'var(--av-cat-staff-bg)', label: 'Staff' },
+  stores: { color: 'var(--av-cat-stores)', bg: 'var(--av-cat-stores-bg)', label: 'Stores' },
 };
 
 function severityMeta(severity) {
@@ -81,13 +86,30 @@ function tagMeta(tag) {
   return TAG_META[tag] || TAG_META.medium;
 }
 
+function categoryMeta(category) {
+  return CATEGORY_META[category] || CATEGORY_META.overview;
+}
+
+// Business-health sub-scores (Sales/Profit/Inventory/Operations) are the
+// only 0–100 "score" metrics Avyon returns — color those specifically
+// rather than guessing at any plain number, so an ordinary count like
+// "Customers this week: 118" never gets mistaken for a good/bad score.
+function scoreModifier(value) {
+  if (typeof value !== 'number') return '';
+  if (value >= 80) return 'ask-avyon-metric--good';
+  if (value >= 50) return 'ask-avyon-metric--mid';
+  return 'ask-avyon-metric--bad';
+}
+
 export default function AskAvyonButton() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const {
     isMultiStore,
-    scope,
-    changeScope,
+    branches,
+    selectedBranchId,
+    viewAllBranches,
+    changeBranch,
     suggested,
     allQuestions,
     suggestedLoading,
@@ -103,8 +125,11 @@ export default function AskAvyonButton() {
 
   useEffect(() => {
     if (open) loadQuestions();
+    // Re-pull questions when the branch scope changes too, since which
+    // multi-branch-only questions are relevant depends on it — but this
+    // never reorders what's already on screen (see QuestionList below).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, scope]);
+  }, [open, selectedBranchId, viewAllBranches]);
 
   const handleToggle = useCallback(() => {
     setOpen((o) => {
@@ -129,7 +154,12 @@ export default function AskAvyonButton() {
     navigate(answer.actionRoute);
   }, [answer, navigate, reset]);
 
-  const questionList = showAll ? allQuestions : suggested;
+  // "Show more" never reshuffles the questions the owner is already
+  // looking at — it just reveals whatever's in the full registry that
+  // isn't already in the suggested set, appended below in registry order.
+  const suggestedIds = new Set(suggested.map((q) => q.id));
+  const extraQuestions = allQuestions.filter((q) => !suggestedIds.has(q.id));
+  const questionList = showAll ? [...suggested, ...extraQuestions] : suggested;
   const inAnswerView = asking || answer || error;
 
   return (
@@ -152,27 +182,17 @@ export default function AskAvyonButton() {
                   <ChevronLeft size={18} />
                 </button>
               ) : (
-                <Sparkles size={16} className="ask-avyon-title-icon" />
+                <span className="ask-avyon-brand-badge"><Sparkles size={13} /></span>
               )}
               <span>{inAnswerView ? 'Avyon Intelligence' : 'Ask Avyon'}</span>
             </div>
             {isMultiStore && (
-              <div className="ask-avyon-scope-toggle">
-                <button
-                  type="button"
-                  className={scope === 'store' ? 'active' : ''}
-                  onClick={() => changeScope('store')}
-                >
-                  <Store size={13} /> This store
-                </button>
-                <button
-                  type="button"
-                  className={scope === 'all' ? 'active' : ''}
-                  onClick={() => changeScope('all')}
-                >
-                  <Building2 size={13} /> All stores
-                </button>
-              </div>
+              <BranchSwitcher
+                branches={branches}
+                selectedBranchId={selectedBranchId}
+                viewAllBranches={viewAllBranches}
+                onChange={changeBranch}
+              />
             )}
           </div>
 
@@ -182,6 +202,7 @@ export default function AskAvyonButton() {
                 loading={suggestedLoading}
                 questions={questionList}
                 showAll={showAll}
+                hasMore={extraQuestions.length > 0}
                 onToggleShowAll={() => setShowAll((s) => !s)}
                 onSelect={askQuestion}
               />
@@ -189,6 +210,7 @@ export default function AskAvyonButton() {
             {asking && <AnswerSkeleton />}
             {!asking && error && (
               <div className="ask-avyon-error">
+                <AlertOctagon size={22} />
                 <p>{error}</p>
                 <button type="button" onClick={handleBack}>Try another question</button>
               </div>
@@ -201,7 +223,68 @@ export default function AskAvyonButton() {
   );
 }
 
-function QuestionList({ loading, questions, showAll, onToggleShowAll, onSelect }) {
+// Real branch picker — lists every branch by name plus an "All branches"
+// option, defaulting to whatever's already selected app-wide. Picking a
+// branch here calls the same shared setter as every other screen's
+// switcher, so the rest of the app follows along.
+//
+// NOTE: this repo's shared branch-switcher UI wasn't available to reuse
+// directly here, so this is a self-contained dropdown styled to match.
+// Swap it for the shared component if you'd rather not maintain two.
+function BranchSwitcher({ branches, selectedBranchId, viewAllBranches, onChange }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e) => {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  const currentLabel = viewAllBranches
+    ? 'All branches'
+    : branches.find((b) => b.branchId === selectedBranchId)?.name || 'Select branch';
+
+  return (
+    <div className="ask-avyon-branch-switcher" ref={rootRef}>
+      <button
+        type="button"
+        className={`ask-avyon-branch-trigger ${open ? 'ask-avyon-branch-trigger--open' : ''}`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {viewAllBranches ? <Building2 size={13} /> : <Store size={13} />}
+        <span>{currentLabel}</span>
+        <ChevronDown size={13} className="ask-avyon-branch-chevron" />
+      </button>
+      {open && (
+        <div className="ask-avyon-branch-menu">
+          <button
+            type="button"
+            className={`ask-avyon-branch-option ${viewAllBranches ? 'active' : ''}`}
+            onClick={() => { onChange('all'); setOpen(false); }}
+          >
+            <Building2 size={14} /> All branches
+          </button>
+          {branches.map((b) => (
+            <button
+              key={b.branchId}
+              type="button"
+              className={`ask-avyon-branch-option ${!viewAllBranches && b.branchId === selectedBranchId ? 'active' : ''}`}
+              onClick={() => { onChange(b.branchId); setOpen(false); }}
+            >
+              <Store size={14} /> {b.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QuestionList({ loading, questions, showAll, hasMore, onToggleShowAll, onSelect }) {
   if (loading && !questions.length) {
     return (
       <div className="ask-avyon-question-list">
@@ -216,17 +299,28 @@ function QuestionList({ loading, questions, showAll, onToggleShowAll, onSelect }
     <>
       <p className="ask-avyon-prompt-label">What would you like to know?</p>
       <div className="ask-avyon-question-list">
-        {questions.map((q) => (
-          <button key={q.id} type="button" className="ask-avyon-question" onClick={() => onSelect(q.id)}>
-            <span className="ask-avyon-question-icon"><QuestionIcon name={q.icon} size={17} /></span>
-            <span className="ask-avyon-question-label">{q.label}</span>
-            <ArrowRight size={14} className="ask-avyon-question-arrow" />
-          </button>
-        ))}
+        {questions.map((q) => {
+          const cat = categoryMeta(q.category);
+          return (
+            <button key={q.id} type="button" className="ask-avyon-question" onClick={() => onSelect(q.id)}>
+              <span className="ask-avyon-question-icon" style={{ color: cat.color, background: cat.bg }}>
+                <QuestionIcon name={q.icon} size={17} />
+              </span>
+              <span className="ask-avyon-question-text">
+                <span className="ask-avyon-question-label">{q.label}</span>
+                <span className="ask-avyon-question-category" style={{ color: cat.color }}>{cat.label}</span>
+              </span>
+              <ArrowRight size={15} className="ask-avyon-question-arrow" />
+            </button>
+          );
+        })}
       </div>
-      <button type="button" className="ask-avyon-show-more" onClick={onToggleShowAll}>
-        {showAll ? 'Show fewer questions' : 'Show all questions'}
-      </button>
+      {hasMore && (
+        <button type="button" className="ask-avyon-show-more" onClick={onToggleShowAll}>
+          {showAll ? 'Show fewer questions' : 'Show all questions'}
+          <ChevronDown size={13} className={showAll ? 'ask-avyon-show-more-chevron--up' : ''} />
+        </button>
+      )}
     </>
   );
 }
@@ -249,150 +343,70 @@ function AnswerSkeleton() {
 function AnswerCard({ answer, onAction }) {
   const sev = severityMeta(answer.severity);
   const SeverityIcon = sev.icon;
-  
-  // Render trend indicator for metric values
-  const renderTrend = (value, label) => {
-    if (typeof value === 'string' && value.includes('%')) {
-      const num = parseFloat(value);
-      if (num > 0) return <TrendingUpIcon size={14} className="trend-up" style={{ color: 'var(--success)' }} />;
-      if (num < 0) return <TrendingDownIcon size={14} className="trend-down" style={{ color: 'var(--danger)' }} />;
-      return <Minus size={14} className="trend-neutral" style={{ color: 'var(--ink-faint)' }} />;
-    }
-    if (label?.toLowerCase().includes('score')) {
-      const num = typeof value === 'number' ? value : parseInt(value);
-      if (num >= 80) return <CheckCircle size={14} style={{ color: 'var(--success)' }} />;
-      if (num >= 50) return <AlertCircle size={14} style={{ color: 'var(--warning)' }} />;
-      return <AlertTriangle size={14} style={{ color: 'var(--danger)' }} />;
-    }
-    return null;
-  };
-
-  // Get tag icon
-  const getTagIcon = (tag) => {
-    const meta = tagMeta(tag);
-    const Icon = meta.icon || Circle;
-    return <Icon size={12} style={{ color: meta.color }} />;
-  };
+  const isScoreCard = answer.title === "What's my business health score?";
 
   return (
     <div className="ask-avyon-answer">
       <div className="ask-avyon-answer-top">
-        <span className="ask-avyon-answer-icon" style={{ color: sev.color, background: sev.soft }}>
+        <span className="ask-avyon-answer-icon" style={{ color: sev.color, background: sev.soft, borderColor: sev.border }}>
           <QuestionIcon name={answer.icon} size={18} />
         </span>
-        <div className="ask-avyon-answer-badge" style={{ color: sev.color, background: sev.bg || sev.soft }}>
-          <SeverityIcon size={14} style={{ marginRight: '4px' }} />
+        <div className="ask-avyon-answer-badge" style={{ color: sev.color, background: sev.soft, borderColor: sev.border }}>
+          <SeverityIcon size={13} />
           {sev.label}
         </div>
       </div>
-      
-      <h3 className="ask-avyon-answer-headline" style={{ color: sev.color }}>
-        {answer.headline}
-      </h3>
-      
+
+      <h3 className="ask-avyon-answer-headline">{answer.headline}</h3>
+
       {answer.summary && (
-        <p className="ask-avyon-answer-summary" style={{ 
-          background: sev.bg || sev.soft,
-          borderLeft: `3px solid ${sev.color}`,
-          padding: '10px 14px',
-          borderRadius: '6px',
-          marginTop: '8px',
-        }}>
+        <p
+          className="ask-avyon-answer-summary"
+          style={{ background: sev.soft, borderColor: sev.border, borderLeftColor: sev.color }}
+        >
           {answer.summary}
         </p>
       )}
 
       {Array.isArray(answer.metrics) && answer.metrics.length > 0 && (
         <div className="ask-avyon-metrics">
-          {answer.metrics.map((m, i) => {
-            const color = getMetricColor(m.value, m.label);
-            const trend = renderTrend(m.value, m.label);
-            return (
-              <div key={i} className="ask-avyon-metric" style={{ 
-                background: 'var(--surface)',
-                padding: '12px',
-                borderRadius: '8px',
-                border: `1px solid ${color}30`,
-              }}>
-                <div className="ask-avyon-metric-value" style={{ 
-                  color: color,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                }}>
-                  {trend}
-                  <span>{m.value}</span>
-                </div>
-                <div className="ask-avyon-metric-label" style={{ 
-                  color: 'var(--ink-faint)',
-                  fontSize: '12px',
-                  marginTop: '4px',
-                }}>
-                  {m.label}
-                </div>
-              </div>
-            );
-          })}
+          {answer.metrics.map((m, i) => (
+            <div key={i} className={`ask-avyon-metric ${isScoreCard ? scoreModifier(m.value) : ''}`}>
+              <div className="ask-avyon-metric-value">{m.value}</div>
+              <div className="ask-avyon-metric-label">{m.label}</div>
+            </div>
+          ))}
         </div>
       )}
 
       {Array.isArray(answer.items) && answer.items.length > 0 && (
         <div className="ask-avyon-items">
           {answer.items.map((it, i) => {
-            const tm = tagMeta(it.tag);
-            const TagIcon = tm.icon || Circle;
+            const tm = it.tag ? tagMeta(it.tag) : null;
+            const TagIcon = tm?.icon || Circle;
             return (
-              <div key={i} className="ask-avyon-item" style={{
-                background: it.tag ? tm.bg || tm.soft : 'var(--surface)',
-                borderLeft: it.tag ? `3px solid ${tm.color}` : 'none',
-                padding: '10px 14px',
-                borderRadius: '6px',
-                marginBottom: '6px',
-              }}>
+              <div
+                key={i}
+                className="ask-avyon-item"
+                style={tm ? { background: tm.bg, borderLeftColor: tm.color } : undefined}
+              >
                 <div className="ask-avyon-item-main">
-                  <span className="ask-avyon-item-label" style={{ fontWeight: 500 }}>{it.label}</span>
-                  {it.detail && (
-                    <span className="ask-avyon-item-detail" style={{ 
-                      color: 'var(--ink-faint)',
-                      fontSize: '12px',
-                      display: 'block',
-                      marginTop: '2px',
-                    }}>
-                      {it.detail}
-                    </span>
-                  )}
+                  <span className="ask-avyon-item-label">{it.label}</span>
+                  {it.detail && <span className="ask-avyon-item-detail">{it.detail}</span>}
                 </div>
                 <div className="ask-avyon-item-right">
                   {it.value != null && (
-                    <span className="ask-avyon-item-value" style={{ 
-                      fontWeight: 600,
-                      color: it.tag === 'up' ? 'var(--success)' : 
-                             it.tag === 'down' ? 'var(--danger)' : 'var(--ink)',
-                    }}>
+                    <span
+                      className="ask-avyon-item-value"
+                      style={it.tag === 'up' ? { color: 'var(--av-success)' } : it.tag === 'down' ? { color: 'var(--av-critical)' } : undefined}
+                    >
                       {it.value}
                     </span>
                   )}
-                  {it.tag && (
-                    <span className="ask-avyon-item-tag" style={{ 
-                      color: tm.color, 
-                      background: tm.soft,
-                      padding: '2px 10px',
-                      borderRadius: '12px',
-                      fontSize: '11px',
-                      fontWeight: 500,
-                      marginLeft: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}>
-                      <TagIcon size={12} style={{ color: tm.color }} />
-                      {it.tag === 'up' ? 'Rising' :
-                       it.tag === 'down' ? 'Falling' :
-                       it.tag === 'critical' ? 'Critical' :
-                       it.tag === 'high' ? 'High' :
-                       it.tag === 'medium' ? 'Medium' :
-                       it.tag === 'low' ? 'Low' :
-                       it.tag === 'warning' ? 'Warning' : it.tag}
+                  {tm && (
+                    <span className="ask-avyon-item-tag" style={{ color: tm.color, background: '#ffffffb3' }}>
+                      <TagIcon size={11} />
+                      {tm.text}
                     </span>
                   )}
                 </div>
@@ -403,39 +417,22 @@ function AnswerCard({ answer, onAction }) {
       )}
 
       {answer.recommendation && (
-        <div className="ask-avyon-recommendation" style={{
-          background: 'var(--accent-bg)',
-          border: `1px solid ${sev.color}30`,
-          padding: '12px 16px',
-          borderRadius: '8px',
-          marginTop: '12px',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '8px',
-        }}>
-          <Sparkles size={14} style={{ color: sev.color, marginTop: '2px', flexShrink: 0 }} />
-          <span style={{ fontSize: '13px', lineHeight: 1.5 }}>{answer.recommendation}</span>
+        <div className="ask-avyon-recommendation">
+          <span className="ask-avyon-recommendation-icon"><Sparkles size={13} /></span>
+          <div>
+            <p className="ask-avyon-recommendation-eyebrow">Avyon suggests</p>
+            <p className="ask-avyon-recommendation-text">{answer.recommendation}</p>
+          </div>
         </div>
       )}
 
       {answer.actionRoute && (
-        <button type="button" className="ask-avyon-action-btn" onClick={onAction} style={{
-          background: sev.color,
-          color: '#fff',
-          border: 'none',
-          padding: '10px 20px',
-          borderRadius: '8px',
-          fontWeight: 600,
-          fontSize: '14px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          cursor: 'pointer',
-          marginTop: '12px',
-          width: '100%',
-          justifyContent: 'center',
-          transition: 'all 0.2s ease',
-        }}>
+        <button
+          type="button"
+          className="ask-avyon-action-btn"
+          onClick={onAction}
+          style={{ background: sev.color }}
+        >
           {answer.actionLabel || 'Open report'}
           <ArrowRight size={15} />
         </button>

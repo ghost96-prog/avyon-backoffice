@@ -5,22 +5,26 @@
 // on the backend) — no AI model, no writes, just deterministic math over
 // Firestore data the app already trusts.
 //
-// Shape mirrors useInsights.js: a stable hook owning fetch/cache state,
-// with the panel component staying dumb about where the data comes from.
+// Branch scope: this hook does NOT keep its own idea of "which branch" —
+// it reads `selectedBranchId` straight from AppContext, the same shared,
+// persisted value every other screen's branch switcher (Dashboard,
+// Products, etc) reads and writes. Picking a different branch inside Ask
+// Avyon calls `setSelectedBranchId`, so the rest of the app follows along
+// too — it's one switcher, not a separate one that happens to look similar.
 //
-// Scope: "store" (the currently-selected branch) vs "all" (every branch
-// on the business). Only relevant/shown when the business has 2+ branches
-// — resolved here from AppContext's `branches` list, not guessed by the
-// caller.
+// The only state local to this hook is whether the owner is currently
+// asking about "All branches" (aggregated across the whole business) —
+// that's a view the rest of the app doesn't have a screen for, so it can't
+// live in the shared selectedBranchId.
 import { useState, useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 
 export function useAskAvyon() {
-  const { apiFetch, businessId, selectedBranchId, branches } = useAppContext();
+  const { apiFetch, businessId, selectedBranchId, setSelectedBranchId, branches } = useAppContext();
 
   const isMultiStore = (branches || []).length > 1;
 
-  const [scope, setScope] = useState('store'); // 'store' | 'all'
+  const [viewAllBranches, setViewAllBranches] = useState(false);
   const [suggested, setSuggested] = useState([]);
   const [allQuestions, setAllQuestions] = useState([]);
   const [suggestedLoading, setSuggestedLoading] = useState(false);
@@ -28,12 +32,12 @@ export function useAskAvyon() {
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState(null);
 
-  // Cache answers per (questionId + scope) for the life of the session so
+  // Cache answers per (questionId + branch) for the life of the session so
   // re-tapping a question the owner already asked feels instant instead of
   // re-hitting Firestore every time.
   const cacheRef = useRef(new Map());
 
-  const scopedBranchId = scope === 'store' ? selectedBranchId : null;
+  const scopedBranchId = viewAllBranches ? null : selectedBranchId;
 
   const loadQuestions = useCallback(async () => {
     if (!businessId) return;
@@ -43,23 +47,25 @@ export function useAskAvyon() {
       const qs = scopedBranchId ? `?branchId=${scopedBranchId}` : '';
       const [suggestedRes, allRes] = await Promise.all([
         apiFetch(`/business/${businessId}/ask-avyon/suggested${qs}`),
-        // Full list only needs fetching once per mount — cheap, static.
-        allQuestions.length ? Promise.resolve({ questions: allQuestions }) : apiFetch(`/business/${businessId}/ask-avyon/questions`),
+        // Full registry list — cheap and static per multi-store status, but
+        // re-fetched on branch/scope change too since which multi-branch-
+        // only questions are included depends on isMultiStore.
+        apiFetch(`/business/${businessId}/ask-avyon/questions`),
       ]);
       setSuggested(suggestedRes?.questions || []);
-      if (!allQuestions.length) setAllQuestions(allRes?.questions || []);
+      setAllQuestions(allRes?.questions || []);
     } catch (e) {
       console.error('loadQuestions (Ask Avyon) error:', e);
       setError('Could not load questions right now.');
     } finally {
       setSuggestedLoading(false);
     }
-  }, [apiFetch, businessId, scopedBranchId, allQuestions]);
+  }, [apiFetch, businessId, scopedBranchId]);
 
   const askQuestion = useCallback(
     async (questionId) => {
       if (!businessId || !questionId) return;
-      const cacheKey = `${questionId}:${scope}:${scopedBranchId || 'all'}`;
+      const cacheKey = `${questionId}:${scopedBranchId || 'all'}`;
       const cached = cacheRef.current.get(cacheKey);
       if (cached) {
         setAnswer(cached);
@@ -82,19 +88,27 @@ export function useAskAvyon() {
         setAsking(false);
       }
     },
-    [apiFetch, businessId, scope, scopedBranchId]
+    [apiFetch, businessId, scopedBranchId]
   );
 
-  // Scope changes invalidate the currently-shown answer (it was computed
-  // for the old scope) and re-pull the suggested ordering, which can
-  // legitimately differ per-branch vs business-wide.
-  const changeScope = useCallback(
-    (nextScope) => {
-      if (nextScope === scope) return;
-      setScope(nextScope);
+  // Switching branch here moves the whole app to that branch (same setter
+  // the Dashboard/Products switchers use), not just this panel. Picking
+  // "All branches" is local-only — there's no shared "all branches" mode
+  // elsewhere in the app for this to drive.
+  const changeBranch = useCallback(
+    (branchId) => {
+      if (branchId === 'all') {
+        setViewAllBranches(true);
+        setAnswer(null);
+        return;
+      }
+      setViewAllBranches(false);
+      if (branchId !== selectedBranchId) {
+        setSelectedBranchId(branchId);
+      }
       setAnswer(null);
     },
-    [scope]
+    [selectedBranchId, setSelectedBranchId]
   );
 
   const reset = useCallback(() => {
@@ -104,8 +118,10 @@ export function useAskAvyon() {
 
   return {
     isMultiStore,
-    scope,
-    changeScope,
+    branches: branches || [],
+    selectedBranchId,
+    viewAllBranches,
+    changeBranch,
     suggested,
     allQuestions,
     suggestedLoading,
