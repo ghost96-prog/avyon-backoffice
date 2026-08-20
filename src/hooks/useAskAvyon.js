@@ -19,6 +19,16 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAppContext } from '../context/AppContext';
 
+// Minutes to ADD to a UTC instant to get this browser's local wall-clock
+// time (positive east of UTC, negative west) — the inverse sign of the
+// native Date.getTimezoneOffset(). Sent on every Ask Avyon request so the
+// backend resolves "today" / "this week" the same way the date-range
+// picker already does (off the browser's local clock), instead of always
+// using server UTC.
+function getTzOffsetMinutes() {
+  return -new Date().getTimezoneOffset();
+}
+
 export function useAskAvyon() {
   const { apiFetch, businessId, selectedBranchId, setSelectedBranchId, branches } = useAppContext();
 
@@ -44,7 +54,7 @@ export function useAskAvyon() {
     setSuggestedLoading(true);
     setError(null);
     try {
-      const qs = scopedBranchId ? `?branchId=${scopedBranchId}` : '';
+      const qs = scopedBranchId ? `?branchId=${scopedBranchId}&tzOffsetMinutes=${getTzOffsetMinutes()}` : `?tzOffsetMinutes=${getTzOffsetMinutes()}`;
       const [suggestedRes, allRes] = await Promise.all([
         apiFetch(`/business/${businessId}/ask-avyon/suggested${qs}`),
         // Full registry list — cheap and static per multi-store status, but
@@ -77,7 +87,7 @@ export function useAskAvyon() {
       try {
         const res = await apiFetch(`/business/${businessId}/ask-avyon/ask`, {
           method: 'POST',
-          body: JSON.stringify({ questionId, branchId: scopedBranchId || undefined }),
+          body: JSON.stringify({ questionId, branchId: scopedBranchId || undefined, tzOffsetMinutes: getTzOffsetMinutes() }),
         });
         cacheRef.current.set(cacheKey, res.answer);
         setAnswer(res.answer);

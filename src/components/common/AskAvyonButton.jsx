@@ -372,7 +372,10 @@ function AnswerCard({ answer, onAction }) {
         <div className="ask-avyon-metrics">
           {answer.metrics.map((m, i) => (
             <div key={i} className={`ask-avyon-metric ${isScoreCard ? scoreModifier(m.value) : ''}`}>
-              <div className="ask-avyon-metric-value">{m.value}</div>
+              <div className="ask-avyon-metric-value">
+                {m.value}
+                {isScoreCard && <span className="ask-avyon-metric-unit">/100</span>}
+              </div>
               <div className="ask-avyon-metric-label">{m.label}</div>
             </div>
           ))}

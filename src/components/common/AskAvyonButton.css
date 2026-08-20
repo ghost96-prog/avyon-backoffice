@@ -509,6 +509,13 @@
   font-weight: 500;
 }
 
+.ask-avyon-metric-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--av-ink-faint);
+  margin-left: 1px;
+}
+
 .ask-avyon-metric--good {
   background: var(--av-success-bg);
   border-color: var(--av-success-border);
