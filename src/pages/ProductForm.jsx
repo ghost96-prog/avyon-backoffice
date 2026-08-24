@@ -893,11 +893,7 @@ navigate('/inventory/products', {
                 </div>
               </div>
 
-              {/* Description */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Description</label>
-                <textarea style={{ ...fieldInput(), minHeight: 70, resize: 'vertical' }} value={form.description} onChange={(e) => setField('description', e.target.value)} placeholder="Optional description" />
-              </div>
+            
 
               {/* Tax */}
               <div style={{ marginBottom: 12 }}>
