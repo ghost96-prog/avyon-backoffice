@@ -235,11 +235,28 @@ export default function InventoryValue() {
   );
 
   // Calculate totals
+  // ✅ These stay derived from productRows on purpose — they back the table's
+  // TOTAL footer row and the CSV/PDF exports, which should reflect whatever
+  // is currently visible/filtered (search query), not the whole-branch figure.
   const totalRetail = productRows.reduce((sum, p) => sum + p.retailValue, 0);
   const totalCost = productRows.reduce((sum, p) => sum + p.costValue, 0);
   const totalProfit = totalRetail - totalCost;
   const totalMargin = totalRetail > 0 ? (totalProfit / totalRetail) * 100 : 0;
   const totalItems = productRows.reduce((sum, p) => sum + p.stock, 0);
+
+  // ✅ FIXED — the top summary stat cards for Profit and Margin % were being
+  // computed from totalProfit/totalMargin above (i.e. from productRows),
+  // while the Total Items/Retail Value/Cost Value cards next to them read
+  // straight from the `/inventory-stats` aggregate (`stats`). That meant
+  // Profit/Margin silently tracked the search box and pagination progress
+  // instead of the true branch-wide figures the other three cards show.
+  // The aggregate already carries totalRetailValue and totalCostValue, so
+  // profit/margin for the stat row are derived directly from those — no
+  // backend change needed, this was just never wired up in the JSX.
+  const statsProfit = (stats?.totalRetailValue || 0) - (stats?.totalCostValue || 0);
+  const statsMarginPercent = (stats?.totalRetailValue || 0) > 0
+    ? (statsProfit / stats.totalRetailValue) * 100
+    : 0;
 
   // ─── Export Functions ────────────────────────────────────────────────────────
   const handleExportCsv = useCallback(() => {
@@ -531,14 +548,14 @@ export default function InventoryValue() {
           </div>
           <div className="reports-stat-card">
             <span className="reports-stat-label">Profit</span>
-            <span className="reports-stat-value" style={{ color: totalProfit >= 0 ? '#16A34A' : '#EF4444' }}>
-              {formatMoney(totalProfit, baseCurrency)}
+            <span className="reports-stat-value" style={{ color: statsProfit >= 0 ? '#16A34A' : '#EF4444' }}>
+              {formatMoney(statsProfit, baseCurrency)}
             </span>
           </div>
           <div className="reports-stat-card">
             <span className="reports-stat-label">Margin %</span>
-            <span className="reports-stat-value" style={{ color: getMarginColor(totalMargin) }}>
-              {totalMargin.toFixed(1)}%
+            <span className="reports-stat-value" style={{ color: getMarginColor(statsMarginPercent) }}>
+              {statsMarginPercent.toFixed(1)}%
             </span>
           </div>
         </div>

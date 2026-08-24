@@ -19,6 +19,53 @@ import { downloadProductTemplate, downloadProductsForReimport } from '../utils/c
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 
+// Lightweight success/error banner — auto-dismisses after 3 seconds.
+// Same visual pattern as the Toast used in StockTake.jsx / GRV.jsx.
+const Toast = ({ message, type = 'success', onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const colors = {
+    error: { bg: '#FEF2F2', border: '#FEE2E2', text: '#EF4444' },
+    success: { bg: '#F0FDF4', border: '#DCFCE7', text: '#16A34A' },
+    warning: { bg: '#FFFBEB', border: '#FDE68A', text: '#D97706' },
+    info: { bg: '#EFF6FF', border: '#BFDBFE', text: '#0891B2' },
+  };
+  const style = colors[type] || colors.success;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 20,
+      right: 20,
+      zIndex: 9999,
+      background: style.bg,
+      border: `1px solid ${style.border}`,
+      color: style.text,
+      padding: '12px 20px',
+      borderRadius: 8,
+      boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+      maxWidth: 400,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      fontSize: 14,
+      animation: 'toast-in 0.2s ease-out',
+    }}>
+      <span>{message}</span>
+      <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: style.text, fontSize: 18 }}>×</button>
+      <style>{`
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
 const STOCK_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'in_stock', label: 'In Stock' },
@@ -245,6 +292,14 @@ export default function Products() {
   // remounts on every navigation back from ProductForm, so this is safe
   // and avoids depending on a stale closure over location.state.
   const pendingSavedProductRef = useRef(location.state?.savedProduct || null);
+
+  // ✅ NEW — a brief success toast after coming back from ProductForm with
+  // no errors (savedProduct only ever arrives here on a clean save).
+  const [toast, setToast] = useState(
+    location.state?.savedProduct
+      ? { message: location.state?.isEdit ? 'Product updated successfully' : 'Product created successfully', type: 'success' }
+      : null
+  );
 
   const writeCache = useCallback((patch) => {
     if (!cacheKey) return;
@@ -852,6 +907,7 @@ export default function Products() {
     return (
       <>
         <LoadingBar visible={showLoadingBar} />
+        {toast && <Toast {...toast} onClose={() => setToast(null)} />}
         <div className="reports-page products-container">
           <div className="reports-header products-header">
             <div className="reports-header-left products-header-left">
@@ -1128,6 +1184,7 @@ export default function Products() {
   return (
     <>
       <LoadingBar visible={showLoadingBar} />
+      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
       <div className="reports-page products-container products-mobile-list">
         <div className="reports-header products-header">
           <div className="reports-header-left products-header-left">

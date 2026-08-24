@@ -568,6 +568,7 @@ navigate('/inventory/products', {
       currentStock: finalStock,
       imageUrl: uploadedImageUrl,
     },
+    isEdit: false,
   },
 });
 return;
@@ -593,6 +594,13 @@ return;
           stockMovementType = 'stock_reduction';
           stockAdjustQty = originalStockValue - newStockValue;
         }
+      }
+
+      if (stockChanged && !adjustReason.trim()) {
+        setError('A reason is required for stock adjustments');
+        savingRef.current = false;
+        setSaving(false);
+        return;
       }
 
       try {
@@ -652,6 +660,19 @@ return;
             movementType = 'stock_reduction';
           }
 
+          // ✅ CHANGED — this used to append `form.description` (the generic
+          // product description field near the top of the form), which is
+          // unrelated to why the stock count changed. The dedicated
+          // "Reason *" field in the Stock Management section (`adjustReason`)
+          // was being collected in the UI but never read here — it only fed
+          // the dead `handleAdjustStock` function that no button calls. Now
+          // the actual save path reads `adjustReason`, so what the user types
+          // in that required field is what lands in Inventory History.
+          const adjustReasonText = adjustReason.trim();
+          if (adjustReasonText) {
+            reasonText = `${reasonText} — ${adjustReasonText}`;
+          }
+
           await apiFetch(`/business/${businessId}/branches/${branchId}/stock-movements`, {
             method: 'POST',
             body: JSON.stringify({
@@ -709,6 +730,7 @@ navigate('/inventory/products', {
       currentStock: finalStock,
       imageUrl: finalImageUrl,
     },
+    isEdit: true,
   },
 });
     } catch (e) {
@@ -723,7 +745,7 @@ navigate('/inventory/products', {
       setSaving(false);
       savingRef.current = false;
     }
-  }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU]);
+  }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU, adjustReason]);
 
   const handleRemoveImage = useCallback(async () => {
     if (!existingImageUrl && !isEdit) { setImageFile(null); setImagePreview(null); return; }
