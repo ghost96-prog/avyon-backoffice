@@ -369,7 +369,6 @@ const generateNextSKU = useCallback(async () => {
   const handleAdjustStock = useCallback(async () => {
     const val = parseInt(adjustmentValue, 10);
     if (!val || val <= 0) { setError('Enter a valid quantity'); return; }
-    if (!adjustReason.trim()) { setError('A reason is required for stock adjustments'); return; }
 
     if (stockAdjustType === 'subtract') {
       const currentStock = parseInt(form.currentStock) || 0;
@@ -596,13 +595,6 @@ return;
         }
       }
 
-      if (stockChanged && !adjustReason.trim()) {
-        setError('A reason is required for stock adjustments');
-        savingRef.current = false;
-        setSaving(false);
-        return;
-      }
-
       try {
         const skuCheck = await apiFetch(
           `/business/${businessId}/branches/${branchId}/products/sku-check?sku=${encodeURIComponent(form.sku.trim().toUpperCase())}&excludeId=${productId}`
@@ -663,11 +655,11 @@ return;
           // ✅ CHANGED — this used to append `form.description` (the generic
           // product description field near the top of the form), which is
           // unrelated to why the stock count changed. The dedicated
-          // "Reason *" field in the Stock Management section (`adjustReason`)
+          // "Reason" field in the Stock Management section (`adjustReason`)
           // was being collected in the UI but never read here — it only fed
           // the dead `handleAdjustStock` function that no button calls. Now
           // the actual save path reads `adjustReason`, so what the user types
-          // in that required field is what lands in Inventory History.
+          // in that (now optional) field is what lands in Inventory History.
           const adjustReasonText = adjustReason.trim();
           if (adjustReasonText) {
             reasonText = `${reasonText} — ${adjustReasonText}`;
@@ -993,7 +985,7 @@ navigate('/inventory/products', {
   } 
 />                    </div>
                     <div>
-                      <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Reason *</label>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 4 }}>Reason (optional)</label>
                       <input style={fieldInput({ padding: '8px 10px' })} value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder="Why is this adjustment needed?" />
                     </div>
                   </div>
