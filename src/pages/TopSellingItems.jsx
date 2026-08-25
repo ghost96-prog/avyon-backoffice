@@ -190,13 +190,15 @@ export default function TopSellingItems() {
     if (isExporting || !topItems.length) return;
     setIsExporting(true);
     try {
-      const header = ['Rank', 'Item', 'SKU', 'Quantity Sold', 'Revenue'];
+      // ✅ Profit column added, mirrors the row now showing profit per item
+      const header = ['Rank', 'Item', 'SKU', 'Quantity Sold', 'Revenue', 'Profit'];
       const rows = sortedItems.map((item, index) => [
         index + 1,
         item.name,
         item.sku || '',
         item.qty,
         (item.revenue || 0).toFixed(2),
+        (item.profit || 0).toFixed(2),
       ]);
       const branchTag = selectedBranchId === 'all' ? 'all-stores' : selectedBranchName.toLowerCase().replace(/\s+/g, '-');
       const filename = `top-selling-items_${branchTag}_${toApiDate(startDate)}_to_${toApiDate(endDate)}.csv`;
@@ -227,13 +229,15 @@ export default function TopSellingItems() {
       doc.text(`${branchLabel} • ${toApiDate(startDate)} to ${toApiDate(endDate)}`, 32, 46);
       doc.setTextColor(20, 24, 30);
 
-      const tableHead = [['Rank', 'Item', 'SKU', 'Quantity Sold', 'Revenue']];
+      // ✅ Profit column added
+      const tableHead = [['Rank', 'Item', 'SKU', 'Quantity Sold', 'Revenue', 'Profit']];
       const tableBody = sortedItems.map((item, index) => [
         index + 1,
         item.name,
         item.sku || '',
         item.qty,
         formatMoney(item.revenue, baseCurrency),
+        formatMoney(item.profit, baseCurrency),
       ]);
 
       autoTable(doc, {
@@ -448,6 +452,10 @@ export default function TopSellingItems() {
                   </div>
                   <div className="reports-list-item-right">
                     <div className="reports-list-item-amount">{formatMoney(item.revenue, baseCurrency)}</div>
+                    {/* ✅ NEW — profit per item, shown under revenue like the mobile row */}
+                    <div style={{ fontSize: 11, color: '#4CAF50', marginTop: 2, textAlign: 'right' }}>
+                      {formatMoney(item.profit || 0, baseCurrency)} profit
+                    </div>
                   </div>
                 </div>
               ))}
