@@ -547,6 +547,28 @@ export default function Products() {
 
   const visibleProducts = useMemo(() => filteredProducts.slice(0, visibleCount), [filteredProducts, visibleCount]);
 
+  // ✅ NEW — every non-deleted product currently loaded for this branch,
+  // independent of search/status/category filters. This is the universe
+  // "Select all in branch" operates over. Since fetchProducts walks the
+  // FULL cursor-paginated catalog on first load (see FULL LOAD above)
+  // before the user can interact with selection at all, this is the
+  // complete branch catalog in the normal case, not just a page of it.
+  const allBranchProducts = useMemo(
+    () => allProducts.filter((p) => p.status !== 'deleted'),
+    [allProducts]
+  );
+  const totalBranchCount = allBranchProducts.length;
+
+  // Is every item matching the CURRENT filters selected (and nothing else)?
+  const isAllFilteredSelected = filteredProducts.length > 0 &&
+    selectedIds.size === filteredProducts.length &&
+    filteredProducts.every((p) => selectedIds.has(p.productId));
+
+  // Is literally every product in the branch selected, regardless of filters?
+  const isAllBranchSelected = totalBranchCount > 0 &&
+    selectedIds.size === totalBranchCount &&
+    allBranchProducts.every((p) => selectedIds.has(p.productId));
+
   const openDeleteModal = useCallback((ids, e) => {
     if (e) e.stopPropagation();
     if (!guardAction('inventory_mgmt')) return;
@@ -597,13 +619,26 @@ export default function Products() {
     });
   }, []);
 
-  const handleSelectAll = useCallback(() => {
-    if (selectedIds.size === visibleProducts.length) {
+  // ✅ Selects/deselects every product matching the CURRENT search/status/
+  // category filters — not just the page that happens to be rendered
+  // (visibleCount). This is the checkbox in the table header / the
+  // "Select all" action on mobile.
+  const handleSelectAllFiltered = useCallback(() => {
+    if (isAllFilteredSelected) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(visibleProducts.map(p => p.productId)));
+      setSelectedIds(new Set(filteredProducts.map(p => p.productId)));
     }
-  }, [selectedIds.size, visibleProducts]);
+  }, [isAllFilteredSelected, filteredProducts]);
+
+  // ✅ NEW — selects every product in the branch, ignoring search/status/
+  // category filters entirely. Used for "delete everything in this
+  // branch" style bulk cleanups. Surfaced as a follow-up action once
+  // "select all filtered" is already active and there's more in the
+  // branch than what's currently filtered in.
+  const handleSelectAllBranch = useCallback(() => {
+    setSelectedIds(new Set(allBranchProducts.map(p => p.productId)));
+  }, [allBranchProducts]);
 
   const handleCancelSelection = useCallback(() => {
     setSelectedIds(new Set());
@@ -722,6 +757,72 @@ export default function Products() {
 
   const showStockColumn = canViewStock;
   const showLoadingBar = loading || refreshing;
+
+  // ✅ NEW — the "N selected" strip shown once selection mode is active.
+  // Shared between desktop and mobile. Always offers Cancel + Delete.
+  // When every FILTERED item is selected and the branch has more items
+  // than the current filter shows, it also offers a one-click jump to
+  // "select everything in the branch" (Gmail-style upsell banner).
+  const renderSelectionBar = ({ compact = false } = {}) => (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      flexWrap: 'wrap',
+      ...(compact ? { padding: '8px 12px', background: '#F8FAFC', borderRadius: 8 } : { marginLeft: 'auto' }),
+    }}>
+      <span style={{ fontSize: compact ? 12 : 13, fontWeight: 600, color: '#0F172A' }}>
+        {isAllBranchSelected
+          ? `All ${totalBranchCount} in branch selected`
+          : `${selectedIds.size} selected`}
+      </span>
+      {isAllFilteredSelected && !isAllBranchSelected && totalBranchCount > filteredProducts.length && (
+        <button
+          onClick={handleSelectAllBranch}
+          style={{
+            padding: compact ? '4px 10px' : '4px 12px',
+            border: '1px solid #BFDBFE',
+            borderRadius: 6,
+            background: '#EFF6FF',
+            color: '#0891B2',
+            cursor: 'pointer',
+            fontSize: compact ? 11 : 12,
+            fontWeight: 600,
+          }}
+        >
+          Select all {totalBranchCount} in {selectedBranchName}
+        </button>
+      )}
+      <button
+        onClick={handleCancelSelection}
+        style={{
+          padding: compact ? '4px 10px' : '4px 12px',
+          border: '1px solid #E2E8F0',
+          borderRadius: 6,
+          background: '#fff',
+          cursor: 'pointer',
+          fontSize: compact ? 11 : 12,
+          ...(compact ? { marginLeft: 'auto' } : {}),
+        }}
+      >
+        Cancel
+      </button>
+      <button
+        onClick={() => openDeleteModal([...selectedIds])}
+        style={{
+          padding: compact ? '4px 10px' : '4px 12px',
+          border: '1px solid #FEE2E2',
+          borderRadius: 6,
+          background: '#FEF2F2',
+          color: '#EF4444',
+          cursor: 'pointer',
+          fontSize: compact ? 11 : 12,
+        }}
+      >
+        Delete
+      </button>
+    </div>
+  );
 
   const MobileProductItem = ({ product, isSelected, onToggleSelect, onPress, onDelete, }) => {
     const stockStatus = getStockStatus(product);
@@ -999,17 +1100,7 @@ export default function Products() {
                 </div>
               )}
             </div>
-            {isSelectionMode && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>{selectedIds.size} selected</span>
-                <button onClick={handleCancelSelection} style={{ padding: '4px 12px', border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 12 }}>
-                  Cancel
-                </button>
-                <button onClick={() => openDeleteModal([...selectedIds])} style={{ padding: '4px 12px', border: '1px solid #FEE2E2', borderRadius: 6, background: '#FEF2F2', color: '#EF4444', cursor: 'pointer', fontSize: 12 }}>
-                  Delete
-                </button>
-              </div>
-            )}
+            {isSelectionMode && renderSelectionBar()}
           </div>
 
           <div className="reports-list-card" style={{ overflowX: 'auto' }}>
@@ -1030,9 +1121,13 @@ export default function Products() {
                 <thead>
                   <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>
                     <th style={{ padding: '10px 12px', textAlign: 'left', width: 40 }}>
-                      <button onClick={handleSelectAll} style={{ border: 'none', background: 'none', cursor: 'pointer' }}>
-                        {selectedIds.size === visibleProducts.length && visibleProducts.length > 0 ? 
-                          <CheckSquare size={18} color="#0891B2" /> : 
+                      <button
+                        onClick={handleSelectAllFiltered}
+                        title={isAllFilteredSelected ? 'Deselect all' : `Select all ${filteredProducts.length} matching current filters`}
+                        style={{ border: 'none', background: 'none', cursor: 'pointer' }}
+                      >
+                        {isAllFilteredSelected ?
+                          <CheckSquare size={18} color="#0891B2" /> :
                           <Square size={18} color="#94A3B8" />
                         }
                       </button>
@@ -1222,6 +1317,14 @@ export default function Products() {
             >
               <Plus size={14} /> New Product
             </button>
+            <button
+              onClick={handleSelectAllFiltered}
+              disabled={!filteredProducts.length}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 12, cursor: filteredProducts.length ? 'pointer' : 'default', opacity: filteredProducts.length ? 1 : 0.5 }}
+            >
+              {isAllFilteredSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+              {isAllFilteredSelected ? 'Deselect all' : 'Select all'}
+            </button>
             <button 
               onClick={handleExportCsv} 
               disabled={isExporting || !filteredProducts.length}
@@ -1298,6 +1401,7 @@ export default function Products() {
               )}
             </div>
           </div>
+          {isSelectionMode && renderSelectionBar({ compact: true })}
         </div>
 
         <div className="reports-list-card" style={{ padding: 0, overflow: 'hidden' }}>
