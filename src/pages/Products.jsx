@@ -1405,6 +1405,42 @@ export default function Products() {
         </div>
 
         <div className="reports-list-card" style={{ padding: 0, overflow: 'hidden' }}>
+          {/* ADDED: Mobile Select-All Header - Same as desktop table header */}
+          {!error && visibleProducts.length > 0 && (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              padding: '8px 12px', 
+              borderBottom: '2px solid #E2E8F0',
+              background: '#F8FAFC',
+              fontWeight: 600,
+              fontSize: 11,
+              color: '#94A3B8',
+              textTransform: 'uppercase',
+              gap: 8,
+            }}>
+              <div style={{ width: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <button
+                  onClick={handleSelectAllFiltered}
+                  title={isAllFilteredSelected ? 'Deselect all' : `Select all ${filteredProducts.length} matching current filters`}
+                  style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
+                >
+                  {isAllFilteredSelected ? (
+                    <CheckSquare size={18} color="#0891B2" />
+                  ) : (
+                    <Square size={18} color="#94A3B8" />
+                  )}
+                </button>
+              </div>
+              <div style={{ flex: 1 }}>
+                {isAllFilteredSelected ? 'Deselect all' : 'Select all matching products'}
+              </div>
+              <span style={{ fontSize: 10, color: '#94A3B8' }}>
+                {filteredProducts.length} items
+              </span>
+            </div>
+          )}
+          
           {error ? (
             <div className="reports-empty">
               <AlertTriangle size={32} color="#ef4444" />
