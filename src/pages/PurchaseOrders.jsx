@@ -41,6 +41,16 @@ function getCurrentStock(product) {
   return Number(product?.currentStock ?? product?.stock ?? product?.quantityOnHand ?? product?.qty ?? 0);
 }
 
+// ✅ how many product rows we mount into the DOM at once for the item
+// picker list (issue 5 — lazy-load, same pattern GRV.jsx uses for its
+// product picker table). Independent of the NETWORK page size
+// (PRODUCTS_PAGE_SIZE below) — this is purely how many of the
+// already-loaded products are actually rendered as rows at once.
+const RENDER_PAGE_SIZE = 60;
+// Start growing the render window this many px before the true bottom of
+// the scrollable list, so it feels seamless rather than a visible pop-in.
+const SCROLL_LOAD_THRESHOLD_PX = 160;
+
 // ═══════════════════════════════════════════════════════════════════════════
 // ✅ NEW — "New Item Not In Catalog" modal, lifted verbatim from GRV.jsx so
 // creating an item here is the exact same experience: same fields (name,
@@ -334,6 +344,11 @@ export default function PurchaseOrders() {
   const [productSearch, setProductSearch] = useState('');
   const PRODUCTS_PAGE_SIZE = 250;
 
+  // ✅ NEW (issue 5) — how many of the (already loaded) filtered products
+  // are actually rendered into the picker list right now. Grows as the
+  // user scrolls, same lazy-render pattern as GRV.jsx's product table.
+  const [visibleProductCount, setVisibleProductCount] = useState(RENDER_PAGE_SIZE);
+
   const fetchProducts = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
     setProductsLoading(true);
@@ -366,6 +381,38 @@ export default function PurchaseOrders() {
     const q = productSearch.trim().toLowerCase();
     return products.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q));
   }, [products, productSearch]);
+
+  // ✅ NEW (issue 5) — a new search narrows/changes WHICH rows should be
+  // visible, so the render window resets to the top. Doesn't depend on
+  // `products` itself, since that array grows continuously as network
+  // pages arrive — resetting on every page landing would keep yanking the
+  // user back to the top of the list mid-scroll.
+  useEffect(() => {
+    setVisibleProductCount(RENDER_PAGE_SIZE);
+  }, [productSearch]);
+
+  // ✅ NEW (issue 5) — only the first `visibleProductCount` filtered rows
+  // are actually rendered into the picker list. Replaces the old hard
+  // `slice(0, 100)` + "refine your search" cutoff.
+  const renderedProducts = useMemo(
+    () => filteredProducts.slice(0, visibleProductCount),
+    [filteredProducts, visibleProductCount]
+  );
+
+  // ✅ NEW (issue 5) — grows the render window as the user scrolls near
+  // the bottom of the picker's scroll container. Independent of network
+  // pagination — this only ever reveals rows already sitting in
+  // filteredProducts; it never triggers a new API call itself.
+  const handleProductListScroll = useCallback((e) => {
+    const el = e.currentTarget;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < SCROLL_LOAD_THRESHOLD_PX) {
+      setVisibleProductCount((prev) => {
+        if (prev >= filteredProducts.length) return prev;
+        return Math.min(prev + RENDER_PAGE_SIZE, filteredProducts.length);
+      });
+    }
+  }, [filteredProducts.length]);
 
   // ✅ NEW — used both in the picker (already inline via getCurrentStock)
   // and in the Order Items cart panel, so an already-added line still
@@ -421,6 +468,7 @@ export default function PurchaseOrders() {
     setNotes('');
     setCart({});
     setProductSearch('');
+    setVisibleProductCount(RENDER_PAGE_SIZE); // ✅ NEW — reset the lazy-load window for a fresh session
     fetchSuppliers();
     fetchProducts();
     fetchCategories();
@@ -645,6 +693,7 @@ export default function PurchaseOrders() {
         fromPurchaseOrder: {
           purchaseOrderId: po.purchaseOrderId,
           poNumber: po.poNumber,
+          supplierId: po.supplierId, // ✅ NEW — lets GRV link straight to the Suppliers record
           supplierName: po.supplierName,
           items: remainingItems,
         },
@@ -698,8 +747,16 @@ export default function PurchaseOrders() {
                   Loading products… {productsLoadedCount} loaded so far
                 </div>
               )}
-              <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #F1F5F9', borderRadius: 8 }}>
-                {filteredProducts.slice(0, 100).map((p) => (
+              {/* ✅ CHANGED (issue 5) — lazy-render the picker list the same
+                  way GRV.jsx does its product table: only the first
+                  `visibleProductCount` filtered rows are mounted, and
+                  scrolling near the bottom grows that window. Replaces the
+                  old hard `slice(0, 100)` + "refine your search" message. */}
+              <div
+                style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #F1F5F9', borderRadius: 8 }}
+                onScroll={handleProductListScroll}
+              >
+                {renderedProducts.map((p) => (
                   <div key={p.productId} onClick={() => addProductToCart(p)} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 12px', borderBottom: '1px solid #F8FAFC', cursor: 'pointer' }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div>
@@ -709,11 +766,13 @@ export default function PurchaseOrders() {
                   </div>
                 ))}
                 {filteredProducts.length === 0 && (
-                  <div style={{ padding: 20, textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>No products found.</div>
+                  <div style={{ padding: 20, textAlign: 'center', color: '#94A3B8', fontSize: 13 }}>
+                    {productsLoading ? 'Loading products…' : 'No products found.'}
+                  </div>
                 )}
-                {filteredProducts.length > 100 && (
+                {visibleProductCount < filteredProducts.length && (
                   <div style={{ padding: '10px 12px', textAlign: 'center', color: '#94A3B8', fontSize: 12, borderTop: '1px solid #F8FAFC' }}>
-                    Showing first 100 of {filteredProducts.length} matches — refine your search to narrow it down.
+                    Scroll for more — showing {renderedProducts.length} of {filteredProducts.length}
                   </div>
                 )}
               </div>
@@ -856,11 +915,28 @@ export default function PurchaseOrders() {
           </div>
         )}
 
+        {/* ✅ FIX (issue 4) — ConfirmDialog needs an explicit `open` prop
+            (see GRV.jsx's usage) or it never actually renders, which made
+            Cancel do nothing when clicked. */}
         {cancelPending && (
-          <ConfirmDialog title="Cancel this purchase order?" message={`${cancelPending.poNumber} will be marked cancelled. This can't be undone.`} confirmLabel="Cancel Order" onCancel={() => setCancelPending(null)} onConfirm={cancelPo} />
+          <ConfirmDialog
+            open={!!cancelPending}
+            title="Cancel this purchase order?"
+            message={`${cancelPending.poNumber} will be marked cancelled. This can't be undone.`}
+            confirmLabel="Cancel Order"
+            onCancel={() => setCancelPending(null)}
+            onConfirm={cancelPo}
+          />
         )}
         {deletePending && (
-          <ConfirmDialog title="Delete this draft?" message={`${deletePending.poNumber} will be permanently deleted.`} confirmLabel="Delete" onCancel={() => setDeletePending(null)} onConfirm={deletePo} />
+          <ConfirmDialog
+            open={!!deletePending}
+            title="Delete this draft?"
+            message={`${deletePending.poNumber} will be permanently deleted.`}
+            confirmLabel="Delete"
+            onCancel={() => setDeletePending(null)}
+            onConfirm={deletePo}
+          />
         )}
       </div>
     );

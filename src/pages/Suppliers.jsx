@@ -148,7 +148,15 @@ export default function Suppliers() {
         showToast('Supplier added', 'success');
       }
       setModalOpen(false);
-      fetchSuppliers();
+      await fetchSuppliers();
+      // ✅ FIX (issue 1) — editing used to only refresh the background list,
+      // so if you were sitting on that supplier's detail page the changes
+      // wouldn't show until you navigated away and back. If we just edited
+      // the supplier currently open in detail view, re-fetch its detail
+      // record right away so the page reflects the change immediately.
+      if (editingSupplierId && view === 'detail' && selectedSupplier?.supplierId === editingSupplierId) {
+        openDetail({ supplierId: editingSupplierId });
+      }
     } catch (e) {
       showToast(e.message || 'Failed to save supplier', 'error');
     } finally {
@@ -262,6 +270,7 @@ export default function Suppliers() {
         )}
         {deletePending && (
           <ConfirmDialog
+            open={!!deletePending}
             title="Remove supplier?"
             message={`"${deletePending.name}" will be removed from your active supplier list. Past purchase orders keep their history.`}
             confirmLabel="Remove"
@@ -343,6 +352,7 @@ export default function Suppliers() {
       )}
       {deletePending && (
         <ConfirmDialog
+          open={!!deletePending}
           title="Remove supplier?"
           message={`"${deletePending.name}" will be removed from your active supplier list. Past purchase orders keep their history.`}
           confirmLabel="Remove"

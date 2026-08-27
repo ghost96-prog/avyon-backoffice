@@ -1,4 +1,4 @@
-// src/pages/Inventory/GRV.jsx
+// src/pages/GRV.jsx
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Store, Plus, X, FileInput, Package, Trash2, Check, ChevronLeft,
@@ -16,6 +16,7 @@ import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
 import ConfirmDialog from '../components/community/ConfirmDialog';
+import { SupplierModal } from './Suppliers'; // ✅ NEW — same supplier picker/creator PurchaseOrders.jsx uses
 
 function fieldInput(props) {
   return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
@@ -360,9 +361,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
                   placeholder="Auto-generated"
                   style={skuTaken ? { borderColor: '#EF4444' } : undefined}
                 />
-                {/* ✅ NEW — live SKU-availability feedback. Refuses to let the
-                    item be added while the typed SKU already belongs to
-                    another product or another line already in this GRV. */}
                 {trimmedSku && (
                   <div style={{ fontSize: 11, marginTop: 4, fontWeight: 600 }}>
                     {skuChecking ? (
@@ -685,6 +683,15 @@ export default function GRV() {
   // ── CREATE GRV ────────────────────────────────────────────────────────────
   const [createStep, setCreateStep] = useState(1);
   const [supplierName, setSupplierName] = useState('');
+  // ✅ NEW — supplier is now picked from the Suppliers table (same as
+  // PurchaseOrders.jsx), not typed freehand. supplierName stays in state
+  // too (derived from the selection) since the rest of this file — the
+  // GRV payload, PDF export, CSV export, review screen — already reads it.
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierId, setSupplierId] = useState('');
+  const [supplierModalOpen, setSupplierModalOpen] = useState(false);
+  const [newSupplierDraft, setNewSupplierDraft] = useState({ name: '', email: '', phone: '', address: '', notes: '' });
+  const [savingSupplier, setSavingSupplier] = useState(false);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [updateCostPrice, setUpdateCostPrice] = useState(true);
@@ -722,8 +729,63 @@ export default function GRV() {
   const [skuCheck, setSkuCheck] = useState({ sku: '', checking: false, exists: false });
   const skuCheckTimerRef = useRef(null);
 
+  // ✅ NEW — load the branch's supplier list whenever the create flow is
+  // open, same list PurchaseOrders.jsx uses.
+  const fetchSuppliers = useCallback(async () => {
+    if (!businessId || !selectedBranchId) return;
+    try {
+      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`);
+      setSuppliers((res.data || []).filter((s) => !s.isDeleted));
+    } catch (e) {
+      console.error('Load suppliers error:', e);
+      showToast(e?.message || 'Failed to load suppliers', 'error');
+    }
+  }, [apiFetch, businessId, selectedBranchId]);
+
+  useEffect(() => {
+    if (view === 'create') fetchSuppliers();
+  }, [view, fetchSuppliers]);
+
+  // ✅ NEW — best-effort link-up for legacy drafts/PO hand-offs that landed
+  // on a supplierName with no supplierId yet: once the supplier list is
+  // in, match it by name so the picker shows the right selection.
+  useEffect(() => {
+    if (view === 'create' && !supplierId && supplierName && suppliers.length > 0) {
+      const match = suppliers.find((s) => s.name.trim().toLowerCase() === supplierName.trim().toLowerCase());
+      if (match) setSupplierId(match.supplierId);
+    }
+  }, [suppliers, supplierName, supplierId, view]);
+
+  // ✅ NEW — select an existing supplier from the picker.
+  const handleSupplierSelect = (id) => {
+    setSupplierId(id);
+    const s = suppliers.find((x) => x.supplierId === id);
+    setSupplierName(s?.name || '');
+  };
+
+  // ✅ NEW — same inline "create supplier" save PurchaseOrders.jsx uses.
+  const saveSupplierInline = async () => {
+    if (!newSupplierDraft.name.trim()) return showToast('Supplier name is required', 'error');
+    // if (!newSupplierDraft.phone.trim()) return showToast('A phone number is required', 'error');
+    setSavingSupplier(true);
+    try {
+      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`, {
+        method: 'POST', body: JSON.stringify({ ...newSupplierDraft, staffId, staffName }),
+      });
+      showToast('Supplier added', 'success');
+      setSupplierModalOpen(false);
+      await fetchSuppliers();
+      setSupplierId(res.supplierId);
+      setSupplierName(newSupplierDraft.name.trim());
+    } catch (e) {
+      showToast(e.message || 'Failed to add supplier', 'error');
+    } finally {
+      setSavingSupplier(false);
+    }
+  };
+
   const isStepComplete = (step) => {
-    if (step === 1) return supplierName.trim().length > 0;
+    if (step === 1) return !!supplierId; // ✅ was supplierName.trim().length > 0
     if (step === 2) return cartItems.some((item) => Number(item.quantityReceived) > 0);
     return false;
   };
@@ -733,6 +795,7 @@ export default function GRV() {
     if (!guardAction('advanced_inventory')) return;
     setCreateStep(1);
     setSupplierName('');
+    setSupplierId(''); // ✅ NEW
     setInvoiceNumber('');
     setNotes('');
     setUpdateCostPrice(true);
@@ -794,6 +857,7 @@ export default function GRV() {
 
       setCreateStep(1);
       setSupplierName(incoming.supplierName || '');
+      setSupplierId(incoming.supplierId || ''); // ✅ NEW
       setInvoiceNumber('');
       setNotes(`Receiving against ${incoming.poNumber}.`);
       setUpdateCostPrice(true);
@@ -1174,7 +1238,7 @@ useEffect(() => {
     setSkuCheck({ sku: '', checking: false, exists: false });
   };
 
-  const canGoToProducts = supplierName.trim().length > 0;
+  const canGoToProducts = !!supplierId; // ✅ was supplierName.trim().length > 0
   const canGoToReview = cartItems.some((item) => Number(item.quantityReceived) > 0);
 
   const totalCost = useMemo(
@@ -1219,8 +1283,8 @@ useEffect(() => {
 
   const validateCartForSubmit = useCallback(() => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
-    if (!supplierName.trim()) {
-      showToast('Supplier name is required', 'error');
+    if (!supplierId) {
+      showToast('Select a supplier first', 'error');
       return null;
     }
     if (validItems.length === 0) {
@@ -1243,7 +1307,7 @@ useEffect(() => {
       }
     }
     return validItems;
-  }, [cartItems, supplierName]);
+  }, [cartItems, supplierId]);
 
   const requestCreateGrv = useCallback(() => {
     // ✅ Guard the action
@@ -1261,8 +1325,8 @@ useEffect(() => {
   const handleSaveDraft = useCallback(async () => {
     if (!guardAction('advanced_inventory')) return;
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
-    if (!supplierName.trim()) {
-      showToast('Supplier name is required', 'error');
+    if (!supplierId) {
+      showToast('Select a supplier first', 'error');
       return;
     }
     if (validItems.length === 0) {
@@ -1277,6 +1341,7 @@ useEffect(() => {
         await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/grv/${draftGrvId}`, {
           method: 'PUT',
           body: JSON.stringify({
+            supplierId,
             supplierName: supplierName.trim(),
             supplierInvoiceNumber: invoiceNumber.trim() || null,
             items: buildItemsPayload(validItems),
@@ -1290,6 +1355,7 @@ useEffect(() => {
         const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/grv`, {
           method: 'POST',
           body: JSON.stringify({
+            supplierId,
             supplierName: supplierName.trim(),
             supplierInvoiceNumber: invoiceNumber.trim() || null,
             items: buildItemsPayload(validItems),
@@ -1311,9 +1377,9 @@ useEffect(() => {
       setSavingDraft(false);
     }
   }, [
-    apiFetch, businessId, selectedBranchId, draftGrvId, supplierName, invoiceNumber,
+    apiFetch, businessId, selectedBranchId, draftGrvId, supplierId, supplierName, invoiceNumber,
     notes, updateCostPrice, updateSellingPrice, cartItems, staffId, staffName,
-    buildItemsPayload, guardAction,
+    buildItemsPayload, guardAction, incomingPurchaseOrder,
   ]);
 
   // ✅ CHANGED — if we're finishing a saved draft (draftGrvId set), this
@@ -1331,6 +1397,7 @@ useEffect(() => {
         await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/grv/${draftGrvId}`, {
           method: 'PUT',
           body: JSON.stringify({
+            supplierId,
             supplierName: supplierName.trim(),
             supplierInvoiceNumber: invoiceNumber.trim() || null,
             items: buildItemsPayload(validItems),
@@ -1347,6 +1414,7 @@ useEffect(() => {
         await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/grv`, {
           method: 'POST',
           body: JSON.stringify({
+            supplierId,
             supplierName: supplierName.trim(),
             supplierInvoiceNumber: invoiceNumber.trim() || null,
             items: buildItemsPayload(validItems),
@@ -1370,9 +1438,9 @@ useEffect(() => {
       setCreating(false);
     }
   }, [
-    apiFetch, businessId, selectedBranchId, draftGrvId, supplierName, invoiceNumber,
+    apiFetch, businessId, selectedBranchId, draftGrvId, supplierId, supplierName, invoiceNumber,
     notes, updateCostPrice, updateSellingPrice, cartItems, staffId, staffName,
-    fetchGrvs, buildItemsPayload,
+    fetchGrvs, buildItemsPayload, incomingPurchaseOrder,
   ]);
 
   // ✅ NEW — reopens a saved draft ("order list") for editing: rebuilds
@@ -1387,6 +1455,7 @@ useEffect(() => {
     if (!guardAction('advanced_inventory')) return;
     setCreateStep(2);
     setSupplierName(g.supplierName || '');
+    setSupplierId(g.supplierId || ''); // ✅ NEW — falls back to the name-match effect above if absent
     setInvoiceNumber(g.supplierInvoiceNumber || '');
     setNotes(g.notes || '');
     setUpdateCostPrice(g.updateCostPrice !== false);
@@ -1841,6 +1910,16 @@ useEffect(() => {
           onAdd={addNewItemToCart}
         />
       )}
+      {supplierModalOpen && (
+        <SupplierModal
+          draft={newSupplierDraft}
+          setDraft={setNewSupplierDraft}
+          saving={savingSupplier}
+          onCancel={() => setSupplierModalOpen(false)}
+          onSave={saveSupplierInline}
+          isEditing={false}
+        />
+      )}
       <div className="reports-header">
         <div className="reports-header-left">
           <button className="reports-header-back" onClick={() => setView('list')}><ChevronLeft size={18} /></button>
@@ -1912,8 +1991,20 @@ useEffect(() => {
         <div className="reports-list-card" style={{ padding: 24, maxWidth: 640 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Supplier Name *</label>
-              <input style={fieldInput()} value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="e.g. Acme Distributors" />
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Supplier *</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <select style={fieldInput()} value={supplierId} onChange={(e) => handleSupplierSelect(e.target.value)}>
+                  <option value="">Select a supplier…</option>
+                  {suppliers.map((s) => <option key={s.supplierId} value={s.supplierId}>{s.name}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setNewSupplierDraft({ name: '', email: '', phone: '', address: '', notes: '' }); setSupplierModalOpen(true); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  <Plus size={14} /> New
+                </button>
+              </div>
             </div>
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Invoice Number</label>
