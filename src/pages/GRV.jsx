@@ -5,7 +5,7 @@ import {
   Search, FileText, Clock, User, MessageSquare, Truck, AlertTriangle, Sparkles,
   Download, ClipboardList, Tag, Barcode, FolderTree, DollarSign, Bell, TrendingUp, Layers, Hash, Percent,
 } from 'lucide-react';
-import { useLocation, useNavigate } from 'react-router-dom'; // ✅ NEW — Purchase Order hand-off
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { formatMoney } from '../utils/exportUtils';
 import jsPDF from 'jspdf';
@@ -16,7 +16,7 @@ import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
 import ConfirmDialog from '../components/community/ConfirmDialog';
-import { SupplierModal } from './Suppliers'; // ✅ NEW — same supplier picker/creator PurchaseOrders.jsx uses
+import { SupplierModal } from './Suppliers';
 
 function fieldInput(props) {
   return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
@@ -26,6 +26,7 @@ function fmtDateTime(ts) {
   if (!ts) return '—';
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+
 async function generateNextSKU(apiFetch, businessId, branchId) {
   try {
     const res = await apiFetch(`/business/${businessId}/branches/${branchId}/products/next-sku`);
@@ -36,12 +37,6 @@ async function generateNextSKU(apiFetch, businessId, branchId) {
   }
 }
 
-// ✅ NEW — /products/next-sku returns "the next" SKU but doesn't reserve it,
-// so calling it once per new item (in parallel or in a loop) can hand back
-// the SAME sku more than once. When a PO hand-off needs several new-product
-// SKUs at once, we fetch one base SKU and bump its trailing number locally
-// for each subsequent item, so they never collide before the GRV is saved
-// (the existing SKU-availability check still runs at save time regardless).
 function bumpSku(baseSku, offset) {
   if (!offset) return baseSku;
   const match = String(baseSku).match(/^(.*?)(\d+)$/);
@@ -51,7 +46,6 @@ function bumpSku(baseSku, offset) {
   return `${prefix}${String(nextNum).padStart(digits.length, '0')}`;
 }
 
-// ─── EXACT Android formatPriceInput ──────────────────────────────────
 const formatPriceInput = (text) => {
   if (!text || text === '') return '0.00';
   const numericOnly = text.replace(/[^0-9]/g, '');
@@ -90,19 +84,19 @@ function getItemSellingPriceAfter(it) {
 function itemName(item) {
   return item.isNewProduct ? (item.newProduct?.name || '(unnamed)') : (item.product?.name || '');
 }
+
 function itemSku(item) {
   return item.isNewProduct ? (item.newProduct?.sku || '') : (item.product?.sku || '');
 }
+
 function itemCurrentStock(item) {
   return item.isNewProduct ? 0 : getCurrentStock(item.product);
 }
+
 function itemKeyOf(item) {
   return item.itemKey;
 }
 
-// ✅ NEW — stock-level classification for the product picker, mirrors the
-// same logic used on Products.jsx (getStockStatus) so "Low Stock" /
-// "Out of Stock" mean the same thing everywhere in the app.
 function getProductStockStatus(product) {
   if (!product || product.trackInventory === false) return 'in_stock';
   const stock = getCurrentStock(product);
@@ -158,10 +152,6 @@ const Toast = ({ message, type, onClose }) => {
   );
 };
 
-// ✅ thin inline progress bar for background product loading.
-// Mirrors the same estimated-fill behavior used on the Products.jsx
-// screen: percent grows (log-scaled) with loadedCount while loading is
-// true, snaps to 100%/green on completion, then fades out shortly after.
 const InlineLoadProgress = ({ loading, loadedCount }) => {
   const [percent, setPercent] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -185,7 +175,6 @@ const InlineLoadProgress = ({ loading, loadedCount }) => {
     return () => {
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, loadedCount]);
 
   if (!visible) return null;
@@ -243,7 +232,6 @@ const emptyNewItemDraft = {
   sellingPrice: '0.00', costPrice: '0.00',
 };
 
-// ─── Small presentational helpers for the New Item modal ──────────────────
 const ModalSection = ({ icon: Icon, title, children }) => (
   <div style={{ marginBottom: 20 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 12 }}>
@@ -298,7 +286,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
         style={{ maxWidth: 520, borderRadius: 16, overflow: 'hidden', boxShadow: '0 24px 48px rgba(15,23,42,0.28)', border: '1px solid #EEF2F7' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div style={{
           padding: '20px 24px',
           background: 'linear-gradient(135deg, #0891B2 0%, #234C6A 100%)',
@@ -339,7 +326,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
             <span>This will be created as a new product in your catalog and stocked with the quantity you received on this GRV.</span>
           </div>
 
-          {/* Basic info */}
           <ModalSection icon={Tag} title="Basic Info">
             <div style={{ marginBottom: 10 }}>
               <FieldLabel required>Product Name</FieldLabel>
@@ -385,7 +371,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
             </div>
           </ModalSection>
 
-          {/* Organization */}
           <ModalSection icon={FolderTree} title="Organization">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div>
@@ -417,7 +402,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
             </div>
           </ModalSection>
 
-          {/* Pricing */}
           <ModalSection icon={DollarSign} title="Pricing">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: margin != null ? 10 : 0 }}>
               <div>
@@ -460,7 +444,6 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
             )}
           </ModalSection>
 
-          {/* Inventory */}
           <ModalSection icon={Bell} title="Inventory">
             <FieldLabel>Low Stock Alert</FieldLabel>
             <IconInput
@@ -505,23 +488,12 @@ const NewItemModal = ({ draft, setDraft, categories, baseCurrency, skuCheck, onC
   );
 };
 
-// ✅ CHANGED — added 'draft' status so an unfinished order list shows up
-// clearly in the list view, distinct from a fully completed GRV.
 const GRV_STATUS_CONFIG = {
   draft: { label: 'Draft — Order List', bg: '#FEF3C7', color: '#D97706' },
   completed: { label: 'Completed', bg: '#DCFCE7', color: '#16A34A' },
 };
 
-// ✅ how many product rows we mount into the DOM at once for the
-// picker table. Independent of GRV_PRODUCTS_PAGE_SIZE below, which is the
-// NETWORK page size (how many products come back per API call). This is
-// the RENDER page size — even once thousands of products have loaded into
-// createProducts, only this many rows actually get put in the DOM,
-// growing as the user scrolls the table. Keeps the table snappy on large
-// catalogs regardless of how much data has already been fetched.
 const RENDER_PAGE_SIZE = 60;
-// Start loading the next slice this many px before the true bottom of the
-// scrollable table, so it feels seamless rather than a visible pop-in.
 const SCROLL_LOAD_THRESHOLD_PX = 160;
 
 export default function GRV() {
@@ -529,11 +501,7 @@ export default function GRV() {
   const staffId = activeStaff?.staffId || userProfile?.uid || 'dashboard';
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
-  // ─── MODULE GATING ───────────────────────────────────────────────────
   const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal, loading: moduleAccessLoading } = useModuleGate();
-  // ✅ NEW — Purchase Order hand-off: when PurchaseOrders.jsx navigates
-  // here with state, we prefill the create flow below. Everything else
-  // about this screen is unchanged.
   const location = useLocation();
   const navigate = useNavigate();
   const [incomingPurchaseOrder, setIncomingPurchaseOrder] = useState(null);
@@ -546,10 +514,8 @@ export default function GRV() {
   const [error, setError] = useState(null);
   const [grvs, setGrvs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  // ✅ NEW — list view filter: all / draft / completed
   const [grvStatusFilter, setGrvStatusFilter] = useState('all');
 
-  // Check access for the CURRENTLY SELECTED branch
   const hasAccess = hasModuleAccess('advanced_inventory');
 
   const showToast = (message, type = 'error') => {
@@ -577,10 +543,6 @@ export default function GRV() {
     }
   }, [apiFetch, businessId, selectedBranchId]);
 
-  // ✅ NEW — delete an order list (draft GRV) that's no longer needed.
-  // Backend rejects this for completed GRVs (permanent records), so this
-  // is only ever reachable/shown for status === 'draft'. Confirmation goes
-  // through ConfirmDialog (modal) instead of window.confirm.
   const [grvPendingDelete, setGrvPendingDelete] = useState(null);
   const [deletingGrv, setDeletingGrv] = useState(false);
 
@@ -611,7 +573,6 @@ export default function GRV() {
     }
   }, [fetchGrvs, view, hasAccess]);
 
-  // ✅ CHANGED — now also filters by grvStatusFilter (all/draft/completed)
   const filteredGrvs = useMemo(() => {
     let result = grvs;
     if (grvStatusFilter !== 'all') result = result.filter((g) => g.status === grvStatusFilter);
@@ -683,10 +644,7 @@ export default function GRV() {
   // ── CREATE GRV ────────────────────────────────────────────────────────────
   const [createStep, setCreateStep] = useState(1);
   const [supplierName, setSupplierName] = useState('');
-  // ✅ NEW — supplier is now picked from the Suppliers table (same as
-  // PurchaseOrders.jsx), not typed freehand. supplierName stays in state
-  // too (derived from the selection) since the rest of this file — the
-  // GRV payload, PDF export, CSV export, review screen — already reads it.
+  // ✅ FIX: Suppliers are now business-level, fetched from /business/{businessId}/suppliers
   const [suppliers, setSuppliers] = useState([]);
   const [supplierId, setSupplierId] = useState('');
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
@@ -699,7 +657,6 @@ export default function GRV() {
   const [createProducts, setCreateProducts] = useState([]);
   const [createCategories, setCreateCategories] = useState([]);
   const [createCategoryFilter, setCreateCategoryFilter] = useState('All');
-  // ✅ NEW — low stock / out of stock / in stock filter for the picker
   const [createStockStatusFilter, setCreateStockStatusFilter] = useState('all');
   const [createSearch, setCreateSearch] = useState('');
   const [cart, setCart] = useState({});
@@ -707,48 +664,31 @@ export default function GRV() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [newItemModalOpen, setNewItemModalOpen] = useState(false);
   const [newItemDraft, setNewItemDraft] = useState(emptyNewItemDraft);
-  // ✅ drives the inline progress bar while the product picker loads
   const [createProductsLoading, setCreateProductsLoading] = useState(false);
   const [createProductsLoadedCount, setCreateProductsLoadedCount] = useState(0);
-  // ✅ how many rows of the (already-loaded) product list are
-  // actually rendered right now. Grows as the user scrolls the table.
   const [visibleProductCount, setVisibleProductCount] = useState(RENDER_PAGE_SIZE);
-  // ✅ NEW — when set, we're editing a previously-saved "order list" draft
-  // GRV rather than starting a brand-new one. "Save as Order List" updates
-  // this draft in place instead of creating a second one, and "Record GRV"
-  // finalizes THIS draft (applying stock/price) instead of POSTing fresh.
   const [draftGrvId, setDraftGrvId] = useState(null);
   const [savingDraft, setSavingDraft] = useState(false);
 
-  // ✅ NEW — live SKU-uniqueness check backing the "New Item Not In
-  // Catalog" modal. { sku, checking, exists } describes the most recently
-  // checked SKU. Refuses to let a new item be added to the GRV while its
-  // SKU already belongs to another product on the server OR to another
-  // line already sitting in this cart (existing product OR another new
-  // item added earlier in the same GRV) — see isSkuTakenInCart below.
   const [skuCheck, setSkuCheck] = useState({ sku: '', checking: false, exists: false });
   const skuCheckTimerRef = useRef(null);
 
-  // ✅ NEW — load the branch's supplier list whenever the create flow is
-  // open, same list PurchaseOrders.jsx uses.
+  // ✅ FIX: Fetch suppliers from business-level endpoint (no branchId)
   const fetchSuppliers = useCallback(async () => {
-    if (!businessId || !selectedBranchId) return;
+    if (!businessId) return;
     try {
-      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`);
+      const res = await apiFetch(`/business/${businessId}/suppliers`);
       setSuppliers((res.data || []).filter((s) => !s.isDeleted));
     } catch (e) {
       console.error('Load suppliers error:', e);
       showToast(e?.message || 'Failed to load suppliers', 'error');
     }
-  }, [apiFetch, businessId, selectedBranchId]);
+  }, [apiFetch, businessId]);
 
   useEffect(() => {
     if (view === 'create') fetchSuppliers();
   }, [view, fetchSuppliers]);
 
-  // ✅ NEW — best-effort link-up for legacy drafts/PO hand-offs that landed
-  // on a supplierName with no supplierId yet: once the supplier list is
-  // in, match it by name so the picker shows the right selection.
   useEffect(() => {
     if (view === 'create' && !supplierId && supplierName && suppliers.length > 0) {
       const match = suppliers.find((s) => s.name.trim().toLowerCase() === supplierName.trim().toLowerCase());
@@ -756,20 +696,18 @@ export default function GRV() {
     }
   }, [suppliers, supplierName, supplierId, view]);
 
-  // ✅ NEW — select an existing supplier from the picker.
   const handleSupplierSelect = (id) => {
     setSupplierId(id);
     const s = suppliers.find((x) => x.supplierId === id);
     setSupplierName(s?.name || '');
   };
 
-  // ✅ NEW — same inline "create supplier" save PurchaseOrders.jsx uses.
+  // ✅ FIX: Save supplier to business-level endpoint (no branchId)
   const saveSupplierInline = async () => {
     if (!newSupplierDraft.name.trim()) return showToast('Supplier name is required', 'error');
-    // if (!newSupplierDraft.phone.trim()) return showToast('A phone number is required', 'error');
     setSavingSupplier(true);
     try {
-      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`, {
+      const res = await apiFetch(`/business/${businessId}/suppliers`, {
         method: 'POST', body: JSON.stringify({ ...newSupplierDraft, staffId, staffName }),
       });
       showToast('Supplier added', 'success');
@@ -785,17 +723,16 @@ export default function GRV() {
   };
 
   const isStepComplete = (step) => {
-    if (step === 1) return !!supplierId; // ✅ was supplierName.trim().length > 0
+    if (step === 1) return !!supplierId;
     if (step === 2) return cartItems.some((item) => Number(item.quantityReceived) > 0);
     return false;
   };
 
   const openCreateFlow = () => {
-    // ✅ Guard the action
     if (!guardAction('advanced_inventory')) return;
     setCreateStep(1);
     setSupplierName('');
-    setSupplierId(''); // ✅ NEW
+    setSupplierId('');
     setInvoiceNumber('');
     setNotes('');
     setUpdateCostPrice(true);
@@ -809,33 +746,15 @@ export default function GRV() {
     setConfirmOpen(false);
     setNewItemModalOpen(false);
     setVisibleProductCount(RENDER_PAGE_SIZE);
-    setIncomingPurchaseOrder(null); // ✅ NEW — manual GRVs aren't tied to a PO
+    setIncomingPurchaseOrder(null);
     setView('create');
   };
 
-  // ✅ NEW — one-time consumption of navigation state sent by
-  // PurchaseOrders.jsx's "Receive Stock" button.
-  //
-  // FIXED (was landing on the plain GRV list instead of prefilling):
-  // this used to call guardAction() on the very first render tick, before
-  // useModuleGate's async module-access fetch had resolved. Access
-  // defaults to false while that's in flight, so a business with an
-  // active subscription still got rejected — the gate modal popped up and
-  // the effect returned before ever setting the view or the cart. Now it
-  // waits for `moduleAccessLoading` to go false before checking access,
-  // and re-runs when that flips (it won't re-consume the same nav state
-  // twice because of consumedPoStateRef).
-  //
-  // FIXED (was not creating missing items): lines that don't exist in the
-  // catalog now get a real `isNewProduct` cart entry with an
-  // auto-generated SKU — exactly what "New Item Not In Catalog" does
-  // manually — instead of just leaving a note asking you to add them by
-  // hand. You can still edit the name/SKU/cost before completing.
   const consumedPoStateRef = useRef(false);
   useEffect(() => {
     const incoming = location.state?.fromPurchaseOrder;
     if (!incoming || consumedPoStateRef.current) return;
-    if (moduleAccessLoading) return; // wait for the real access check to resolve
+    if (moduleAccessLoading) return;
 
     consumedPoStateRef.current = true;
 
@@ -847,8 +766,6 @@ export default function GRV() {
       const newLines = (incoming.items || []).filter((it) => it.isNewProduct || !it.productId);
       const linesNeedingGeneratedSku = newLines.filter((l) => !l.newProduct?.sku);
 
-      // Only hit /products/next-sku for legacy lines that don't already
-      // carry their own SKU from the Purchase Order screen.
       let baseSku = null;
       if (linesNeedingGeneratedSku.length > 0) {
         baseSku = await generateNextSKU(apiFetch, businessId, selectedBranchId);
@@ -857,7 +774,7 @@ export default function GRV() {
 
       setCreateStep(1);
       setSupplierName(incoming.supplierName || '');
-      setSupplierId(incoming.supplierId || ''); // ✅ NEW
+      setSupplierId(incoming.supplierId || '');
       setInvoiceNumber('');
       setNotes(`Receiving against ${incoming.poNumber}.`);
       setUpdateCostPrice(true);
@@ -889,12 +806,6 @@ export default function GRV() {
         };
       });
 
-      // ✅ Prefer the full item draft already captured when this line was
-      // added on the Purchase Order (name, SKU, category, unit, barcode,
-      // pricing — everything from the same "New Item" modal) instead of
-      // re-deriving a fresh SKU from just name+unit. Only lines that
-      // somehow lack that (e.g. a PO created before this existed) fall
-      // back to auto-generating one here.
       const usedSkus = new Set();
       newLines.forEach((line, idx) => {
         let itemDraft = line.newProduct
@@ -907,9 +818,6 @@ export default function GRV() {
               costPrice: Number(line.unitCost || 0).toFixed(2),
             };
 
-        // Guard against two lines landing on the same SKU (shouldn't
-        // happen — the PO screen's own SKU check prevents it — but stay
-        // safe rather than silently overwriting a cart entry).
         let sku = (itemDraft.sku || '').toUpperCase();
         let bump = 1;
         while (usedSkus.has(sku)) { sku = bumpSku(itemDraft.sku.toUpperCase(), bump++); }
@@ -936,76 +844,57 @@ export default function GRV() {
         showToast(`${newLines.length} new item(s) were added with auto-generated SKUs — check them before completing.`, 'success');
       }
 
-      // Clear the nav state so a refresh/back doesn't replay this prefill.
       navigate(location.pathname, { replace: true, state: {} });
     })();
 
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, moduleAccessLoading]);
 
-  // ✅ /business/.../products now returns a paginated object
-  // ({ products, count, hasMore, nextCursor }), not a raw array. The old
-  // code did `Array.isArray(prodRes) ? prodRes : []`, which was ALWAYS
-  // false against that object, so createProducts silently stayed empty
-  // and the product picker showed nothing. This now walks cursor
-  // pagination — same pattern as Products.jsx / InventoryScreen.js — so
-  // the picker fills in page by page instead of trying to pull the whole
-  // (~5k item) catalog in a single request. createProductsLoading /
-  // createProductsLoadedCount feed the InlineLoadProgress bar below.
-  //
-  // ✅ this is purely the NETWORK-side pagination (how many products
-  // are fetched into memory). It's independent from visibleProductCount /
-  // RENDER_PAGE_SIZE above, which controls how many of those loaded
-  // products are actually rendered as table rows at once.
   const GRV_PRODUCTS_PAGE_SIZE = 250;
 
-useEffect(() => {
-  if (view !== 'create' || !businessId || !selectedBranchId) return;
-  let cancelled = false;
-  (async () => {
-    setCreateProductsLoading(true);
-    setCreateProductsLoadedCount(0);
-    setCreateProducts([]);
-    try {
-      const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
-      if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
+  useEffect(() => {
+    if (view !== 'create' || !businessId || !selectedBranchId) return;
+    let cancelled = false;
+    (async () => {
+      setCreateProductsLoading(true);
+      setCreateProductsLoadedCount(0);
+      setCreateProducts([]);
+      try {
+        const catRes = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`);
+        if (!cancelled) setCreateCategories(Array.isArray(catRes) ? catRes : []);
 
-      let cursor = null;
-      let hasMore = true;
-      let accumulated = [];
-      while (hasMore && !cancelled) {
-        const params = new URLSearchParams();
-        params.append('status', 'active');
-        params.append('limit', String(GRV_PRODUCTS_PAGE_SIZE));
-        if (cursor) params.append('cursor', cursor);
-        const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
-        accumulated = accumulated.concat(data.products || []);
-        hasMore = !!data.hasMore;
-        cursor = data.nextCursor || null;
-        if (!cancelled) {
-          // Sort accumulated products alphabetically by name
-          const sorted = [...accumulated].sort((a, b) => {
-            const nameA = (a.name || '').toLowerCase();
-            const nameB = (b.name || '').toLowerCase();
-            return nameA.localeCompare(nameB);
-          });
-          setCreateProducts(sorted);
-          setCreateProductsLoadedCount(accumulated.length);
+        let cursor = null;
+        let hasMore = true;
+        let accumulated = [];
+        while (hasMore && !cancelled) {
+          const params = new URLSearchParams();
+          params.append('status', 'active');
+          params.append('limit', String(GRV_PRODUCTS_PAGE_SIZE));
+          if (cursor) params.append('cursor', cursor);
+          const data = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products?${params.toString()}`);
+          accumulated = accumulated.concat(data.products || []);
+          hasMore = !!data.hasMore;
+          cursor = data.nextCursor || null;
+          if (!cancelled) {
+            const sorted = [...accumulated].sort((a, b) => {
+              const nameA = (a.name || '').toLowerCase();
+              const nameB = (b.name || '').toLowerCase();
+              return nameA.localeCompare(nameB);
+            });
+            setCreateProducts(sorted);
+            setCreateProductsLoadedCount(accumulated.length);
+          }
+          if (!cursor) break;
         }
-        if (!cursor) break;
+      } catch (e) {
+        console.error('Load products/categories for GRV error:', e);
+      } finally {
+        if (!cancelled) setCreateProductsLoading(false);
       }
-    } catch (e) {
-      console.error('Load products/categories for GRV error:', e);
-    } finally {
-      if (!cancelled) setCreateProductsLoading(false);
-    }
-  })();
-  return () => { cancelled = true; };
-}, [view, businessId, selectedBranchId, apiFetch]);
+    })();
+    return () => { cancelled = true; };
+  }, [view, businessId, selectedBranchId, apiFetch]);
 
-  // ✅ CHANGED — added createStockStatusFilter (low_stock / out_of_stock /
-  // in_stock) alongside the existing category + search filters.
   const filteredCreateProducts = useMemo(() => {
     let result = createProducts;
     if (createCategoryFilter !== 'All') result = result.filter((p) => p.category === createCategoryFilter);
@@ -1017,35 +906,18 @@ useEffect(() => {
     return result;
   }, [createProducts, createCategoryFilter, createStockStatusFilter, createSearch]);
 
-  // ✅ NEW — true whenever ANY picker filter (category, stock status, or
-  // search) is narrowing the product list. Drives the "Select All" /
-  // "Deselect All" wording and scoping below, so it's always clear
-  // whether those actions apply to the whole catalog or just what's
-  // currently on screen.
   const hasActiveProductFilter =
     createCategoryFilter !== 'All' || createStockStatusFilter !== 'all' || createSearch.trim().length > 0;
 
-  // ✅ a new search/category/stock filter changes WHICH rows should be
-  // visible, so the render window resets to the top. Reset does NOT
-  // depend on createProducts itself, since that array grows continuously
-  // as network pages arrive — resetting on every page landing would keep
-  // yanking the user back to the top of the table mid-scroll.
   useEffect(() => {
     setVisibleProductCount(RENDER_PAGE_SIZE);
   }, [createSearch, createCategoryFilter, createStockStatusFilter]);
 
-  // ✅ only the first `visibleProductCount` filtered rows are
-  // actually rendered into the table. This is what keeps the DOM light
-  // even once createProducts holds thousands of items.
   const renderedCreateProducts = useMemo(
     () => filteredCreateProducts.slice(0, visibleProductCount),
     [filteredCreateProducts, visibleProductCount]
   );
 
-  // ✅ grows the render window as the user scrolls near the bottom
-  // of the table's scroll container. Independent of network pagination —
-  // this only ever reveals rows that are already sitting in
-  // filteredCreateProducts; it never triggers a new API call itself.
   const handleProductTableScroll = useCallback((e) => {
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -1061,11 +933,6 @@ useEffect(() => {
   const cartCount = cartItems.filter((item) => Number(item.quantityReceived) > 0).length;
   const newItemCount = cartItems.filter((item) => item.isNewProduct && Number(item.quantityReceived) > 0).length;
 
-  // ✅ NEW — true if `sku` already belongs to another line already sitting
-  // in this cart: either an existing catalog product that's been selected,
-  // or a previous "new item" added earlier in this same GRV. This is the
-  // part a server-side sku-check call CAN'T catch, since those "new item"
-  // lines don't exist as real products yet.
   const isSkuTakenInCart = useCallback((sku) => {
     const normalized = sku.trim().toUpperCase();
     if (!normalized) return false;
@@ -1093,11 +960,6 @@ useEffect(() => {
     });
   };
 
-  // ✅ CHANGED — "Select All" only ever adds products from
-  // filteredCreateProducts. When no filter is active that list already
-  // equals the full catalog, so this naturally covers both cases: with a
-  // filter, only the filtered matches get added; with no filter, every
-  // loaded product gets added.
   const selectAllFiltered = () => {
     setCart((prev) => {
       const next = { ...prev };
@@ -1119,12 +981,6 @@ useEffect(() => {
     });
   };
 
-  // ✅ NEW — mirror of selectAllFiltered for removal: only clears cart
-  // entries belonging to the currently filtered product list. With no
-  // filter active, filteredCreateProducts === createProducts, so this
-  // behaves the same as clearing everything from the picker. Cart entries
-  // for "new items not in catalog" are untouched either way, since they
-  // aren't part of createProducts.
   const deselectAllFiltered = () => {
     setCart((prev) => {
       const next = { ...prev };
@@ -1135,8 +991,6 @@ useEffect(() => {
     });
   };
 
-  // Full clear — used by the "Selected" side panel's "Delete All", which
-  // intentionally clears the entire cart regardless of any picker filter.
   const deselectAll = () => setCart({});
 
   const updateCartField = (itemKey, field, value) => {
@@ -1158,11 +1012,6 @@ useEffect(() => {
     setNewItemModalOpen(true);
   }, [apiFetch, businessId, selectedBranchId]);
 
-  // ✅ NEW — debounced live SKU-availability check while the "New Item"
-  // modal is open. Checks the cart first (instant, no network call) and
-  // falls back to the server's /products/sku-check endpoint for SKUs
-  // that already belong to a saved product this device may not have
-  // loaded into createProducts yet.
   useEffect(() => {
     if (!newItemModalOpen) return;
     const sku = newItemDraft.sku.trim();
@@ -1187,10 +1036,6 @@ useEffect(() => {
         setSkuCheck({ sku, checking: false, exists: !!res?.exists });
       } catch (e) {
         console.error('SKU check error:', e);
-        // Network failure — don't silently mark it "available". addNewItemToCart
-        // does one last cart-only check before committing, but a saved
-        // duplicate on the server wouldn't be caught in that case; surfacing
-        // "checking" indefinitely is safer than a false "available".
         setSkuCheck({ sku, checking: false, exists: false });
         showToast('Could not verify SKU availability — check your connection', 'warning');
       }
@@ -1199,7 +1044,6 @@ useEffect(() => {
     return () => {
       if (skuCheckTimerRef.current) clearTimeout(skuCheckTimerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newItemDraft.sku, newItemModalOpen, apiFetch, businessId, selectedBranchId, isSkuTakenInCart]);
 
   const addNewItemToCart = () => {
@@ -1212,10 +1056,6 @@ useEffect(() => {
       showToast('SKU is required', 'error');
       return;
     }
-    // ✅ Final guard — refuse to add if this SKU is already taken, either
-    // by another line in this cart or (per the last server check) by an
-    // existing saved product. This is a hard stop, not a silent fix: the
-    // person must pick a different SKU for a brand-new item.
     if (isSkuTakenInCart(sku) || (skuCheck.sku === sku && skuCheck.exists) || (skuCheck.sku === sku && skuCheck.checking)) {
       showToast(`SKU "${sku.toUpperCase()}" already exists — please use a different SKU`, 'error');
       return;
@@ -1238,7 +1078,7 @@ useEffect(() => {
     setSkuCheck({ sku: '', checking: false, exists: false });
   };
 
-  const canGoToProducts = !!supplierId; // ✅ was supplierName.trim().length > 0
+  const canGoToProducts = !!supplierId;
   const canGoToReview = cartItems.some((item) => Number(item.quantityReceived) > 0);
 
   const totalCost = useMemo(
@@ -1252,9 +1092,6 @@ useEffect(() => {
     return current + qty;
   }, []);
 
-  // ✅ NEW — shared item-payload builder, used by save-draft, update-draft,
-  // and the final "Record GRV" submission so all three send an identical
-  // item shape to the API.
   const buildItemsPayload = useCallback((list) => list.map((item) => {
     const base = {
       quantityReceived: Number(item.quantityReceived),
@@ -1310,18 +1147,12 @@ useEffect(() => {
   }, [cartItems, supplierId]);
 
   const requestCreateGrv = useCallback(() => {
-    // ✅ Guard the action
     if (!guardAction('advanced_inventory')) return;
     const validItems = validateCartForSubmit();
     if (!validItems) return;
     setConfirmOpen(true);
   }, [guardAction, validateCartForSubmit]);
 
-  // ✅ NEW — saves the current cart as a draft "order list". Nothing is
-  // applied to stock or price — this is purely a stored snapshot the user
-  // can come back to later, edit, export, and eventually complete. If
-  // we're already editing a saved draft (draftGrvId set), this updates it
-  // in place instead of creating a second draft.
   const handleSaveDraft = useCallback(async () => {
     if (!guardAction('advanced_inventory')) return;
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
@@ -1364,7 +1195,7 @@ useEffect(() => {
             updateSellingPrice,
             staffId, staffName, posId: 'web-dashboard',
             status: 'draft',
-            purchaseOrderId: incomingPurchaseOrder?.purchaseOrderId || null, // ✅ NEW
+            purchaseOrderId: incomingPurchaseOrder?.purchaseOrderId || null,
           }),
         });
         setDraftGrvId(res.grvId);
@@ -1382,11 +1213,6 @@ useEffect(() => {
     buildItemsPayload, guardAction, incomingPurchaseOrder,
   ]);
 
-  // ✅ CHANGED — if we're finishing a saved draft (draftGrvId set), this
-  // first syncs any last-minute edits to that draft, then calls the
-  // dedicated "complete" endpoint, which is the moment stock/price
-  // actually change. Otherwise behaves exactly as before (immediate
-  // create + apply in one call).
   const handleCreateGrv = useCallback(async () => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
 
@@ -1422,7 +1248,7 @@ useEffect(() => {
             updateCostPrice,
             updateSellingPrice,
             staffId, staffName, posId: 'web-dashboard',
-            purchaseOrderId: incomingPurchaseOrder?.purchaseOrderId || null, // ✅ NEW
+            purchaseOrderId: incomingPurchaseOrder?.purchaseOrderId || null,
           }),
         });
       }
@@ -1443,19 +1269,11 @@ useEffect(() => {
     fetchGrvs, buildItemsPayload, incomingPurchaseOrder,
   ]);
 
-  // ✅ NEW — reopens a saved draft ("order list") for editing: rebuilds
-  // supplierName/notes/cart from the saved snapshot and drops the user
-  // straight into step 2 (Products) so they can add/remove items before
-  // completing it. Existing-product cart lines start as a "stub" (name/sku
-  // only, currentStock 0) and get swapped for the live product record once
-  // createProducts finishes loading (see hydration effect below) — that
-  // way "current stock" always reflects reality, not what it was when the
-  // draft was first saved.
   const openDraftForEditing = useCallback((g) => {
     if (!guardAction('advanced_inventory')) return;
     setCreateStep(2);
     setSupplierName(g.supplierName || '');
-    setSupplierId(g.supplierId || ''); // ✅ NEW — falls back to the name-match effect above if absent
+    setSupplierId(g.supplierId || '');
     setInvoiceNumber(g.supplierInvoiceNumber || '');
     setNotes(g.notes || '');
     setUpdateCostPrice(g.updateCostPrice !== false);
@@ -1487,8 +1305,6 @@ useEffect(() => {
         nextCart[key] = {
           itemKey: key,
           isNewProduct: false,
-          // Stub product — hydrated with the real record (accurate
-          // current stock) once createProducts finishes loading.
           product: { productId: it.productId, name: it.productName, sku: it.sku, currentStock: 0, costPrice: it.unitCost },
           newProduct: null,
           quantityReceived: it.quantityReceived,
@@ -1501,10 +1317,6 @@ useEffect(() => {
     setView('create');
   }, [guardAction]);
 
-  // ✅ NEW — once the full product catalog has loaded, swap each cart
-  // line's placeholder "stub" product (created in openDraftForEditing,
-  // identifiable by having no `category` field) for the real, live product
-  // record, so displayed current-stock numbers are accurate rather than 0.
   useEffect(() => {
     if (!createProducts.length) return;
     setCart((prev) => {
@@ -1524,10 +1336,6 @@ useEffect(() => {
     });
   }, [createProducts]);
 
-  // ✅ NEW — export the CURRENT cart (whether saved as a draft yet or not)
-  // to CSV. This is the "order list" the client asked for: something they
-  // can hand to a supplier or print, independent of whether the GRV has
-  // been saved/completed.
   const handleExportCartCsv = useCallback(() => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
     if (validItems.length === 0) {
@@ -1557,7 +1365,6 @@ useEffect(() => {
     URL.revokeObjectURL(url);
   }, [cartItems, supplierName]);
 
-  // ✅ NEW — export the current cart to a printable PDF order list.
   const handleExportCartPdf = useCallback(() => {
     const validItems = cartItems.filter((i) => Number(i.quantityReceived) > 0);
     if (validItems.length === 0) {
@@ -1606,8 +1413,6 @@ useEffect(() => {
     doc.save(`order-list_${(supplierName.trim() || 'grv').replace(/\s+/g, '-')}.pdf`);
   }, [cartItems, supplierName, invoiceNumber, notes, totalCost, baseCurrency]);
 
-  // ✅ NEW — list view: drafts open into the edit flow, completed GRVs open
-  // the read-only detail view, same as before.
   const openGrv = useCallback((g) => {
     if (g.status === 'draft') {
       openDraftForEditing(g);
@@ -1621,7 +1426,6 @@ useEffect(() => {
     const moduleInfo = getModuleInfo('advanced_inventory');
     return (
       <div className="reports-page">
-        {/* ✅ Store selector ALWAYS visible, even when access denied */}
         <div className="reports-header">
           <div className="reports-header-left">
             <div>
@@ -1668,7 +1472,6 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* ✅ Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}
@@ -1721,7 +1524,6 @@ useEffect(() => {
           <input placeholder="Search by supplier or GRV number" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={14} color="#8b97a7" /></button>}
         </div>
-        {/* ✅ NEW — quick status filter: All / Order Lists (drafts) / Completed */}
         <div style={{ display: 'flex', gap: 6 }}>
           {[
             { value: 'all', label: 'All' },
@@ -1759,7 +1561,6 @@ useEffect(() => {
           </div>
         ) : (
           <>
-            {/* Desktop Table View */}
             <div className="desktop-table-view">
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
@@ -1811,13 +1612,12 @@ useEffect(() => {
               </table>
             </div>
 
-            {/* Mobile Card View */}
             <div className="mobile-card-view">
               {filteredGrvs.map((g) => {
                 const status = GRV_STATUS_CONFIG[g.status] || GRV_STATUS_CONFIG.completed;
                 return (
-                  <div key={g.grvId} onClick={() => openGrv(g)} style={{ 
-                    padding: '12px 14px', 
+                  <div key={g.grvId} onClick={() => openGrv(g)} style={{
+                    padding: '12px 14px',
                     borderBottom: '1px solid #F1F5F9',
                     cursor: 'pointer',
                     background: '#fff',
@@ -1862,7 +1662,6 @@ useEffect(() => {
         )}
       </div>
 
-      {/* ✅ Module gate modal */}
       {gateModalModuleId && (
         <ModuleSubscriptionModal
           moduleId={gateModalModuleId}
@@ -1871,7 +1670,6 @@ useEffect(() => {
         />
       )}
 
-      {/* ✅ Delete order list confirmation — modal, not window.confirm */}
       <ConfirmDialog
         open={!!grvPendingDelete}
         variant="confirm"
@@ -2029,11 +1827,11 @@ useEffect(() => {
       )}
 
       {createStep === 2 && (
-        <div className="grv-products-grid" style={{ 
-          display: 'grid', 
-          gridTemplateColumns: '1.6fr 1fr', 
-          gap: 16, 
-          alignItems: 'start' 
+        <div className="grv-products-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: '1.6fr 1fr',
+          gap: 16,
+          alignItems: 'start'
         }}>
           <div className="reports-list-card" style={{ padding: 16 }}>
             <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2045,7 +1843,6 @@ useEffect(() => {
                 <option value="All">All Categories</option>
                 {createCategories.map((c) => <option key={c.categoryId} value={c.name}>{c.name}</option>)}
               </select>
-              {/* ✅ NEW — low stock / out of stock filter, same options as Products.jsx */}
               <select style={{ ...fieldInput(), width: 150 }} value={createStockStatusFilter} onChange={(e) => setCreateStockStatusFilter(e.target.value)}>
                 {STOCK_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
@@ -2078,10 +1875,6 @@ useEffect(() => {
               </div>
             )}
 
-            {/* ✅ fixed-height, scrollable table body. onScroll grows
-                visibleProductCount as the user nears the bottom, so only a
-                bounded number of <tr> rows are ever mounted regardless of
-                how many products have loaded into createProducts. */}
             <div
               style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 460, border: '1px solid #F1F5F9', borderRadius: 8 }}
               onScroll={handleProductTableScroll}
@@ -2222,9 +2015,6 @@ useEffect(() => {
               </>
             )}
 
-            {/* ✅ NEW — Save as Order List (draft, no stock impact) + export
-                buttons. Available regardless of whether the cart has been
-                saved yet. */}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button
                 onClick={handleSaveDraft}
@@ -2334,9 +2124,6 @@ useEffect(() => {
             </div>
           )}
 
-          {/* ✅ NEW — same save-as-draft + export options at the review step,
-              so the user can still bail out to "just save the list" even
-              after reviewing, instead of only being able to commit. */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <button
               onClick={handleSaveDraft}
@@ -2362,7 +2149,6 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ✅ Module gate modal */}
       {gateModalModuleId && (
         <ModuleSubscriptionModal
           moduleId={gateModalModuleId}
@@ -2478,7 +2264,6 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* ✅ Module gate modal */}
         {gateModalModuleId && (
           <ModuleSubscriptionModal
             moduleId={gateModalModuleId}

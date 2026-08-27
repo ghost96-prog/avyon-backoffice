@@ -2,16 +2,41 @@
 //
 // Supplier directory: create/edit suppliers (name, email, phone/WhatsApp,
 // address, notes) and view each supplier's order history (rolled up from
-// Purchase Orders). Modeled after Customers.jsx / GRV.jsx conventions —
-// same inline-style helpers, same Toast pattern, same useAppContext wiring.
+// Purchase Orders, across every branch). Modeled after Customers.jsx /
+// GRV.jsx conventions — same inline-style helpers, same Toast pattern,
+// same useAppContext wiring.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// ✅ FIX — suppliers are business-wide, not per-branch.
+//
+// The previous version scoped this whole screen to `selectedBranchId`
+// (fetch, create, edit, delete all hit /branches/:branchId/suppliers) and
+// tagged every supplier with a branch. That's wrong: a supplier can
+// fulfil orders for every branch you have, so there's exactly one record
+// per supplier, and it isn't "in" any branch.
+//
+// What the user actually asked for — branch shown on TRANSACTION
+// (purchase order) history — was already right in the previous version
+// and is UNCHANGED here: each row in a supplier's order history still
+// carries its own BranchTag, straight off that PO record, since an
+// individual order really did happen at one specific branch.
+//
+// Changes:
+//   - Supplier list/create/edit/delete/detail now hit business-level
+//     endpoints (no branchId in the URL).
+//   - Removed the store/branch selector from this screen — it doesn't
+//     apply to a supplier directory.
+//   - Removed BranchTag from supplier list rows and the detail header
+//     (a supplier doesn't have a branch).
+//   - Order history rows keep their BranchTag exactly as before.
+// ─────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Truck, Plus, X, Search, Phone, Mail, MapPin, MessageCircle,
-  ChevronLeft, ClipboardList, Edit2, Trash2,
+  ChevronLeft, ClipboardList, Edit2, Trash2, Store,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import { formatMoney } from '../utils/exportUtils';
 import ConfirmDialog from '../components/community/ConfirmDialog';
 import '../styles/ReportsShared.css';
@@ -47,11 +72,22 @@ const Toast = ({ message, type, onClose }) => {
   );
 };
 
+// Branch tag — kept exactly as before. This is still used, but ONLY on
+// order-history rows now (a real PO genuinely belongs to one branch),
+// never on the supplier itself.
+function BranchTag({ name }) {
+  if (!name) return null;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#475569', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 999, padding: '2px 8px' }}>
+      <Store size={10} /> {name}
+    </span>
+  );
+}
+
 const emptySupplierDraft = { name: '', email: '', phone: '', address: '', notes: '' };
 
 export default function Suppliers() {
   const { apiFetch, businessId, activeStaff, userProfile } = useAppContext();
-  const { selectedBranchId } = useSelectedBranch();
   const staffId = activeStaff?.staffId || userProfile?.uid;
   const staffName = activeStaff?.name || userProfile?.name || 'Owner';
 
@@ -72,18 +108,21 @@ export default function Suppliers() {
 
   const [deletePending, setDeletePending] = useState(null);
 
+  // ✅ FIX — business-level endpoint, no branchId. Suppliers aren't
+  // scoped to whichever branch happens to be selected anywhere else in
+  // the app.
   const fetchSuppliers = useCallback(async () => {
-    if (!businessId || !selectedBranchId) return;
+    if (!businessId) return;
     setLoading(true);
     try {
-      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`);
+      const res = await apiFetch(`/business/${businessId}/suppliers`);
       setSuppliers(res.data || []);
     } catch (e) {
       showToast(e.message || 'Failed to load suppliers', 'error');
     } finally {
       setLoading(false);
     }
-  }, [apiFetch, businessId, selectedBranchId]);
+  }, [apiFetch, businessId]);
 
   useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
 
@@ -116,19 +155,22 @@ export default function Suppliers() {
     setModalOpen(true);
   };
 
+  // ✅ FIX — business-level endpoint. The order history this returns spans
+  // every branch (that rollup now happens server-side, see
+  // supplierController.js), each entry still carrying its own branch tag.
   const openDetail = useCallback(async (supplier) => {
     setView('detail');
     setSelectedSupplier(supplier);
     setLoadingDetail(true);
     try {
-      const full = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers/${supplier.supplierId}`);
+      const full = await apiFetch(`/business/${businessId}/suppliers/${supplier.supplierId}`);
       setSelectedSupplier(full);
     } catch (e) {
       showToast(e.message || 'Failed to load supplier details', 'error');
     } finally {
       setLoadingDetail(false);
     }
-  }, [apiFetch, businessId, selectedBranchId]);
+  }, [apiFetch, businessId]);
 
   const saveSupplier = async () => {
     if (!draft.name.trim()) return showToast('Supplier name is required', 'error');
@@ -137,23 +179,23 @@ export default function Suppliers() {
     try {
       const body = { ...draft, staffId, staffName };
       if (editingSupplierId) {
-        await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers/${editingSupplierId}`, {
+        await apiFetch(`/business/${businessId}/suppliers/${editingSupplierId}`, {
           method: 'PUT', body: JSON.stringify(body),
         });
         showToast('Supplier updated', 'success');
       } else {
-        await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`, {
+        await apiFetch(`/business/${businessId}/suppliers`, {
           method: 'POST', body: JSON.stringify(body),
         });
         showToast('Supplier added', 'success');
       }
       setModalOpen(false);
       await fetchSuppliers();
-      // ✅ FIX (issue 1) — editing used to only refresh the background list,
-      // so if you were sitting on that supplier's detail page the changes
-      // wouldn't show until you navigated away and back. If we just edited
-      // the supplier currently open in detail view, re-fetch its detail
-      // record right away so the page reflects the change immediately.
+      // Editing used to only refresh the background list, so if you were
+      // sitting on that supplier's detail page the changes wouldn't show
+      // until you navigated away and back. If we just edited the supplier
+      // currently open in detail view, re-fetch its detail record right
+      // away so the page reflects the change immediately.
       if (editingSupplierId && view === 'detail' && selectedSupplier?.supplierId === editingSupplierId) {
         openDetail({ supplierId: editingSupplierId });
       }
@@ -164,11 +206,10 @@ export default function Suppliers() {
     }
   };
 
-
   const confirmDelete = async () => {
     if (!deletePending) return;
     try {
-      await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers/${deletePending.supplierId}`, { method: 'DELETE' });
+      await apiFetch(`/business/${businessId}/suppliers/${deletePending.supplierId}`, { method: 'DELETE' });
       showToast('Supplier removed', 'success');
       setDeletePending(null);
       if (view === 'detail') setView('list');
@@ -189,7 +230,11 @@ export default function Suppliers() {
           <button className="reports-header-back" onClick={() => setView('list')}><ChevronLeft size={18} /></button>
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: 20 }}>{s.name}</h1>
-            <div style={{ fontSize: 13, color: '#64748B' }}>Supplier profile & order history</div>
+            {/* ✅ FIX — no branch tag here anymore: this supplier isn't
+                tied to one branch, so there's nothing accurate to show. */}
+            <div style={{ fontSize: 13, color: '#64748B', marginTop: 2 }}>
+              Supplier profile & order history (all branches)
+            </div>
           </div>
           <button onClick={() => openEditModal(s)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontWeight: 600, cursor: 'pointer' }}>
             <Edit2 size={14} /> Edit
@@ -255,6 +300,13 @@ export default function Suppliers() {
                 <div key={po.purchaseOrderId} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1px solid #F1F5F9' }}>
                   <div style={{ fontWeight: 600, minWidth: 110 }}>{po.poNumber}</div>
                   <div style={{ fontSize: 13, color: '#64748B', flex: 1 }}>{po.itemCount} item(s) · {formatMoney(po.totalCost || 0)}</div>
+                  {/* This is the ONE place branch info belongs — an
+                      individual purchase order really did happen at a
+                      specific branch, even though the supplier itself
+                      didn't. Unchanged from before, and now the history
+                      can genuinely include rows from several different
+                      branches for the same supplier. */}
+                  <BranchTag name={po.branchName} />
                   <div style={{ fontSize: 12, color: '#94A3B8' }}>{new Date(po.createdAt).toLocaleDateString()}</div>
                   <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: '#EFF6FF', color: '#0891B2', textTransform: 'capitalize' }}>
                     {(po.status || '').replace(/_/g, ' ')}
@@ -290,7 +342,7 @@ export default function Suppliers() {
         <Truck size={20} />
         <div style={{ flex: 1 }}>
           <h1 style={{ margin: 0, fontSize: 20 }}>Suppliers</h1>
-          <div style={{ fontSize: 13, color: '#64748B' }}>Who you buy stock from</div>
+          <div style={{ fontSize: 13, color: '#64748B' }}>Who you buy stock from — shared across every branch</div>
         </div>
         <button onClick={openCreateModal} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
           <Plus size={16} /> New Supplier
@@ -328,9 +380,12 @@ export default function Suppliers() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{s.name}</div>
-                <div style={{ fontSize: 12, color: '#94A3B8', display: 'flex', gap: 12 }}>
+                <div style={{ fontSize: 12, color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 12, marginTop: 2 }}>
                   {s.phone && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Phone size={11} />{s.phone}</span>}
                   {s.email && <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Mail size={11} />{s.email}</span>}
+                  {/* ✅ FIX — no BranchTag here: this supplier can supply
+                      any/every branch, so a single branch tag would be
+                      actively misleading. */}
                 </div>
               </div>
               {s.phone && (
@@ -365,7 +420,9 @@ export default function Suppliers() {
 }
 
 // ── Create/Edit modal, exported so PurchaseOrders.jsx can reuse it for
-// the "+ New Supplier" shortcut from inside PO creation. ───────────────────
+// the "+ New Supplier" shortcut from inside PO creation. Unchanged —
+// there was never a branch field in this modal, which was correct even
+// before this fix. ─────────────────────────────────────────────────────
 export function SupplierModal({ draft, setDraft, saving, onCancel, onSave, isEditing }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>

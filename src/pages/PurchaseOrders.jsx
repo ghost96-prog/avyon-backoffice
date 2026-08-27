@@ -1,8 +1,7 @@
 // src/pages/PurchaseOrders.jsx
 //
-// Purchase Orders — a NEW screen, separate from GRV.jsx (which is
-// untouched apart from one small hand-off hook, see bottom of this file's
-// comments). Flow:
+// Purchase Orders — a NEW screen, separate from GRV.jsx.
+// Flow:
 //   1. Create a PO (pick a supplier, or create one inline), add items with
 //      quantityOrdered + expected unit cost. Saves as 'draft'.
 //   2. "Send to Supplier" flips it to 'sent' and opens a WhatsApp
@@ -12,12 +11,19 @@
 //      navigates to the existing GRV screen with the remaining
 //      (ordered − received) quantities pre-filled, tagging the GRV with
 //      this purchaseOrderId so receiving updates this PO automatically.
+//
+// ─────────────────────────────────────────────────────────────────────────
+// ✅ FIX — suppliers are now business-level, not branch-scoped.
+// The supplier picker fetches from /business/{businessId}/suppliers
+// (no branchId), and "New Supplier" posts to the same business-level
+// endpoint. This matches the architecture change in supplierController.js
+// and Suppliers.jsx.
+// ─────────────────────────────────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ClipboardList, Plus, X, Search, ChevronLeft, Truck, Send, PackageCheck,
-  Trash2, MessageCircle, AlertTriangle, Ban,
-  // ✅ NEW — same icon set GRV's "New Item Not In Catalog" modal uses
+  Trash2, MessageCircle, AlertTriangle, Ban, Store,
   Sparkles, Package, Tag, Hash, Barcode, FolderTree, DollarSign, Bell, Layers, TrendingUp, Percent,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -34,31 +40,12 @@ function fieldInput(props) {
   return { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box', ...props };
 }
 
-// ✅ Same field-fallback chain GRV.jsx uses to read stock off a product —
-// this was previously checking p.quantity / p.stockQuantity, neither of
-// which is a real field on your product objects, so it always showed "—".
 function getCurrentStock(product) {
   return Number(product?.currentStock ?? product?.stock ?? product?.quantityOnHand ?? product?.qty ?? 0);
 }
 
-// ✅ how many product rows we mount into the DOM at once for the item
-// picker list (issue 5 — lazy-load, same pattern GRV.jsx uses for its
-// product picker table). Independent of the NETWORK page size
-// (PRODUCTS_PAGE_SIZE below) — this is purely how many of the
-// already-loaded products are actually rendered as rows at once.
 const RENDER_PAGE_SIZE = 60;
-// Start growing the render window this many px before the true bottom of
-// the scrollable list, so it feels seamless rather than a visible pop-in.
 const SCROLL_LOAD_THRESHOLD_PX = 160;
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ NEW — "New Item Not In Catalog" modal, lifted verbatim from GRV.jsx so
-// creating an item here is the exact same experience: same fields (name,
-// SKU with live availability check, barcode, category, unit, selling/cost
-// price with live margin, low-stock threshold), same auto-generated SKU,
-// same validation. This is NOT the stripped-down name+unit popup from
-// before — it's the real thing.
-// ═══════════════════════════════════════════════════════════════════════════
 
 const formatPriceInput = (text) => {
   if (!text || text === '') return '0.00';
@@ -279,21 +266,36 @@ function StatusPill({ status }) {
   );
 }
 
+function BranchTag({ name }) {
+  if (!name) return null;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#475569', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: 999, padding: '2px 8px' }}>
+      <Store size={10} /> {name}
+    </span>
+  );
+}
+
 export default function PurchaseOrders() {
-  const { apiFetch, businessId, activeStaff, userProfile, baseCurrency } = useAppContext();
-  const { selectedBranchId } = useSelectedBranch();
+  const { apiFetch, businessId, activeStaff, userProfile, baseCurrency, branches } = useAppContext();
+  const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
   const navigate = useNavigate();
   const { guardAction, gateModalModuleId, closeGateModal } = useModuleGate();
   const staffId = activeStaff?.staffId || userProfile?.uid;
   const staffName = activeStaff?.name || userProfile?.name || 'Owner';
 
-  const [view, setView] = useState('list'); // 'list' | 'create' | 'detail'
+  const [view, setView] = useState('list');
   const [pos, setPos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [toast, setToast] = useState(null);
   const showToast = (message, type = 'error') => setToast({ message, type });
+
+  const [storePopoverOpen, setStorePopoverOpen] = useState(false);
+  useEffect(() => {
+    if (!selectedBranchId && branches?.length) setSelectedBranchId(branches[0].branchId);
+  }, [branches, selectedBranchId]);
+  const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
   const fetchPos = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
@@ -320,33 +322,25 @@ export default function PurchaseOrders() {
     return result;
   }, [pos, statusFilter, searchQuery]);
 
-  // ── Suppliers (for the picker inside Create) ────────────────────────────
+  // ── Suppliers (business-level, no branchId) ───────────────────────────────
   const [suppliers, setSuppliers] = useState([]);
   const fetchSuppliers = useCallback(async () => {
-    if (!businessId || !selectedBranchId) return;
+    if (!businessId) return;
     try {
-      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`);
+      const res = await apiFetch(`/business/${businessId}/suppliers`);
       setSuppliers((res.data || []).filter((s) => !s.isDeleted));
     } catch (e) {
       showToast(e.message || 'Failed to load suppliers', 'error');
     }
-  }, [apiFetch, businessId, selectedBranchId]);
+  }, [apiFetch, businessId]);
 
-  // ── Products (for the item picker inside Create) ────────────────────────
-  // ⚠️ FIXED — this used to fire a single request with `limit=500`, which
-  // was just a guess and silently truncated the catalog on any business
-  // with more than ~500 active products. The endpoint is actually
-  // cursor-paginated ({ products, count, hasMore, nextCursor }), same as
-  // GRV.jsx's product loader, so we walk it the same way here.
+  // ── Products ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState([]);
   const [productsLoading, setProductsLoading] = useState(false);
   const [productsLoadedCount, setProductsLoadedCount] = useState(0);
   const [productSearch, setProductSearch] = useState('');
   const PRODUCTS_PAGE_SIZE = 250;
 
-  // ✅ NEW (issue 5) — how many of the (already loaded) filtered products
-  // are actually rendered into the picker list right now. Grows as the
-  // user scrolls, same lazy-render pattern as GRV.jsx's product table.
   const [visibleProductCount, setVisibleProductCount] = useState(RENDER_PAGE_SIZE);
 
   const fetchProducts = useCallback(async () => {
@@ -382,27 +376,15 @@ export default function PurchaseOrders() {
     return products.filter((p) => (p.name || '').toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q));
   }, [products, productSearch]);
 
-  // ✅ NEW (issue 5) — a new search narrows/changes WHICH rows should be
-  // visible, so the render window resets to the top. Doesn't depend on
-  // `products` itself, since that array grows continuously as network
-  // pages arrive — resetting on every page landing would keep yanking the
-  // user back to the top of the list mid-scroll.
   useEffect(() => {
     setVisibleProductCount(RENDER_PAGE_SIZE);
   }, [productSearch]);
 
-  // ✅ NEW (issue 5) — only the first `visibleProductCount` filtered rows
-  // are actually rendered into the picker list. Replaces the old hard
-  // `slice(0, 100)` + "refine your search" cutoff.
   const renderedProducts = useMemo(
     () => filteredProducts.slice(0, visibleProductCount),
     [filteredProducts, visibleProductCount]
   );
 
-  // ✅ NEW (issue 5) — grows the render window as the user scrolls near
-  // the bottom of the picker's scroll container. Independent of network
-  // pagination — this only ever reveals rows already sitting in
-  // filteredProducts; it never triggers a new API call itself.
   const handleProductListScroll = useCallback((e) => {
     const el = e.currentTarget;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -414,9 +396,6 @@ export default function PurchaseOrders() {
     }
   }, [filteredProducts.length]);
 
-  // ✅ NEW — used both in the picker (already inline via getCurrentStock)
-  // and in the Order Items cart panel, so an already-added line still
-  // shows how much stock exists right now, same as GRV's review step.
   const productStockById = useMemo(
     () => Object.fromEntries(products.map((p) => [p.productId, getCurrentStock(p)])),
     [products]
@@ -425,13 +404,12 @@ export default function PurchaseOrders() {
   // ── Create flow state ────────────────────────────────────────────────────
   const [supplierId, setSupplierId] = useState('');
   const [notes, setNotes] = useState('');
-  const [cart, setCart] = useState({}); // keyed by productId (or `n:sku`)
+  const [cart, setCart] = useState({});
   const [supplierModalOpen, setSupplierModalOpen] = useState(false);
   const [newSupplierDraft, setNewSupplierDraft] = useState({ name: '', email: '', phone: '', address: '', notes: '' });
   const [savingSupplier, setSavingSupplier] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // ✅ NEW — real "New Item Not In Catalog" flow, same as GRV's.
   const [categories, setCategories] = useState([]);
   const [newItemModalOpen, setNewItemModalOpen] = useState(false);
   const [newItemDraft, setNewItemDraft] = useState(emptyNewItemDraft);
@@ -444,8 +422,6 @@ export default function PurchaseOrders() {
     [cartItems]
   );
 
-  // Checks the cart itself (instant) for a SKU already used by another line
-  // in this order — the same check GRV does before ever hitting the server.
   const isSkuTakenInCart = useCallback((sku) => {
     const normalized = sku.trim().toUpperCase();
     if (!normalized) return false;
@@ -468,7 +444,7 @@ export default function PurchaseOrders() {
     setNotes('');
     setCart({});
     setProductSearch('');
-    setVisibleProductCount(RENDER_PAGE_SIZE); // ✅ NEW — reset the lazy-load window for a fresh session
+    setVisibleProductCount(RENDER_PAGE_SIZE);
     fetchSuppliers();
     fetchProducts();
     fetchCategories();
@@ -487,8 +463,6 @@ export default function PurchaseOrders() {
     }));
   };
 
-  // Same as GRV's openNewItemModal: fetch a fresh auto-generated SKU each
-  // time the modal opens, and reset the availability check.
   const openNewItemModal = useCallback(async () => {
     const newSku = await generateNextSKU(apiFetch, businessId, selectedBranchId);
     setNewItemDraft({ ...emptyNewItemDraft, sku: newSku });
@@ -496,7 +470,6 @@ export default function PurchaseOrders() {
     setNewItemModalOpen(true);
   }, [apiFetch, businessId, selectedBranchId]);
 
-  // Same debounced live SKU-availability check GRV runs while its modal is open.
   useEffect(() => {
     if (!newItemModalOpen) return;
     const sku = newItemDraft.sku.trim();
@@ -521,7 +494,6 @@ export default function PurchaseOrders() {
       }
     }, 400);
     return () => { if (skuCheckTimerRef.current) clearTimeout(skuCheckTimerRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newItemDraft.sku, newItemModalOpen, apiFetch, businessId, selectedBranchId, isSkuTakenInCart]);
 
   const addNewItemToCart = () => {
@@ -549,13 +521,13 @@ export default function PurchaseOrders() {
   const updateCartField = (key, field, value) => setCart((prev) => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   const removeFromCart = (key) => setCart((prev) => { const n = { ...prev }; delete n[key]; return n; });
 
-
+  // ✅ FIX: Save supplier to business-level endpoint (no branchId)
   const saveSupplierInline = async () => {
     if (!newSupplierDraft.name.trim()) return showToast('Supplier name is required', 'error');
     if (!newSupplierDraft.phone.trim()) return showToast('A phone number is required', 'error');
     setSavingSupplier(true);
     try {
-      const res = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/suppliers`, {
+      const res = await apiFetch(`/business/${businessId}/suppliers`, {
         method: 'POST', body: JSON.stringify({ ...newSupplierDraft, staffId, staffName }),
       });
       showToast('Supplier added', 'success');
@@ -594,35 +566,16 @@ export default function PurchaseOrders() {
 
   // ── Detail / send / receive / cancel ─────────────────────────────────────
   const [selectedPo, setSelectedPo] = useState(null);
-  const [detailStockById, setDetailStockById] = useState({}); // ✅ NEW — live current stock per line, fetched on open
   const [sending, setSending] = useState(false);
   const [cancelPending, setCancelPending] = useState(null);
   const [deletePending, setDeletePending] = useState(null);
 
   const openDetail = async (po) => {
     setSelectedPo(po);
-    setDetailStockById({});
     setView('detail');
     try {
       const full = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/purchase-orders/${po.purchaseOrderId}`);
       setSelectedPo(full);
-
-      // ✅ NEW — the PO only stores what was ordered/received, not live
-      // stock (that changes independently of this order), so fetch each
-      // existing-catalog line's product to show current stock next to it,
-      // same context GRV gives when reviewing items.
-      const productIds = [...new Set((full.items || []).filter((it) => it.productId).map((it) => it.productId))];
-      if (productIds.length > 0) {
-        const results = await Promise.all(productIds.map(async (id) => {
-          try {
-            const p = await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products/${id}`);
-            return [id, getCurrentStock(p)];
-          } catch (e) {
-            return [id, null]; // product may have been deleted since the PO was created
-          }
-        }));
-        setDetailStockById(Object.fromEntries(results));
-      }
     } catch (e) {
       showToast(e.message || 'Failed to load purchase order', 'error');
     }
@@ -675,11 +628,6 @@ export default function PurchaseOrders() {
     }
   };
 
-  // The ONE hand-off to the existing (untouched) GRV screen: we build the
-  // remaining-to-receive lines and pass them via navigation state. GRV.jsx
-  // reads `location.state.fromPurchaseOrder` on mount to pre-fill its own
-  // cart, exactly as if someone had picked those items by hand — the
-  // actual receiving logic is 100% the existing grvController code path.
   const receiveStock = (po) => {
     const remainingItems = (po.items || [])
       .map((it) => ({ ...it, remaining: (it.quantityOrdered || 0) - (it.quantityReceived || 0) }))
@@ -693,13 +641,37 @@ export default function PurchaseOrders() {
         fromPurchaseOrder: {
           purchaseOrderId: po.purchaseOrderId,
           poNumber: po.poNumber,
-          supplierId: po.supplierId, // ✅ NEW — lets GRV link straight to the Suppliers record
+          supplierId: po.supplierId,
           supplierName: po.supplierName,
           items: remainingItems,
         },
       },
     });
   };
+
+  const renderStoreSelector = () => (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setStorePopoverOpen((v) => !v)}
+        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+      >
+        <Store size={14} /> <span>{selectedBranchName}</span>
+      </button>
+      {storePopoverOpen && (
+        <div className="reports-filter-popover" style={{ right: 0, left: 'auto', top: '110%', position: 'absolute', zIndex: 20 }}>
+          {(branches || []).map((b) => (
+            <button
+              key={b.branchId}
+              className={`reports-filter-option ${selectedBranchId === b.branchId ? 'is-active' : ''}`}
+              onClick={() => { setSelectedBranchId(b.branchId); setStorePopoverOpen(false); }}
+            >
+              {b.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 
   // ── CREATE VIEW ──────────────────────────────────────────────────────────
   if (view === 'create') {
@@ -708,7 +680,11 @@ export default function PurchaseOrders() {
         {toast && <Toast {...toast} onClose={() => setToast(null)} />}
         <div className="reports-header" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <button className="reports-header-back" onClick={() => setView('list')}><ChevronLeft size={18} /></button>
-          <h1 style={{ margin: 0, fontSize: 20 }}>New Purchase Order</h1>
+          <div style={{ flex: 1 }}>
+            <h1 style={{ margin: 0, fontSize: 20 }}>New Purchase Order</h1>
+            <div style={{ fontSize: 13, color: '#64748B' }}>For {selectedBranchName}</div>
+          </div>
+          {renderStoreSelector()}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 20, marginTop: 20, alignItems: 'start' }}>
@@ -747,11 +723,6 @@ export default function PurchaseOrders() {
                   Loading products… {productsLoadedCount} loaded so far
                 </div>
               )}
-              {/* ✅ CHANGED (issue 5) — lazy-render the picker list the same
-                  way GRV.jsx does its product table: only the first
-                  `visibleProductCount` filtered rows are mounted, and
-                  scrolling near the bottom grows that window. Replaces the
-                  old hard `slice(0, 100)` + "refine your search" message. */}
               <div
                 style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #F1F5F9', borderRadius: 8 }}
                 onScroll={handleProductListScroll}
@@ -859,7 +830,10 @@ export default function PurchaseOrders() {
           <button className="reports-header-back" onClick={() => setView('list')}><ChevronLeft size={18} /></button>
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: 20, display: 'flex', alignItems: 'center', gap: 10 }}>{po.poNumber} <StatusPill status={po.status} /></h1>
-            <div style={{ fontSize: 13, color: '#64748B' }}>{po.supplierName}</div>
+            <div style={{ fontSize: 13, color: '#64748B', display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+              <span>{po.supplierName}</span>
+              <BranchTag name={po.branchName} />
+            </div>
           </div>
           {canSend && (
             <button onClick={() => sendToSupplier()} disabled={sending} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, border: 'none', background: '#25D366', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
@@ -889,13 +863,13 @@ export default function PurchaseOrders() {
 
         <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, marginTop: 16, overflow: 'hidden' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', padding: '10px 16px', background: '#F8FAFC', fontSize: 12, fontWeight: 700, color: '#64748B' }}>
-            <div>ITEM</div><div>CURRENT STOCK</div><div>ORDERED</div><div>RECEIVED</div><div>UNIT COST</div>
+            <div>ITEM</div><div>STOCK WHEN ORDERED</div><div>ORDERED</div><div>RECEIVED</div><div>UNIT COST</div>
           </div>
           {(po.items || []).map((it, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr', padding: '12px 16px', borderTop: '1px solid #F1F5F9', fontSize: 14, alignItems: 'center' }}>
               <div>{it.productName}{it.isNewProduct && <span style={{ color: '#D97706', fontSize: 11, marginLeft: 6 }}>(new)</span>}</div>
               <div style={{ color: '#64748B' }}>
-                {it.isNewProduct ? '—' : detailStockById[it.productId] === undefined ? '…' : detailStockById[it.productId] === null ? 'deleted' : detailStockById[it.productId]}
+                {it.isNewProduct ? '—' : (it.stockAtOrderTime != null ? it.stockAtOrderTime : '—')}
               </div>
               <div>{it.quantityOrdered} {it.unit}</div>
               <div style={{ color: (it.quantityReceived || 0) >= it.quantityOrdered ? '#16A34A' : (it.quantityReceived || 0) > 0 ? '#D97706' : '#94A3B8', fontWeight: 600 }}>
@@ -915,9 +889,6 @@ export default function PurchaseOrders() {
           </div>
         )}
 
-        {/* ✅ FIX (issue 4) — ConfirmDialog needs an explicit `open` prop
-            (see GRV.jsx's usage) or it never actually renders, which made
-            Cancel do nothing when clicked. */}
         {cancelPending && (
           <ConfirmDialog
             open={!!cancelPending}
@@ -952,6 +923,7 @@ export default function PurchaseOrders() {
           <h1 style={{ margin: 0, fontSize: 20 }}>Purchase Orders</h1>
           <div style={{ fontSize: 13, color: '#64748B' }}>Orders placed with your suppliers</div>
         </div>
+        {renderStoreSelector()}
         <button onClick={openCreateFlow} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
           <Plus size={16} /> New Purchase Order
         </button>
@@ -976,7 +948,7 @@ export default function PurchaseOrders() {
         <div style={{ color: '#64748B', fontSize: 14 }}>Loading purchase orders…</div>
       ) : filtered.length === 0 ? (
         <div style={{ color: '#94A3B8', fontSize: 14, background: '#fff', border: '1px dashed #E2E8F0', borderRadius: 12, padding: 32, textAlign: 'center' }}>
-          No purchase orders yet.
+          No purchase orders yet for {selectedBranchName}.
         </div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, overflow: 'hidden' }}>
@@ -988,7 +960,10 @@ export default function PurchaseOrders() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{p.poNumber} — {p.supplierName}</div>
-                <div style={{ fontSize: 12, color: '#94A3B8' }}>{(p.items || []).length} item(s) · {new Date(p.createdAt).toLocaleDateString()}</div>
+                <div style={{ fontSize: 12, color: '#94A3B8', display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
+                  <span>{(p.items || []).length} item(s) · {new Date(p.createdAt).toLocaleDateString()}</span>
+                  <BranchTag name={p.branchName} />
+                </div>
               </div>
               <div style={{ fontWeight: 600 }}>{formatMoney(p.totalCost || 0)}</div>
               <StatusPill status={p.status} />
@@ -996,6 +971,8 @@ export default function PurchaseOrders() {
           ))}
         </div>
       )}
+
+      {gateModalModuleId && <ModuleSubscriptionModal moduleId={gateModalModuleId} onClose={closeGateModal} />}
     </div>
   );
 }
