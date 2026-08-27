@@ -33,7 +33,8 @@ import { BACKOFFICE_PERMISSIONS as P } from "./utils/permissions";
 import BranchComparison from "./pages/BranchComparison";
 import StaffPerformance from "./pages/StaffPerformance";
 import BusinessProfile from "./pages/BusinessProfile";
-// ✅ Community
+import PurchaseOrders from "./pages/PurchaseOrders";
+import Suppliers from "./pages/Suppliers";
 import Community from "./pages/Community";
 // import CommunityPostDetail from "./pages/CommunityPostDetail";
 
@@ -60,8 +61,8 @@ const REAL_PAGES = {
   '/branches': BranchComparison,
   '/staff': StaffPerformance,
   '/business': BusinessProfile,
-  // Add more real pages here as needed
-
+'/purchase-orders': PurchaseOrders,
+'/suppliers': Suppliers,
 };
 
 // All nav items except dashboard - will use either real page or ComingSoon

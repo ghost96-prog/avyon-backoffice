@@ -534,10 +534,7 @@ export default function InventoryValue() {
 
         {/* Stats Row — untouched, sourced from /inventory-stats aggregates */}
         <div className="reports-stats-row">
-          <div className="reports-stat-card">
-            <span className="reports-stat-label">Total Items</span>
-            <span className="reports-stat-value">{stats?.totalItems ?? 0}</span>
-          </div>
+      
           <div className="reports-stat-card">
             <span className="reports-stat-label">Retail Value</span>
             <span className="reports-stat-value">{formatMoney(stats?.totalRetailValue || 0, baseCurrency)}</span>

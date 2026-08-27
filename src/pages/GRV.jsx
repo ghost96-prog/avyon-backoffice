@@ -5,6 +5,7 @@ import {
   Search, FileText, Clock, User, MessageSquare, Truck, AlertTriangle, Sparkles,
   Download, ClipboardList, Tag, Barcode, FolderTree, DollarSign, Bell, TrendingUp, Layers, Hash, Percent,
 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom'; // ✅ NEW — Purchase Order hand-off
 import { useAppContext } from '../context/AppContext';
 import { formatMoney } from '../utils/exportUtils';
 import jsPDF from 'jspdf';
@@ -32,6 +33,21 @@ async function generateNextSKU(apiFetch, businessId, branchId) {
     console.error('Error generating SKU:', error);
     return String(Date.now()).slice(-6);
   }
+}
+
+// ✅ NEW — /products/next-sku returns "the next" SKU but doesn't reserve it,
+// so calling it once per new item (in parallel or in a loop) can hand back
+// the SAME sku more than once. When a PO hand-off needs several new-product
+// SKUs at once, we fetch one base SKU and bump its trailing number locally
+// for each subsequent item, so they never collide before the GRV is saved
+// (the existing SKU-availability check still runs at save time regardless).
+function bumpSku(baseSku, offset) {
+  if (!offset) return baseSku;
+  const match = String(baseSku).match(/^(.*?)(\d+)$/);
+  if (!match) return `${baseSku}-${offset + 1}`;
+  const [, prefix, digits] = match;
+  const nextNum = parseInt(digits, 10) + offset;
+  return `${prefix}${String(nextNum).padStart(digits.length, '0')}`;
 }
 
 // ─── EXACT Android formatPriceInput ──────────────────────────────────
@@ -516,7 +532,13 @@ export default function GRV() {
   const staffName = activeStaff?.name || userProfile?.name || userProfile?.email?.split('@')[0] || 'Owner';
 
   // ─── MODULE GATING ───────────────────────────────────────────────────
-  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
+  const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal, loading: moduleAccessLoading } = useModuleGate();
+  // ✅ NEW — Purchase Order hand-off: when PurchaseOrders.jsx navigates
+  // here with state, we prefill the create flow below. Everything else
+  // about this screen is unchanged.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [incomingPurchaseOrder, setIncomingPurchaseOrder] = useState(null);
 
   const [toast, setToast] = useState(null);
   const [view, setView] = useState('list');
@@ -724,8 +746,139 @@ export default function GRV() {
     setConfirmOpen(false);
     setNewItemModalOpen(false);
     setVisibleProductCount(RENDER_PAGE_SIZE);
+    setIncomingPurchaseOrder(null); // ✅ NEW — manual GRVs aren't tied to a PO
     setView('create');
   };
+
+  // ✅ NEW — one-time consumption of navigation state sent by
+  // PurchaseOrders.jsx's "Receive Stock" button.
+  //
+  // FIXED (was landing on the plain GRV list instead of prefilling):
+  // this used to call guardAction() on the very first render tick, before
+  // useModuleGate's async module-access fetch had resolved. Access
+  // defaults to false while that's in flight, so a business with an
+  // active subscription still got rejected — the gate modal popped up and
+  // the effect returned before ever setting the view or the cart. Now it
+  // waits for `moduleAccessLoading` to go false before checking access,
+  // and re-runs when that flips (it won't re-consume the same nav state
+  // twice because of consumedPoStateRef).
+  //
+  // FIXED (was not creating missing items): lines that don't exist in the
+  // catalog now get a real `isNewProduct` cart entry with an
+  // auto-generated SKU — exactly what "New Item Not In Catalog" does
+  // manually — instead of just leaving a note asking you to add them by
+  // hand. You can still edit the name/SKU/cost before completing.
+  const consumedPoStateRef = useRef(false);
+  useEffect(() => {
+    const incoming = location.state?.fromPurchaseOrder;
+    if (!incoming || consumedPoStateRef.current) return;
+    if (moduleAccessLoading) return; // wait for the real access check to resolve
+
+    consumedPoStateRef.current = true;
+
+    if (!guardAction('advanced_inventory')) return;
+
+    let cancelled = false;
+    (async () => {
+      const existingLines = (incoming.items || []).filter((it) => !it.isNewProduct && it.productId);
+      const newLines = (incoming.items || []).filter((it) => it.isNewProduct || !it.productId);
+      const linesNeedingGeneratedSku = newLines.filter((l) => !l.newProduct?.sku);
+
+      // Only hit /products/next-sku for legacy lines that don't already
+      // carry their own SKU from the Purchase Order screen.
+      let baseSku = null;
+      if (linesNeedingGeneratedSku.length > 0) {
+        baseSku = await generateNextSKU(apiFetch, businessId, selectedBranchId);
+      }
+      if (cancelled) return;
+
+      setCreateStep(1);
+      setSupplierName(incoming.supplierName || '');
+      setInvoiceNumber('');
+      setNotes(`Receiving against ${incoming.poNumber}.`);
+      setUpdateCostPrice(true);
+      setUpdateSellingPrice(false);
+      setCreateSearch('');
+      setCreateCategoryFilter('All');
+      setCreateStockStatusFilter('all');
+      setDraftGrvId(null);
+      setError(null);
+      setConfirmOpen(false);
+      setNewItemModalOpen(false);
+      setVisibleProductCount(RENDER_PAGE_SIZE);
+
+      const prefilled = {};
+
+      existingLines.forEach((line) => {
+        const key = `p:${line.productId}`;
+        prefilled[key] = {
+          itemKey: key,
+          isNewProduct: false,
+          product: {
+            productId: line.productId, sku: line.sku, name: line.productName,
+            costPrice: line.unitCost, sellingPrice: 0, unit: line.unit,
+          },
+          newProduct: null,
+          quantityReceived: line.remaining,
+          unitCost: Number(line.unitCost || 0).toFixed(2),
+          sellingPrice: '0.00',
+        };
+      });
+
+      // ✅ Prefer the full item draft already captured when this line was
+      // added on the Purchase Order (name, SKU, category, unit, barcode,
+      // pricing — everything from the same "New Item" modal) instead of
+      // re-deriving a fresh SKU from just name+unit. Only lines that
+      // somehow lack that (e.g. a PO created before this existed) fall
+      // back to auto-generating one here.
+      const usedSkus = new Set();
+      newLines.forEach((line, idx) => {
+        let itemDraft = line.newProduct
+          ? { ...emptyNewItemDraft, ...line.newProduct }
+          : {
+              ...emptyNewItemDraft,
+              name: line.productName,
+              sku: (baseSku ? bumpSku(baseSku, idx) : `NEW-${Date.now()}-${idx}`).toUpperCase(),
+              unit: line.unit || 'each',
+              costPrice: Number(line.unitCost || 0).toFixed(2),
+            };
+
+        // Guard against two lines landing on the same SKU (shouldn't
+        // happen — the PO screen's own SKU check prevents it — but stay
+        // safe rather than silently overwriting a cart entry).
+        let sku = (itemDraft.sku || '').toUpperCase();
+        let bump = 1;
+        while (usedSkus.has(sku)) { sku = bumpSku(itemDraft.sku.toUpperCase(), bump++); }
+        usedSkus.add(sku);
+        itemDraft = { ...itemDraft, sku };
+
+        const key = `n:${sku}`;
+        prefilled[key] = {
+          itemKey: key,
+          isNewProduct: true,
+          product: null,
+          newProduct: itemDraft,
+          quantityReceived: line.remaining,
+          unitCost: itemDraft.costPrice || Number(line.unitCost || 0).toFixed(2),
+          sellingPrice: itemDraft.sellingPrice || '0.00',
+        };
+      });
+
+      setCart(prefilled);
+      setIncomingPurchaseOrder({ purchaseOrderId: incoming.purchaseOrderId, poNumber: incoming.poNumber });
+      setView('create');
+
+      if (newLines.length > 0) {
+        showToast(`${newLines.length} new item(s) were added with auto-generated SKUs — check them before completing.`, 'success');
+      }
+
+      // Clear the nav state so a refresh/back doesn't replay this prefill.
+      navigate(location.pathname, { replace: true, state: {} });
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, moduleAccessLoading]);
 
   // ✅ /business/.../products now returns a paginated object
   // ({ products, count, hasMore, nextCursor }), not a raw array. The old
@@ -1145,6 +1298,7 @@ useEffect(() => {
             updateSellingPrice,
             staffId, staffName, posId: 'web-dashboard',
             status: 'draft',
+            purchaseOrderId: incomingPurchaseOrder?.purchaseOrderId || null, // ✅ NEW
           }),
         });
         setDraftGrvId(res.grvId);
@@ -1200,6 +1354,7 @@ useEffect(() => {
             updateCostPrice,
             updateSellingPrice,
             staffId, staffName, posId: 'web-dashboard',
+            purchaseOrderId: incomingPurchaseOrder?.purchaseOrderId || null, // ✅ NEW
           }),
         });
       }

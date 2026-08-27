@@ -2,7 +2,26 @@
 import React, { useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Download } from "lucide-react";
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  ArrowRight,
+  Download,
+  LayoutDashboard,
+  Package,
+  ClipboardCheck,
+  TrendingUp,
+  Receipt,
+  FileOutput,
+  Users,
+  ArrowLeftRight,
+  UploadCloud,
+  Wallet,
+  Building2,
+  Bell,
+} from "lucide-react";
 import { auth } from "../firebase/firebase";
 import Button from "../components/common/Button";
 import { useInstallPrompt } from "../hooks/useInstallPrompt";
@@ -24,73 +43,85 @@ const FRIENDLY_ERRORS = {
 const FEATURE_CARDS = [
   {
     id: 1,
-    eyebrow: "📊 Dashboard",
+    icon: LayoutDashboard,
+    eyebrow: "Dashboard",
     figure: "Real-time insights",
     trend: "Sales, inventory, staff performance"
   },
   {
     id: 2,
-    eyebrow: "📦 Inventory",
+    icon: Package,
+    eyebrow: "Inventory",
     figure: "Stock tracking",
     trend: "Real-time stock levels & alerts"
   },
   {
     id: 3,
-    eyebrow: "📋 GRV",
+    icon: ClipboardCheck,
+    eyebrow: "GRV",
     figure: "Goods Received",
     trend: "Voucher approval & reconciliation"
   },
   {
     id: 4,
-    eyebrow: "📈 Stock Value",
+    icon: TrendingUp,
+    eyebrow: "Stock Value",
     figure: "Inventory valuation",
     trend: "Cost tracking & margin analysis"
   },
   {
     id: 5,
-    eyebrow: "📄 Receipts",
+    icon: Receipt,
+    eyebrow: "Receipts",
     figure: "Transaction history",
     trend: "Complete audit trail & export"
   },
   {
     id: 6,
-    eyebrow: "📤 Export Data",
+    icon: FileOutput,
+    eyebrow: "Export Data",
     figure: "Reports & analytics",
     trend: "CSV, Excel, PDF exports"
   },
   {
     id: 7,
-    eyebrow: "👥 Staff Performance",
+    icon: Users,
+    eyebrow: "Staff Performance",
     figure: "Team analytics",
     trend: "Sales per staff & productivity"
   },
   {
     id: 8,
-    eyebrow: "🔄 Stock Movement",
+    icon: ArrowLeftRight,
+    eyebrow: "Stock Movement",
     figure: "Transfer tracking",
     trend: "Branch transfers & adjustments"
   },
   {
     id: 9,
-    eyebrow: "📦 Product Import",
+    icon: UploadCloud,
+    eyebrow: "Product Import",
     figure: "Bulk upload",
     trend: "CSV import & product management"
   },
   {
     id: 10,
-    eyebrow: "💰 Cash Management",
+    icon: Wallet,
+    eyebrow: "Cash Management",
     figure: "Till reconciliation",
     trend: "Shift tracking & cash flow"
   },
   {
     id: 11,
-    eyebrow: "🏢 Multi-branch",
+    icon: Building2,
+    eyebrow: "Multi-branch",
     figure: "Branch management",
     trend: "Centralized control & reporting"
   },
   {
     id: 12,
-    eyebrow: "🔔 Alerts",
+    icon: Bell,
+    eyebrow: "Alerts",
     figure: "Smart notifications",
     trend: "Low stock, pending approvals"
   }
@@ -254,6 +285,7 @@ export default function Login() {
         
         {FEATURE_CARDS.map((card, index) => {
           const pos = cardPositions[index];
+          const Icon = card.icon;
           return (
             <div 
               key={card.id}
@@ -269,7 +301,10 @@ export default function Login() {
                 animationDelay: `${pos.delay}s`,
               }}
             >
-              <span className="showcase-eyebrow">{card.eyebrow}</span>
+              <span className="showcase-eyebrow">
+                <Icon size={12} className="showcase-icon" />
+                {card.eyebrow}
+              </span>
               <span className="showcase-figure">{card.figure}</span>
               <span className="showcase-trend">{card.trend}</span>
             </div>

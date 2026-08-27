@@ -66,6 +66,46 @@ const Toast = ({ message, type = 'success', onClose }) => {
   );
 };
 
+// ✅ NEW — live progress indicator while a bulk delete is in flight.
+// Shown as a fixed bottom-right card, independent of ConfirmDeleteModal,
+// so it works regardless of what that component's own props support.
+const DeleteProgress = ({ progress }) => {
+  if (!progress) return null;
+  const pct = progress.total > 0 ? (progress.done / progress.total) * 100 : 0;
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 20,
+      right: 20,
+      zIndex: 9999,
+      background: '#fff',
+      border: '1px solid #E2E8F0',
+      borderRadius: 10,
+      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+      padding: '14px 18px',
+      minWidth: 260,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 600, color: '#0F172A', marginBottom: 6 }}>
+        <span>{progress.done >= progress.total ? 'Refreshing list…' : 'Deleting products…'}</span>
+        <span>{progress.done}/{progress.total}</span>
+      </div>
+      <div style={{ width: '100%', height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden' }}>
+        <div style={{
+          height: '100%',
+          width: `${pct}%`,
+          background: progress.failed.length ? '#F59E0B' : '#16A34A',
+          transition: 'width 0.25s ease',
+        }} />
+      </div>
+      {progress.failed.length > 0 && (
+        <div style={{ fontSize: 11, color: '#D97706', marginTop: 6 }}>
+          {progress.failed.length} failed so far — they'll stay selected to retry
+        </div>
+      )}
+    </div>
+  );
+};
+
 const STOCK_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
   { value: 'in_stock', label: 'In Stock' },
@@ -82,6 +122,11 @@ const PAGE_SIZE = 20;
 // once," while still being large enough that a ~5k-product branch only
 // takes a handful of round trips.
 const SERVER_FETCH_PAGE_SIZE = 250;
+
+// ✅ NEW — how many DELETE requests are in flight at once during a bulk
+// delete. Deliberately small: firing hundreds of requests in one burst
+// (the old behavior) is itself what was causing sporadic failures.
+const DELETE_CHUNK_SIZE = 15;
 
 // Module-level cache, OUTSIDE the component. Survives Products.jsx
 // unmounting/remounting when you navigate to ProductForm and back (React
@@ -280,6 +325,9 @@ export default function Products() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteIds, setDeleteIds] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
+  // ✅ NEW — live progress while a bulk delete is running:
+  // { done, total, failed: [{ id, name }] }
+  const [deleteProgress, setDeleteProgress] = useState(null);
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
@@ -311,9 +359,13 @@ export default function Products() {
   // based on whether we already have a `lastSyncAt` cached for this branch:
   //
   //   1. FULL LOAD  — the very first time a branch is loaded (no cached
-  //      lastSyncAt yet). Walks /products with cursor pagination exactly
-  //      as before, and additionally tracks the newest `updatedAt` seen
-  //      across every product returned, storing it as lastSyncAt.
+  //      lastSyncAt yet), OR whenever the cached lastSyncAt has been reset
+  //      to 0 (see handleConfirmDelete, which forces this after a bulk
+  //      delete so the branch is fully reconciled with the server instead
+  //      of trusting the delta cursor). Walks /products with cursor
+  //      pagination exactly as before, and additionally tracks the newest
+  //      `updatedAt` seen across every product returned, storing it as
+  //      lastSyncAt.
   //
   //   2. DELTA LOAD — every subsequent call (Refresh button, or the
   //      background sync fired on remount/"focus"). Instead of refetching
@@ -356,7 +408,7 @@ export default function Products() {
       setLaybyeProductIds(ids);
 
       if (!isDelta) {
-        // ─── FULL LOAD (first time for this branch) ───────────────────────
+        // ─── FULL LOAD (first time for this branch, or forced reset) ─────
         let cursor = null;
         let hasMore = true;
         let accumulated = [];
@@ -400,7 +452,14 @@ export default function Products() {
         });
       } else {
         // ─── DELTA LOAD — only fetch products changed since last sync ─────
+        // ✅ FIXED — cursor now tracks (since, sinceId) instead of just
+        // since. The backend's /products/pull previously paginated purely
+        // on `updatedAt`, which drops records when several products share
+        // the same millisecond timestamp (routine during a bulk delete) —
+        // see productController.pullProducts for the server-side fix.
+        // sinceId is carried across loop iterations here to match.
         let sinceCursor = since;
+        let sinceIdCursor = '';
         let hasMore = true;
         let changed = [];
         let maxUpdatedAt = since;
@@ -408,6 +467,7 @@ export default function Products() {
         while (hasMore) {
           const params = new URLSearchParams();
           params.append('since', String(sinceCursor));
+          if (sinceIdCursor) params.append('sinceId', sinceIdCursor);
           params.append('includeDeleted', 'true');
 
           const data = await apiFetch(
@@ -419,7 +479,8 @@ export default function Products() {
             if ((p.updatedAt || 0) > maxUpdatedAt) maxUpdatedAt = p.updatedAt;
           });
           hasMore = !!data.hasMore;
-          sinceCursor = data.nextSince || sinceCursor;
+          sinceCursor = data.nextSince ?? sinceCursor;
+          sinceIdCursor = data.nextSinceId ?? sinceIdCursor;
 
           if (!hasMore) break;
         }
@@ -559,6 +620,15 @@ export default function Products() {
   );
   const totalBranchCount = allBranchProducts.length;
 
+  // ✅ NEW — productId → name lookup that survives items being removed
+  // from allProducts mid-delete, so failed-delete error reporting can
+  // still show a readable name instead of just a raw ID.
+  const productNameById = useMemo(() => {
+    const m = new Map();
+    allProducts.forEach((p) => m.set(p.productId, p.name));
+    return m;
+  }, [allProducts]);
+
   // Is every item matching the CURRENT filters selected (and nothing else)?
   const isAllFilteredSelected = filteredProducts.length > 0 &&
     selectedIds.size === filteredProducts.length &&
@@ -576,38 +646,102 @@ export default function Products() {
     setDeleteModalOpen(true);
   }, [guardAction]);
 
+  // ✅ REWRITTEN — bulk delete used to fire one Promise.all() over every
+  // selected ID at once. That was all-or-nothing: with 700 items, if a
+  // single request failed (timeout, connection limit, cold start), the
+  // WHOLE batch rejected — the catch block never touched local state, so
+  // products already soft-deleted server-side just kept showing in the
+  // list, and the user saw a generic "Failed to delete products" even
+  // though most of the batch actually succeeded.
+  //
+  // Now: delete in small waves with Promise.allSettled (one bad request
+  // can't take down the rest), update the visible list after every wave
+  // so it visibly shrinks in real time, track failures individually so
+  // they can be retried without re-touching the ones that already
+  // succeeded, and — once the whole batch is done — force a FULL reload
+  // of the branch (reset cached lastSyncAt to 0) instead of trusting the
+  // delta sync, since a bulk delete is exactly the scenario that can
+  // produce same-millisecond `updatedAt` ties (see productController
+  // .pullProducts for the underlying cursor fix). That full reload is
+  // the "screen auto-refreshes to show everything gone" step.
   const handleConfirmDelete = useCallback(async () => {
     if (!guardAction('inventory_mgmt')) {
       setDeleteModalOpen(false);
       return;
     }
+
     setIsDeleting(true);
-    try {
-      await Promise.all(deleteIds.map(id => 
-        apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products/${id}`, {
-          method: 'DELETE',
-          body: JSON.stringify({
-            staffId,
-            cashierName: activeStaff?.name || userProfile?.name || 'Owner',
-            posId: 'web-dashboard',
-          }),
-        })
-      ));
-      setAllProducts((prev) => {
-        const next = prev.filter((p) => !deleteIds.includes(p.productId));
-        writeCache({ products: next });
-        return next;
+    const total = deleteIds.length;
+    const succeededIds = [];
+    const failed = [];
+    setDeleteProgress({ done: 0, total, failed: [] });
+
+    for (let i = 0; i < deleteIds.length; i += DELETE_CHUNK_SIZE) {
+      const chunk = deleteIds.slice(i, i + DELETE_CHUNK_SIZE);
+
+      const results = await Promise.allSettled(
+        chunk.map((id) =>
+          apiFetch(`/business/${businessId}/branches/${selectedBranchId}/products/${id}`, {
+            method: 'DELETE',
+            body: JSON.stringify({
+              staffId,
+              cashierName: activeStaff?.name || userProfile?.name || 'Owner',
+              posId: 'web-dashboard',
+            }),
+          }).then(() => ({ id, ok: true }))
+        )
+      );
+
+      results.forEach((r, idx) => {
+        const id = chunk[idx];
+        if (r.status === 'fulfilled') {
+          succeededIds.push(id);
+        } else {
+          failed.push({ id, name: productNameById.get(id) || id });
+        }
       });
-      setSelectedIds(new Set());
-      setDeleteModalOpen(false);
-    } catch (e) {
-      console.error('Delete products error:', e);
-      setError('Failed to delete products');
-    } finally {
-      setIsDeleting(false);
-      setDeleteIds([]);
+
+      // Reflect this wave's successes immediately — list shrinks in real
+      // time instead of jumping only at the very end. Failed items are
+      // left in place (and end up still selected below) so retrying is
+      // just "hit delete again."
+      setAllProducts((prev) => prev.filter((p) => !succeededIds.includes(p.productId)));
+
+      setDeleteProgress({ done: Math.min(i + DELETE_CHUNK_SIZE, total), total, failed: [...failed] });
     }
-  }, [apiFetch, businessId, selectedBranchId, staffId, activeStaff, userProfile, deleteIds, guardAction, writeCache]);
+
+    // Persist the final successful-removal state to cache.
+    setAllProducts((prev) => {
+      const next = prev.filter((p) => !succeededIds.includes(p.productId));
+      writeCache({ products: next });
+      return next;
+    });
+
+    setIsDeleting(false);
+    setDeleteModalOpen(false);
+    setDeleteIds([]);
+
+    if (failed.length > 0) {
+      setError(
+        `Deleted ${succeededIds.length} of ${total} products. ${failed.length} failed — they're still selected, just hit Delete again to retry.`
+      );
+      // Leave (only) the failed ones selected so retrying is a single click.
+      setSelectedIds(new Set(failed.map((f) => f.id)));
+    } else {
+      setSelectedIds(new Set());
+      setToast({ message: `Deleted ${succeededIds.length} product${succeededIds.length === 1 ? '' : 's'}`, type: 'success' });
+    }
+
+    // Force a full reload for this branch instead of trusting the delta
+    // sync — see comment above.
+    if (cacheKey) {
+      const cached = productsCache.get(cacheKey);
+      if (cached) productsCache.set(cacheKey, { ...cached, lastSyncAt: 0 });
+    }
+    fetchProducts(true);
+
+    setTimeout(() => setDeleteProgress(null), 1500);
+  }, [apiFetch, businessId, selectedBranchId, staffId, activeStaff, userProfile, deleteIds, guardAction, writeCache, cacheKey, fetchProducts, productNameById]);
 
   const handleToggleSelect = useCallback((id, e) => {
     if (e) e.stopPropagation();
@@ -1009,6 +1143,7 @@ export default function Products() {
       <>
         <LoadingBar visible={showLoadingBar} />
         {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+        <DeleteProgress progress={deleteProgress} />
         <div className="reports-page products-container">
           <div className="reports-header products-header">
             <div className="reports-header-left products-header-left">
@@ -1280,6 +1415,7 @@ export default function Products() {
     <>
       <LoadingBar visible={showLoadingBar} />
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+      <DeleteProgress progress={deleteProgress} />
       <div className="reports-page products-container products-mobile-list">
         <div className="reports-header products-header">
           <div className="reports-header-left products-header-left">

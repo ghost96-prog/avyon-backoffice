@@ -26,6 +26,8 @@ import {
   FileInput,
   ClipboardCheck,
   Upload,
+    Truck,
+
 } from "lucide-react";
 import { BACKOFFICE_PERMISSIONS as P } from "./permissions";
 
@@ -67,6 +69,8 @@ export const NAV_SECTIONS = [
       { id: "inv-value", label: "Inventory Value", to: "/inventory/value", icon: Landmark, permission: P.ADVANCED_INVENTORY, moduleId: 'inventory_mgmt', moduleGateMode: 'block-nav' },
       { id: "inv-transfers", label: "Stock Transfers", to: "/inventory/transfers", icon: ArrowLeftRight, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
       { id: "inv-grv", label: "GRV (Goods Received)", to: "/inventory/grv", icon: FileInput, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
+      // Inventory Management section — add after "inv-grv":
+{ id: "inv-purchase-orders", label: "Purchase Orders", to: "/purchase-orders", icon: ClipboardList, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
       { id: "inv-stocktake", label: "Stock Take", to: "/inventory/stock-take", icon: ClipboardCheck, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
     ],
   },
@@ -85,6 +89,8 @@ export const NAV_SECTIONS = [
     items: [
       { id: "staff", label: "Cashier Performance", to: "/staff", icon: UserCog, permission: P.MANAGE_EMPLOYEES, moduleId: 'analytics', moduleGateMode: 'block-nav' },
       { id: "customers", label: "Customer Analytics", to: "/customers", icon: Users, permission: P.MANAGE_CUSTOMERS },
+      // People section — add after "customers":
+{ id: "suppliers", label: "Suppliers", to: "/suppliers", icon: Truck, permission: P.MANAGE_ITEMS },
     ],
   },
   {
