@@ -553,7 +553,7 @@ const generateNextSKU = useCallback(async () => {
     setTransferConfirmOpen(true);
   };
 
-const executeManualTransfer = useCallback(async () => {
+  const executeManualTransfer = useCallback(async () => {
     const link = packLinks.find((l) => l.id === transferSelectedLinkId);
     const qty = parseInt(transferQty, 10);
     const multiplier = getLinkMultiplier(link);
@@ -604,20 +604,7 @@ const executeManualTransfer = useCallback(async () => {
       setTransferConfirmOpen(false);
       setTransferModalOpen(false);
       setTransferQty('1');
-
-      // ✅ NEW — navigate back to the products list after a successful
-      // transfer instead of staying on this screen. Hands back the
-      // updated stock so Products.jsx can merge it in place, same
-      // pattern as handleSave's post-save navigate.
-      navigate('/inventory/products', {
-        state: {
-          savedProduct: {
-            productId,
-            currentStock: (parseInt(form.currentStock) || 0) - qty,
-          },
-          isEdit: true,
-        },
-      });
+      await loadProduct();
     } catch (e) {
       console.error('Manual transfer error:', e);
       setTransferConfirmOpen(false);
@@ -625,7 +612,8 @@ const executeManualTransfer = useCallback(async () => {
     } finally {
       setTransferring(false);
     }
-  }, [packLinks, transferSelectedLinkId, transferQty, getLinkMultiplier, apiFetch, businessId, branchId, form, staffId, staffName, productId, navigate]);
+  }, [packLinks, transferSelectedLinkId, transferQty, getLinkMultiplier, apiFetch, businessId, branchId, form, staffId, staffName, productId, loadProduct]);
+
   const handleAdjustStock = useCallback(async () => {
     const val = parseInt(adjustmentValue, 10);
     if (!val || val <= 0) { setError('Enter a valid quantity'); return; }
@@ -1010,7 +998,16 @@ navigate('/inventory/products', {
       setSaving(false);
       savingRef.current = false;
     }
-  }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU, adjustReason]);
+  // ✅ FIX — `packLinks` was missing from this dependency list. useCallback
+  // only rebuilds handleSave when a listed dependency changes, so without
+  // packLinks here, the Save button kept calling a STALE closure that
+  // still saw whatever packLinks looked like when handleSave was last
+  // rebuilt (e.g. empty, from before you added a link in the Stock
+  // Breaking editor). The save request would then go out with the old
+  // packLinks value — not what was visibly showing in the editor — which
+  // is exactly why a freshly-added link disappeared on reopen: it was
+  // never actually sent to the backend.
+  }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU, adjustReason, packLinks]);
 
   const handleRemoveImage = useCallback(async () => {
     if (!existingImageUrl && !isEdit) { setImageFile(null); setImagePreview(null); return; }
@@ -1541,9 +1538,7 @@ navigate('/inventory/products', {
                   );
                 })}
 
-<label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginTop: 12, marginBottom: 6 }}>
-  Enter quantity of {form.name} to break
-</label>
+                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginTop: 12, marginBottom: 6 }}>Quantity of this product to break</label>
                 <input type="number" min="1" style={fieldInput()} value={transferQty} onChange={(e) => setTransferQty(e.target.value)} placeholder="1" />
 
                 <button
