@@ -119,33 +119,29 @@ export default function ProductForm() {
   const [receivingResults, setReceivingResults] = useState([]);
   const [searchingProducts, setSearchingProducts] = useState(false);
   const [resolvingReceivingProduct, setResolvingReceivingProduct] = useState(false);
-  // ✅ FIX: conversionResult now tracks BOTH the unit-agnostic individual-item
-  // total (totalIndividualItems) and toQty, which is that total converted
-  // into the RECEIVING item's own unit size (receivingUnitSize) — not
-  // always "each". evenSplit flags when the split isn't a whole number, so
-  // the UI can block confirming instead of silently rounding stock away.
-  // This mirrors the exact same bug fix applied on the mobile app's
-  // EditProductScreen — this admin flow had the identical issue: it used
-  // to treat `qty * itemsPerUnit` as a flat "each" count regardless of
-  // what unit the receiving product was actually sold in.
   const [conversionResult, setConversionResult] = useState({
     fromQty: 0, totalIndividualItems: 0, receivingUnitSize: 1, evenSplit: true,
     toQty: 0, remainingStock: 0, hasEnoughStock: false,
   });
 
-  // ─── PACK LINKS (break-into) + manual transfer ───────────────────────────
-  // Admin-defined "this product breaks into that product" links, stored on
-  // Product.packLinks as JSON — the SAME field the POS app reads for its
-  // auto-transfer-on-low-stock feature. Setting these up here means the
-  // links immediately work in the POS app too; only the auto-trigger stays
-  // POS-only. Here, breaking a pack is always a manual, admin-confirmed
-  // action (no threshold, no auto-fire).
   const [packLinks, setPackLinks] = useState([]);
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [transferSelectedLinkId, setTransferSelectedLinkId] = useState(null);
   const [transferQty, setTransferQty] = useState('1');
   const [transferring, setTransferring] = useState(false);
   const [transferConfirmOpen, setTransferConfirmOpen] = useState(false);
+
+  const [parentOptions, setParentOptions] = useState([]);
+  const [transferDirection, setTransferDirection] = useState('down');
+  const [transferSelectedParentId, setTransferSelectedParentId] = useState(null);
+
+  // ✅ NEW — dedicated "why can't I transfer" modal. Replaces disabling
+  // the Review Transfer button outright: the button is now always
+  // clickable, and if the transfer isn't actually possible yet, this modal
+  // explains exactly why (with the specific product names involved)
+  // instead of the person staring at a greyed-out button with no idea
+  // what's wrong.
+  const [transferBlockedInfo, setTransferBlockedInfo] = useState(null); // { title, message } | null
 
   const selectedUnit = UNITS.find((u) => u.value === form.unit) || UNITS[0];
   const isPackOrBox = selectedUnit?.requiresQuantityPerUnit;
@@ -218,14 +214,6 @@ const generateNextSKU = useCallback(async () => {
       setOriginalStock(p.currentStock || 0);
       setExistingImageUrl(p.imageUrl || null);
 
-      // ✅ NEW — resolve packLinks (this product's break-into targets)
-      // straight from the freshly-loaded record every time this screen
-      // loads, so re-opening a product after adding a second link always
-      // shows both — same "always refetch, never trust a stale snapshot"
-      // fix applied on the mobile app's EditProductScreen. Each link only
-      // stores {id, targetProductId, qty} on the server; targetName/
-      // targetSku/targetItemsPerUnit/targetUnit are resolved here purely
-      // for display + live multiplier math.
       const rawLinks = parsePackLinks(p.packLinks);
       if (rawLinks.length > 0) {
         const resolved = await Promise.all(
@@ -280,6 +268,23 @@ const generateNextSKU = useCallback(async () => {
   useEffect(() => { loadCategories(); }, [loadCategories]);
   useEffect(() => { loadProduct(); }, [loadProduct]);
 
+  const loadParentOptions = useCallback(async () => {
+    if (!isEdit || !productId || !businessId || !branchId) { setParentOptions([]); return []; }
+    try {
+      const res = await apiFetch(`/business/${businessId}/branches/${branchId}/products/${productId}/parent-links`);
+      const resolved = Array.isArray(res) ? res : [];
+      setParentOptions(resolved);
+      return resolved;
+    } catch (e) {
+      console.warn('Failed to load consolidate-up options:', e.message);
+      setError(`Could not load linked parent products: ${e.message || 'request failed'}`);
+      setParentOptions([]);
+      return [];
+    }
+  }, [apiFetch, businessId, branchId, productId, isEdit]);
+
+  useEffect(() => { loadParentOptions(); }, [loadParentOptions]);
+
   useEffect(() => {
     const currentStock = parseInt(form.currentStock) || 0;
     if (stockAdjustType === 'override') {
@@ -296,22 +301,13 @@ const generateNextSKU = useCallback(async () => {
 
   useEffect(() => {
     const qty = parseInt(conversionQuantity);
-    const itemsPerUnitNum = parseInt(form.itemsPerUnit); // this pack's own items-per-unit (e.g. 24 for a case)
+    const itemsPerUnitNum = parseInt(form.itemsPerUnit);
     const currentStock = parseInt(form.currentStock) || 0;
 
     if (!isNaN(qty) && qty > 0 && itemsPerUnitNum > 0) {
-      // Total individual items this many packs actually contain — the
-      // universal, unit-agnostic figure everything else derives from.
       const totalIndividualItems = qty * itemsPerUnitNum;
       const remainingStock = currentStock - qty;
 
-      // ✅ FIX: the receiving product might not be sold in "each" units
-      // either — it could be a half-case, a 6-pack, anything with its own
-      // itemsPerUnit. Divide the individual-item total by THAT unit size
-      // to get how many of the receiving product's own units to add,
-      // instead of always treating totalIndividualItems as a flat "each"
-      // count. E.g. converting 1 case (itemsPerUnit 24) into a half-case
-      // product (itemsPerUnit 12) must add 2 to that product's stock, not 24.
       const receivingUnitSize = selectedReceivingProduct?.itemsPerUnit > 0
         ? selectedReceivingProduct.itemsPerUnit
         : 1;
@@ -336,11 +332,6 @@ const generateNextSKU = useCallback(async () => {
     }
   }, [conversionQuantity, form.itemsPerUnit, form.currentStock, selectedReceivingProduct]);
 
-  // ─── SELECT RECEIVING PRODUCT (conversion flow) ──────────────────────────
-  // ✅ FIX: never trust itemsPerUnit off the /products/search row — that
-  // endpoint's response shape isn't guaranteed to carry it, and silently
-  // falling back to 1 is exactly what produced the "full box ÷ 1" bug.
-  // Re-fetch the exact product by id before using it for any math.
   const handleSelectReceivingProduct = useCallback(async (product) => {
     setResolvingReceivingProduct(true);
     setReceivingResults([]);
@@ -357,8 +348,6 @@ const generateNextSKU = useCallback(async () => {
       });
     } catch (err) {
       console.error('Failed to resolve receiving product:', err.message);
-      // Fail closed (itemsPerUnit unknown → 0, not 1) so the math above
-      // can't silently assume "each" for a product we couldn't verify.
       setSelectedReceivingProduct({
         productId: product.productId,
         name: product.name,
@@ -445,11 +434,6 @@ const generateNextSKU = useCallback(async () => {
       return;
     }
 
-    // ✅ NEW — the individual-item total must split evenly into the
-    // receiving product's own unit size, or we'd be inventing or
-    // discarding partial units. e.g. converting 1 case (24) into a 5-pack
-    // product (itemsPerUnit 5) leaves a remainder of 4 individual items
-    // with nowhere to go.
     if (!conversionResult.evenSplit) {
       setError(
         `${conversionResult.fromQty} ${form.unit}(s) = ${conversionResult.totalIndividualItems} individual items, which doesn't split evenly into ` +
@@ -509,51 +493,202 @@ const generateNextSKU = useCallback(async () => {
     }
   }, [conversionResult, selectedReceivingProduct, apiFetch, businessId, branchId, productId, form, staffId, staffName, loadProduct]);
 
-  // ─── MANUAL PACK-LINK TRANSFER ────────────────────────────────────────────
-  // Admin-triggered "break N of this product into its linked target" —
-  // same underlying math as the POS app's auto-transfer, just always
-  // manually confirmed here, never automatic. Uses the SAME
-  // computeUnitMultiplier as PackLinksEditor and the mobile app, so the
-  // preview here always matches what actually gets written.
   const getLinkMultiplier = useCallback((link) => {
     if (!link) return null;
     return computeUnitMultiplier(parseInt(form.itemsPerUnit) || 1, link.targetItemsPerUnit || 1);
   }, [form.itemsPerUnit]);
 
-  const openTransferModal = () => {
-    setTransferSelectedLinkId(packLinks[0]?.id || null);
+  const getParentMultiplier = useCallback((parentOption) => {
+    if (!parentOption) return null;
+    return computeUnitMultiplier(parentOption.parentItemsPerUnit || 1, parseInt(form.itemsPerUnit) || 1);
+  }, [form.itemsPerUnit]);
+
+  const openTransferModal = useCallback(async () => {
+    const freshParentOptions = await loadParentOptions();
+    const hasChildren = packLinks.length > 0;
+    setTransferDirection(hasChildren ? 'down' : 'up');
+    setTransferSelectedLinkId(hasChildren ? (packLinks[0]?.id || null) : null);
+    setTransferSelectedParentId(hasChildren ? null : (freshParentOptions[0]?.id || null));
     setTransferQty('1');
     setError(null);
+    setTransferBlockedInfo(null);
     setTransferModalOpen(true);
-  };
+  }, [loadParentOptions, packLinks]);
 
+  // ✅ FIX — the "Review Transfer" button used to be disabled outright
+  // (`disabled={!transferSelectedParentId}` / `disabled={!transferSelectedLinkId}`)
+  // whenever validation would fail, which just looked broken/frozen with
+  // no explanation. It's now ALWAYS clickable. Every validation failure
+  // here now opens transferBlockedInfo — a dedicated modal naming the
+  // exact products involved and exactly why the transfer can't proceed —
+  // instead of a small inline red banner easy to miss, and instead of a
+  // silently-disabled button with no explanation at all.
   const openTransferConfirm = () => {
+    if (transferDirection === 'up') {
+      const parent = parentOptions.find((p) => p.id === transferSelectedParentId);
+      const qty = parseInt(transferQty, 10);
+
+      if (!parent) {
+        setTransferBlockedInfo({
+          title: "Can't Transfer Yet",
+          message: `Choose which product ${form.name || 'this product'} should be consolidated into before reviewing the transfer.`,
+        });
+        return;
+      }
+      if (!qty || qty <= 0) {
+        setTransferBlockedInfo({
+          title: "Can't Transfer Yet",
+          message: `Enter a quantity of ${form.name || 'this product'} greater than zero to consolidate into ${parent.parentName}.`,
+        });
+        return;
+      }
+
+      const multiplier = getParentMultiplier(parent);
+      if (!multiplier) {
+        setTransferBlockedInfo({
+          title: "Unit Sizes Don't Match",
+          message:
+            `You can't transfer ${form.name || 'this product'} into ${parent.parentName} yet because the unit sizes don't divide evenly: ` +
+            `${parent.parentName}'s unit size (${parent.parentItemsPerUnit}) isn't a whole multiple of ${form.name || 'this product'}'s unit size ` +
+            `(${parseInt(form.itemsPerUnit) || 1}). Fix the items-per-unit on one of these two products, then try again.`,
+        });
+        return;
+      }
+
+      const requestedParents = Math.floor(qty / multiplier);
+      if (requestedParents < 1) {
+        setTransferBlockedInfo({
+          title: "Not Enough to Consolidate",
+          message:
+            `${qty} × ${form.name || 'this product'} isn't enough to build even one ${parent.parentName}. ` +
+            `It takes ${multiplier} × ${form.name || 'this product'} (${form.unit}) to make 1 × ${parent.parentName}. ` +
+            `Enter at least ${multiplier}.`,
+        });
+        return;
+      }
+
+      const currentChildStock = parseInt(form.currentStock) || 0;
+      if (qty > currentChildStock) {
+        setTransferBlockedInfo({
+          title: "Not Enough Stock",
+          message: `You can't transfer ${qty} × ${form.unit}(s) of ${form.name || 'this product'} into ${parent.parentName} — only ${currentChildStock} ${form.unit}(s) are in stock.`,
+        });
+        return;
+      }
+
+      setTransferBlockedInfo(null);
+      setTransferConfirmOpen(true);
+      return;
+    }
+
     const link = packLinks.find((l) => l.id === transferSelectedLinkId);
     const qty = parseInt(transferQty, 10);
 
-    if (!link) { setError('Please choose what this product should break into.'); return; }
-    if (!qty || qty <= 0) { setError('Please enter a quantity greater than zero.'); return; }
+    if (!link) {
+      setTransferBlockedInfo({
+        title: "Can't Transfer Yet",
+        message: `Choose what ${form.name || 'this product'} should break into before reviewing the transfer.`,
+      });
+      return;
+    }
+    if (!qty || qty <= 0) {
+      setTransferBlockedInfo({
+        title: "Can't Transfer Yet",
+        message: `Enter a quantity of ${form.name || 'this product'} greater than zero to break into ${link.targetName}.`,
+      });
+      return;
+    }
 
     const multiplier = getLinkMultiplier(link);
     if (!multiplier) {
-      setError(
-        `This product's unit size (${parseInt(form.itemsPerUnit) || 1}) doesn't divide evenly into ${link.targetName}'s ` +
-        `unit size (${link.targetItemsPerUnit || 1}). Fix the items-per-unit on one of these products before transferring.`
-      );
+      setTransferBlockedInfo({
+        title: "Unit Sizes Don't Match",
+        message:
+          `You can't break ${form.name || 'this product'} into ${link.targetName} yet because the unit sizes don't divide evenly: ` +
+          `${form.name || 'this product'}'s unit size (${parseInt(form.itemsPerUnit) || 1}) isn't a whole multiple of ${link.targetName}'s unit size ` +
+          `(${link.targetItemsPerUnit || 1}). Fix the items-per-unit on one of these two products, then try again.`,
+      });
       return;
     }
 
     const currentStock = parseInt(form.currentStock) || 0;
     if (qty > currentStock) {
-      setError(`Cannot break ${qty} ${form.unit}(s). Only ${currentStock} available.`);
+      setTransferBlockedInfo({
+        title: "Not Enough Stock",
+        message: `You can't break ${qty} × ${form.unit}(s) of ${form.name || 'this product'} into ${link.targetName} — only ${currentStock} ${form.unit}(s) are in stock.`,
+      });
       return;
     }
 
-    setError(null);
+    setTransferBlockedInfo(null);
     setTransferConfirmOpen(true);
   };
 
   const executeManualTransfer = useCallback(async () => {
+    if (transferDirection === 'up') {
+      const parent = parentOptions.find((p) => p.id === transferSelectedParentId);
+      const qty = parseInt(transferQty, 10);
+      const multiplier = getParentMultiplier(parent);
+      if (!parent || !qty || !multiplier) { setTransferConfirmOpen(false); return; }
+
+      const requestedParents = Math.floor(qty / multiplier);
+      if (requestedParents < 1) { setTransferConfirmOpen(false); return; }
+      const childUnitsUsed = requestedParents * multiplier;
+
+      setTransferring(true);
+      setError(null);
+      try {
+        await apiFetch(`/business/${businessId}/branches/${branchId}/stock-movements`, {
+          method: 'POST',
+          body: JSON.stringify({
+            productId: parent.id,
+            sku: parent.parentSku,
+            productName: parent.parentName,
+            type: 'stock_addition',
+            reason: `Stock transfer: consolidated ${childUnitsUsed} × ${form.unit} of ${form.name} → +${requestedParents} ${parent.parentUnit || 'unit'}(s)`,
+            quantityChange: requestedParents,
+            unit: parent.parentUnit || 'each',
+            posId: DASHBOARD_POS_ID,
+            staffId,
+            cashierName: staffName,
+            referenceType: 'box_consolidate_in',
+            referenceId: productId,
+          }),
+        });
+
+        await apiFetch(`/business/${businessId}/branches/${branchId}/stock-movements`, {
+          method: 'POST',
+          body: JSON.stringify({
+            productId: productId,
+            sku: form.sku,
+            productName: form.name,
+            type: 'stock_reduction',
+            reason: `Stock transfer: consolidated ${childUnitsUsed} × ${form.unit} into +${requestedParents} ${parent.parentName} (${parent.parentUnit || 'unit'})`,
+            quantityChange: -childUnitsUsed,
+            unit: form.unit,
+            posId: DASHBOARD_POS_ID,
+            staffId,
+            cashierName: staffName,
+            referenceType: 'box_consolidate_out',
+            referenceId: parent.id,
+          }),
+        });
+
+        setTransferConfirmOpen(false);
+        setTransferModalOpen(false);
+        setTransferQty('1');
+        await loadProduct();
+        await loadParentOptions();
+      } catch (e) {
+        console.error('Manual consolidate error:', e);
+        setTransferConfirmOpen(false);
+        setError(e.message || 'Failed to transfer stock');
+      } finally {
+        setTransferring(false);
+      }
+      return;
+    }
+
     const link = packLinks.find((l) => l.id === transferSelectedLinkId);
     const qty = parseInt(transferQty, 10);
     const multiplier = getLinkMultiplier(link);
@@ -563,8 +698,6 @@ const generateNextSKU = useCallback(async () => {
     setTransferring(true);
     setError(null);
     try {
-      // Same two-leg pattern as the conversion flow above: addition to the
-      // target first, then reduction from the source.
       await apiFetch(`/business/${businessId}/branches/${branchId}/stock-movements`, {
         method: 'POST',
         body: JSON.stringify({
@@ -612,7 +745,11 @@ const generateNextSKU = useCallback(async () => {
     } finally {
       setTransferring(false);
     }
-  }, [packLinks, transferSelectedLinkId, transferQty, getLinkMultiplier, apiFetch, businessId, branchId, form, staffId, staffName, productId, loadProduct]);
+  }, [
+    transferDirection, parentOptions, transferSelectedParentId, getParentMultiplier, loadParentOptions,
+    packLinks, transferSelectedLinkId, transferQty, getLinkMultiplier,
+    apiFetch, businessId, branchId, form, staffId, staffName, productId, loadProduct,
+  ]);
 
   const handleAdjustStock = useCallback(async () => {
     const val = parseInt(adjustmentValue, 10);
@@ -753,10 +890,6 @@ const generateNextSKU = useCallback(async () => {
           taxPercent: 0,
           taxInclusive: false,
           status: form.status,
-          // ✅ NEW — same field/shape the POS app writes and reads for its
-          // auto-transfer-on-low-stock feature. Only the target reference
-          // and multiplier ({id, targetProductId, qty}) are persisted;
-          // targetName/targetSku/etc are display-only, resolved fresh on load.
           packLinks: (selectedUnit?.requiresQuantityPerUnit && packLinks.length > 0)
             ? JSON.stringify(packLinks.map((l) => ({ id: l.id, targetProductId: l.targetProductId, qty: l.qty })))
             : null,
@@ -796,9 +929,6 @@ const generateNextSKU = useCallback(async () => {
           }
         }
 
-  // replace the create-path image block + final navigate at the end of the
-// `!isEdit` branch in handleSave
-
 let uploadedImageUrl = null;
 if (imageFile && created?.productId) {
   try {
@@ -809,12 +939,6 @@ if (imageFile && created?.productId) {
   }
 }
 
-// ✅ CHANGED — was `navigate('/inventory/products'); return;` with no
-// data handed back, forcing Products.jsx to refetch the whole catalog to
-// pick up the one new row. Now hands back the exact created record via
-// navigation state so Products.jsx can merge it in place (see
-// handleProductSaved there) — same effect as the mobile CreateProductScreen
-// calling route.params.onCreated(mergedProduct).
 navigate('/inventory/products', {
   state: {
     savedProduct: {
@@ -884,9 +1008,6 @@ return;
         trackInventory: form.trackInventory,
         lowStockThreshold: parseInt(form.lowStockThreshold, 10) || 0,
         status: form.status,
-        // ✅ NEW — see the create-path comment above; same field, same
-        // shape, kept in sync with whatever the Stock Breaking editor
-        // currently holds.
         packLinks: (isPackOrBox && packLinks.length > 0)
           ? JSON.stringify(packLinks.map((l) => ({ id: l.id, targetProductId: l.targetProductId, qty: l.qty })))
           : null,
@@ -913,14 +1034,6 @@ return;
             movementType = 'stock_reduction';
           }
 
-          // ✅ CHANGED — this used to append `form.description` (the generic
-          // product description field near the top of the form), which is
-          // unrelated to why the stock count changed. The dedicated
-          // "Reason" field in the Stock Management section (`adjustReason`)
-          // was being collected in the UI but never read here — it only fed
-          // the dead `handleAdjustStock` function that no button calls. Now
-          // the actual save path reads `adjustReason`, so what the user types
-          // in that (now optional) field is what lands in Inventory History.
           const adjustReasonText = adjustReason.trim();
           if (adjustReasonText) {
             reasonText = `${reasonText} — ${adjustReasonText}`;
@@ -957,10 +1070,6 @@ if (imageFile) {
   }
 }
 
-// ✅ CHANGED — was a bare navigate() after PUT, forcing Products.jsx to
-// refetch everything to see the one edited row. Builds the same merged
-// record shape the mobile EditProductScreen hands to onSaved, and passes
-// it back via navigation state instead.
 navigate('/inventory/products', {
   state: {
     savedProduct: {
@@ -998,15 +1107,6 @@ navigate('/inventory/products', {
       setSaving(false);
       savingRef.current = false;
     }
-  // ✅ FIX — `packLinks` was missing from this dependency list. useCallback
-  // only rebuilds handleSave when a listed dependency changes, so without
-  // packLinks here, the Save button kept calling a STALE closure that
-  // still saw whatever packLinks looked like when handleSave was last
-  // rebuilt (e.g. empty, from before you added a link in the Stock
-  // Breaking editor). The save request would then go out with the old
-  // packLinks value — not what was visibly showing in the editor — which
-  // is exactly why a freshly-added link disappeared on reopen: it was
-  // never actually sent to the backend.
   }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU, adjustReason, packLinks]);
 
   const handleRemoveImage = useCallback(async () => {
@@ -1024,6 +1124,16 @@ navigate('/inventory/products', {
   }, [apiFetch, businessId, branchId, productId, staffId, existingImageUrl, isEdit]);
 
   const showLoadingBar = loading || saving || uploadingImage;
+
+  // Derived — currently-selected transfer target, used to make labels and
+  // buttons in the Transfer modal name the exact product instead of
+  // saying "this product" generically.
+  const selectedTransferParent = transferDirection === 'up'
+    ? parentOptions.find((p) => p.id === transferSelectedParentId) || null
+    : null;
+  const selectedTransferLink = transferDirection === 'down'
+    ? packLinks.find((l) => l.id === transferSelectedLinkId) || null
+    : null;
 
   // ─── RENDER ─────────────────────────────────────────────────────────────
   return (
@@ -1222,25 +1332,23 @@ navigate('/inventory/products', {
                 )}
               </div>
 
-              {/* Stock Breaking — define what this box/pack breaks into, and
-                  (once saved) manually transfer stock into it. Available
-                  on create too, mirroring the mobile app, since a link
-                  just needs its target product to already exist — not
-                  this one. */}
-              {isPackOrBox && (
+              {/* Stock Breaking */}
+              {(isPackOrBox || parentOptions.length > 0) && (
                 <div style={{ marginBottom: 12, padding: 12, background: '#F8FAFC', borderRadius: 8, border: '1px solid #E2E8F0' }}>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Stock Breaking</div>
-                  <PackLinksEditor
-                    links={packLinks}
-                    onChange={setPackLinks}
-                    selfProductId={isEdit ? productId : null}
-                    unit={form.unit}
-                    selfItemsPerUnit={parseInt(form.itemsPerUnit) || 1}
-                    apiFetch={apiFetch}
-                    businessId={businessId}
-                    branchId={branchId}
-                  />
-                  {isEdit && packLinks.length > 0 && (
+                  {isPackOrBox && (
+                    <PackLinksEditor
+                      links={packLinks}
+                      onChange={setPackLinks}
+                      selfProductId={isEdit ? productId : null}
+                      unit={form.unit}
+                      selfItemsPerUnit={parseInt(form.itemsPerUnit) || 1}
+                      apiFetch={apiFetch}
+                      businessId={businessId}
+                      branchId={branchId}
+                    />
+                  )}
+                  {isEdit && (packLinks.length > 0 || parentOptions.length > 0) && (
                     <button
                       type="button"
                       onClick={openTransferModal}
@@ -1508,7 +1616,7 @@ navigate('/inventory/products', {
           </div>
         )}
 
-        {/* ─── Transfer Stock Modal — pick a link + qty ────────────────────── */}
+        {/* ─── Transfer Stock Modal ──────────────────────────────────────── */}
         {transferModalOpen && (
           <div className="reports-modal-overlay" onClick={() => setTransferModalOpen(false)}>
             <div className="reports-modal" style={{ maxWidth: 460, maxHeight: '85vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
@@ -1517,44 +1625,225 @@ navigate('/inventory/products', {
                 <button className="reports-modal-close" onClick={() => setTransferModalOpen(false)}><X size={18} /></button>
               </div>
               <div className="reports-modal-body">
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Break into</label>
-                {packLinks.map((link) => {
-                  const multiplier = getLinkMultiplier(link);
-                  const active = transferSelectedLinkId === link.id;
-                  return (
+                {/* ✅ NEW — always-visible header naming the exact product this
+                    modal is acting on, so "quantity of this product" never
+                    has to stand in for a name the person can already see. */}
+                <div style={{ fontSize: 12, color: '#64748B', marginBottom: 4 }}>Transferring stock for</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A', marginBottom: 14 }}>
+                  {form.name || 'This product'} <span style={{ fontWeight: 500, color: '#94A3B8', fontSize: 12 }}>({form.currentStock} {form.unit}(s) in stock)</span>
+                </div>
+
+                {packLinks.length > 0 && parentOptions.length > 0 && (
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
                     <button
-                      key={link.id}
-                      onClick={() => setTransferSelectedLinkId(link.id)}
-                      style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left',
-                        padding: '10px 12px', borderRadius: 8, marginBottom: 6, cursor: 'pointer',
-                        border: `1px solid ${active ? '#0891B2' : '#E2E8F0'}`, background: active ? '#EFF6FF' : '#fff',
-                      }}
+                      type="button"
+                      onClick={() => { setTransferDirection('down'); setTransferSelectedLinkId(packLinks[0]?.id || null); }}
+                      style={{ flex: 1, padding: '8px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${transferDirection === 'down' ? '#0891B2' : '#E2E8F0'}`, background: transferDirection === 'down' ? '#EFF6FF' : '#F8FAFC', color: transferDirection === 'down' ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 12 }}
                     >
-                      <span style={{ fontSize: 13, color: active ? '#0891B2' : '#334155', fontWeight: active ? 600 : 400 }}>
-                        {link.targetName} {multiplier ? `(1 = ${multiplier})` : "(⚠ unit sizes don't match)"}
-                      </span>
+                      Break Down
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      onClick={() => { setTransferDirection('up'); setTransferSelectedParentId(parentOptions[0]?.id || null); }}
+                      style={{ flex: 1, padding: '8px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${transferDirection === 'up' ? '#0891B2' : '#E2E8F0'}`, background: transferDirection === 'up' ? '#EFF6FF' : '#F8FAFC', color: transferDirection === 'up' ? '#0891B2' : '#64748B', fontWeight: 600, fontSize: 12 }}
+                    >
+                      Consolidate Up
+                    </button>
+                  </div>
+                )}
 
-                <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginTop: 12, marginBottom: 6 }}>Quantity of this product to break</label>
-                <input type="number" min="1" style={fieldInput()} value={transferQty} onChange={(e) => setTransferQty(e.target.value)} placeholder="1" />
+                               {transferDirection === 'up' ? (
+                  <>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Consolidate into</label>
+                    {parentOptions.map((parent) => {
+                      const multiplier = getParentMultiplier(parent);
+                      const active = transferSelectedParentId === parent.id;
+                      return (
+                        <button
+                          key={parent.id}
+                          onClick={() => setTransferSelectedParentId(parent.id)}
+                          style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%', textAlign: 'left',
+                            padding: '10px 12px', borderRadius: 8, marginBottom: 6, cursor: 'pointer',
+                            border: `1px solid ${active ? '#0891B2' : '#E2E8F0'}`, background: active ? '#EFF6FF' : '#fff',
+                          }}
+                        >
+                          <span style={{ fontSize: 13, color: active ? '#0891B2' : '#334155', fontWeight: 600 }}>
+                            {parent.parentName}
+                          </span>
+                          <span style={{ fontSize: 11, color: multiplier ? '#94A3B8' : '#EF4444', marginTop: 2 }}>
+                            {multiplier
+                              ? `Needs ${multiplier} to make 1`
+                              : "⚠ unit sizes don't divide evenly"}
+                          </span>
+                        </button>
+                      );
+                    })}
 
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginTop: 12, marginBottom: 6 }}>
+                      {selectedTransferParent
+                        ? `How many to use (building ${selectedTransferParent.parentName})`
+                        : 'How many to use'}
+                    </label>
+                    <input type="number" min="1" style={fieldInput()} value={transferQty} onChange={(e) => setTransferQty(e.target.value)} placeholder="1" />
+
+                    <button
+                      onClick={openTransferConfirm}
+                      style={{ width: '100%', marginTop: 16, padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Review Transfer
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 8 }}>Break into</label>
+                    {packLinks.map((link) => {
+                      const multiplier = getLinkMultiplier(link);
+                      const active = transferSelectedLinkId === link.id;
+                      return (
+                        <button
+                          key={link.id}
+                          onClick={() => setTransferSelectedLinkId(link.id)}
+                          style={{
+                            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', width: '100%', textAlign: 'left',
+                            padding: '10px 12px', borderRadius: 8, marginBottom: 6, cursor: 'pointer',
+                            border: `1px solid ${active ? '#0891B2' : '#E2E8F0'}`, background: active ? '#EFF6FF' : '#fff',
+                          }}
+                        >
+                          <span style={{ fontSize: 13, color: active ? '#0891B2' : '#334155', fontWeight: 600 }}>
+                            {link.targetName}
+                          </span>
+                          <span style={{ fontSize: 11, color: multiplier ? '#94A3B8' : '#EF4444', marginTop: 2 }}>
+                            {multiplier
+                              ? `Makes ${multiplier} per unit`
+                              : "⚠ unit sizes don't divide evenly"}
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#475569', display: 'block', marginTop: 12, marginBottom: 6 }}>
+                      {selectedTransferLink
+                        ? `How many to break (into ${selectedTransferLink.targetName})`
+                        : 'How many to break'}
+                    </label>
+                    <input type="number" min="1" style={fieldInput()} value={transferQty} onChange={(e) => setTransferQty(e.target.value)} placeholder="1" />
+
+                    <button
+                      onClick={openTransferConfirm}
+                      style={{ width: '100%', marginTop: 16, padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Review Transfer
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Transfer Blocked Modal ─────────────────────────────────────
+             ✅ NEW — replaces the old pattern of just disabling "Review
+             Transfer". Names the exact reason (with the actual product
+             names/quantities involved) so the person always knows exactly
+             why a transfer can't proceed yet, and what to do about it. */}
+        {transferBlockedInfo && (
+          <div className="reports-modal-overlay" onClick={() => setTransferBlockedInfo(null)}>
+            <div className="reports-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+              <div className="reports-modal-header">
+                <span className="reports-modal-title">{transferBlockedInfo.title}</span>
+                <button className="reports-modal-close" onClick={() => setTransferBlockedInfo(null)}><X size={18} /></button>
+              </div>
+              <div className="reports-modal-body">
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '12px 14px', background: '#FEF2F2', border: '1px solid #FEE2E2', borderRadius: 8, marginBottom: 16 }}>
+                  <AlertTriangle size={18} color="#EF4444" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: 13, color: '#7F1D1D', lineHeight: 1.5 }}>{transferBlockedInfo.message}</div>
+                </div>
                 <button
-                  onClick={openTransferConfirm}
-                  disabled={!transferSelectedLinkId}
-                  style={{ width: '100%', marginTop: 16, padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: !transferSelectedLinkId ? 0.5 : 1 }}
+                  onClick={() => setTransferBlockedInfo(null)}
+                  style={{ width: '100%', padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  Review Transfer
+                  Got It
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* ─── Transfer Confirm Modal — the one true "are you sure?" step ──── */}
+        {/* ─── Transfer Confirm Modal ───────────────────────────────────── */}
         {transferConfirmOpen && (() => {
+          if (transferDirection === 'up') {
+            const parent = parentOptions.find((p) => p.id === transferSelectedParentId);
+            const qty = parseInt(transferQty, 10) || 0;
+            const multiplier = getParentMultiplier(parent);
+            const requestedParents = multiplier ? Math.floor(qty / multiplier) : 0;
+            const actualChildUsed = requestedParents * (multiplier || 0);
+
+            return (
+              <div className="reports-modal-overlay" onClick={() => !transferring && setTransferConfirmOpen(false)}>
+                <div className="reports-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+                  <div className="reports-modal-header">
+                    <span className="reports-modal-title">Confirm Transfer</span>
+                    {!transferring && (
+                      <button className="reports-modal-close" onClick={() => setTransferConfirmOpen(false)}><X size={18} /></button>
+                    )}
+                  </div>
+                  <div className="reports-modal-body">
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#334155', marginBottom: 8 }}>You are about to consolidate:</div>
+                    <div style={{ background: '#F8FAFC', borderRadius: 8, padding: 12, border: '1px solid #E2E8F0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: 12, color: '#64748B' }}>From:</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{form.name}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: 12, color: '#64748B' }}>Quantity to use:</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#EF4444' }}>-{actualChildUsed} {form.unit}(s)</span>
+                      </div>
+                      <div style={{ height: 1, background: '#E2E8F0', margin: '8px 0' }} />
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: 12, color: '#64748B' }}>Into:</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{parent?.parentName || '—'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
+                        <span style={{ fontSize: 12, color: '#64748B' }}>Will receive:</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: '#16A34A' }}>+{requestedParents} {parent?.parentUnit || 'unit'}(s)</span>
+                      </div>
+                      {multiplier > 1 && (
+                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 6 }}>
+                          = {actualChildUsed} ÷ {multiplier} {form.unit}(s) per {parent?.parentUnit || 'unit'}
+                        </div>
+                      )}
+                      {qty > actualChildUsed && (
+                        <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 6 }}>
+                          {qty - actualChildUsed} {form.unit}(s) left over — not enough for another {parent?.parentUnit || 'unit'}, will stay as-is.
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 12, lineHeight: 1.5 }}>
+                      This updates stock on both products immediately and cannot be undone from here.
+                    </div>
+                    <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+                      <button
+                        onClick={() => setTransferConfirmOpen(false)}
+                        disabled={transferring}
+                        style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={executeManualTransfer}
+                        disabled={transferring}
+                        style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: transferring ? 0.7 : 1 }}
+                      >
+                        {transferring ? 'Transferring...' : 'Confirm & Transfer'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           const link = packLinks.find((l) => l.id === transferSelectedLinkId);
           const qty = parseInt(transferQty, 10) || 0;
           const multiplier = getLinkMultiplier(link);
