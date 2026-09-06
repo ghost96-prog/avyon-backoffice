@@ -145,6 +145,15 @@ function ReceiptPrintTemplate({ receipt }) {
                 {item.unit && item.unit !== 'each' ? ` / ${item.unit}` : ''}
                 {discountAmount > 0 ? `   -${sym}${Number(discountAmount).toFixed(2)} disc` : ''}
               </div>
+              {/* ✅ FIX — item note (serial number / IMEI / any comment
+                  attached at sale time). The data was already coming
+                  through in `item.note` (parseReceipt doesn't strip it),
+                  this template just never rendered it. */}
+              {item.note && (
+                <div style={{ fontSize: 10, fontStyle: 'italic' }}>
+                  Note: {item.note}
+                </div>
+              )}
               {isRefunded && (
                 <div style={{ fontSize: 10 }}>
                   {refundedQty}/{originalQty} refunded
@@ -678,6 +687,21 @@ export default function Receipts() {
                           textDecoration: isRefunded ? 'line-through' : 'none',
                         }}>
                           -{sym}{Number(discountAmount).toFixed(2)} discount
+                        </div>
+                      )}
+
+                      {/* Line 2b: Note / serial number — ✅ FIX. The data
+                          was already flowing through in `item.note`
+                          (parseReceipt doesn't strip it), this modal just
+                          never rendered it. */}
+                      {item.note && (
+                        <div style={{
+                          fontSize: 10,
+                          color: '#64748B',
+                          fontStyle: 'italic',
+                          marginTop: 1,
+                        }}>
+                          📝 {item.note}
                         </div>
                       )}
 
