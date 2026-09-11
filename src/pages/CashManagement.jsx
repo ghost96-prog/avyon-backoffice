@@ -114,6 +114,17 @@ export default function CashManagement() {
     amountInBaseCurrency: t.amountInBaseCurrency || t.amount || 0,
   }), []);
 
+  // ─── Fetch data ───────────────────────────────────────────────────────────
+  // NOTE: this intentionally does NOT send `typeFilter` to the API. The
+  // summary cards (Pay In / Pay Out / Expenses / Cash In Drawer) are
+  // computed from `allTransactions` below, so that set always needs to
+  // contain every transaction type for the selected store(s) and date
+  // range. `typeFilter` is applied client-side, only to what's rendered
+  // in the list (see `filteredTransactions`). If it were sent as a query
+  // param here, picking e.g. "Pay Ins" in the list filter would shrink
+  // `allTransactions` down to pay_in-only records, and the Pay Out /
+  // Expenses totals would silently drop to 0 even though those
+  // transactions still exist.
   const fetchData = useCallback(async (isRefresh = false) => {
     if (!businessId) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
@@ -125,7 +136,6 @@ export default function CashManagement() {
       const params = new URLSearchParams();
       params.append('startDate', String(start.getTime()));
       params.append('endDate', String(end.getTime()));
-      if (typeFilter !== 'all') params.append('type', typeFilter);
 
       const targetBranches = selectedBranchId === 'all'
         ? (branches && branches.length ? branches : await apiFetch(`/business/${businessId}/branches`))
@@ -161,7 +171,7 @@ export default function CashManagement() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [businessId, apiFetch, branches, startDate, endDate, selectedBranchId, typeFilter, parseTx]);
+  }, [businessId, apiFetch, branches, startDate, endDate, selectedBranchId, parseTx]);
 
   useEffect(() => {
     const onVis = () => { if (document.visibilityState === 'visible') reloadDateRange(); };
@@ -177,10 +187,11 @@ export default function CashManagement() {
 
   useEffect(() => {
     if (businessId && branches) fetchData();
-  }, [businessId, branches, startDate, endDate, selectedBranchId, typeFilter, fetchData]);
+  }, [businessId, branches, startDate, endDate, selectedBranchId, fetchData]);
 
   useEffect(() => { setVisibleCount(20); }, [selectedBranchId, startDate, endDate, typeFilter]);
 
+  // ─── Stats — always derived from the FULL (unfiltered) transaction set ────
   const stats = useMemo(() => {
     const payIn = allTransactions.filter((t) => t.type === 'pay_in');
     const payOut = allTransactions.filter((t) => t.type === 'pay_out');
@@ -194,14 +205,23 @@ export default function CashManagement() {
     };
   }, [allTransactions, openShifts]);
 
-  const visibleTransactions = useMemo(() => allTransactions.slice(0, visibleCount), [allTransactions, visibleCount]);
+  // ─── typeFilter is applied here, client-side, only for the list view ──────
+  const filteredTransactions = useMemo(
+    () => (typeFilter === 'all' ? allTransactions : allTransactions.filter((t) => t.type === typeFilter)),
+    [allTransactions, typeFilter]
+  );
+
+  const visibleTransactions = useMemo(
+    () => filteredTransactions.slice(0, visibleCount),
+    [filteredTransactions, visibleCount]
+  );
 
   const handleExportCsv = useCallback(() => {
-    if (isExporting || !allTransactions.length) return;
+    if (isExporting || !filteredTransactions.length) return;
     setIsExporting(true);
     try {
       const header = ['Type', 'Store', 'Shift #', 'Description', 'Amount', 'Payment Method', 'Cashier', 'Date'];
-      const rows = allTransactions.map((t) => [
+      const rows = filteredTransactions.map((t) => [
         TX_TYPES[t.type]?.label || t.type,
         t.store,
         t.shiftNumber ?? '',
@@ -216,11 +236,11 @@ export default function CashManagement() {
     } finally {
       setIsExporting(false);
     }
-  }, [allTransactions, selectedBranchId, selectedBranchName, startDate, endDate, isExporting]);
+  }, [filteredTransactions, selectedBranchId, selectedBranchName, startDate, endDate, isExporting]);
 
   // ─── PDF EXPORT ─────────────────────────────────────────────────────────────
   const handleExportPdf = useCallback(async () => {
-    if (exportingPdf || !allTransactions.length) return;
+    if (exportingPdf || !filteredTransactions.length) return;
     setExportingPdf(true);
     try {
       const { jsPDF } = await import('jspdf');
@@ -236,7 +256,7 @@ export default function CashManagement() {
       doc.setTextColor(20, 24, 30);
 
       const tableHead = [['Type', 'Store', 'Shift #', 'Description', 'Amount', 'Payment Method', 'Cashier', 'Date']];
-      const tableBody = allTransactions.map((t) => [
+      const tableBody = filteredTransactions.map((t) => [
         TX_TYPES[t.type]?.label || t.type,
         t.store,
         t.shiftNumber ?? '—',
@@ -256,6 +276,9 @@ export default function CashManagement() {
         margin: { left: 32, right: 32 },
       });
 
+      // Note: these summary totals always reflect the FULL period/store
+      // stats (see `stats` above), not just the filtered rows in the PDF
+      // table, so they stay consistent with what's shown on-screen.
       const finalY = doc.lastAutoTable.finalY + 20;
       doc.setFontSize(10);
       doc.setTextColor(20, 24, 30);
@@ -272,7 +295,7 @@ export default function CashManagement() {
     } finally {
       setExportingPdf(false);
     }
-  }, [allTransactions, stats, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf]);
+  }, [filteredTransactions, stats, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf]);
 
   const openAddModal = (type) => {
     if (selectedBranchId === 'all') {
@@ -361,10 +384,10 @@ export default function CashManagement() {
             <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
               <Store size={14} /> <span>{selectedBranchName}</span>
             </button>
-            <Button variant="secondary" size="sm" icon={Download} onClick={handleExportCsv} disabled={isExporting || !allTransactions.length}>
+            <Button variant="secondary" size="sm" icon={Download} onClick={handleExportCsv} disabled={isExporting || !filteredTransactions.length}>
               CSV
             </Button>
-            <Button variant="secondary" size="sm" icon={FileText} onClick={handleExportPdf} disabled={exportingPdf || !allTransactions.length} loading={exportingPdf}>
+            <Button variant="secondary" size="sm" icon={FileText} onClick={handleExportPdf} disabled={exportingPdf || !filteredTransactions.length} loading={exportingPdf}>
               PDF
             </Button>
           </div>
@@ -459,10 +482,10 @@ export default function CashManagement() {
                   </div>
                 );
               })}
-              {visibleTransactions.length < allTransactions.length && (
+              {visibleTransactions.length < filteredTransactions.length && (
                 <div style={{ padding: '12px 16px', textAlign: 'center' }}>
                   <button onClick={() => setVisibleCount((c) => c + 20)} style={{ padding: '6px 20px', border: '1px solid #e6eaf0', borderRadius: 6, background: '#fff', cursor: 'pointer', fontSize: 12, color: '#5e6f8a' }}>
-                    Load more ({allTransactions.length - visibleTransactions.length} remaining)
+                    Load more ({filteredTransactions.length - visibleTransactions.length} remaining)
                   </button>
                 </div>
               )}
