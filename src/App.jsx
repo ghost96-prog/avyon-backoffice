@@ -34,6 +34,7 @@ import BranchComparison from "./pages/BranchComparison";
 import StaffPerformance from "./pages/StaffPerformance";
 import BusinessProfile from "./pages/BusinessProfile";
 import PurchaseOrders from "./pages/PurchaseOrders";
+import Quotations from "./pages/Qoutations";
 import Suppliers from "./pages/Suppliers";
 import Community from "./pages/Community";
 // import CommunityPostDetail from "./pages/CommunityPostDetail";
@@ -62,6 +63,7 @@ const REAL_PAGES = {
   '/staff': StaffPerformance,
   '/business': BusinessProfile,
 '/purchase-orders': PurchaseOrders,
+'/quotations': Quotations,
 '/suppliers': Suppliers,
 };
 

@@ -27,6 +27,7 @@ import {
   ClipboardCheck,
   Upload,
     Truck,
+  FileText,
 
 } from "lucide-react";
 import { BACKOFFICE_PERMISSIONS as P } from "./permissions";
@@ -71,6 +72,7 @@ export const NAV_SECTIONS = [
       { id: "inv-grv", label: "GRV (Goods Received)", to: "/inventory/grv", icon: FileInput, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
       // Inventory Management section — add after "inv-grv":
 { id: "inv-purchase-orders", label: "Purchase Orders", to: "/purchase-orders", icon: ClipboardList, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
+      { id: "inv-quotations", label: "Quotations", to: "/quotations", icon: FileText, permission: P.MANAGE_CUSTOMERS },
       { id: "inv-stocktake", label: "Stock Take", to: "/inventory/stock-take", icon: ClipboardCheck, permission: P.ADVANCED_INVENTORY, moduleId: 'advanced_inventory', moduleGateMode: 'block-nav' },
     ],
   },
