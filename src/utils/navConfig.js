@@ -28,6 +28,7 @@ import {
   Upload,
     Truck,
   FileText,
+  CreditCard,
 
 } from "lucide-react";
 import { BACKOFFICE_PERMISSIONS as P } from "./permissions";
@@ -56,6 +57,7 @@ export const NAV_SECTIONS = [
       { id: "shifts", label: "Shifts", to: "/reports/shifts", icon: Clock, permission: P.VIEW_SALES_REPORTS },
       { id: "cash", label: "Cash Management", to: "/reports/cash-management", icon: DollarSign, permission: P.VIEW_SALES_REPORTS },
       { id: "laybyes", label: "Laybyes", to: "/reports/laybyes", icon: HandCoins, permission: P.VIEW_SALES_REPORTS },
+      { id: "credit", label: "Credit / Receivables", to: "/credit", icon: CreditCard, permission: P.MANAGE_CUSTOMERS },
     ],
   },
   {

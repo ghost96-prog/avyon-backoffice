@@ -8,6 +8,7 @@ import DateRangeNav from '../components/common/DateRangeNav';
 import Button from '../components/common/Button';
 import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
+import { isCreditSaleReceipt, isCreditPaymentReceipt, getCreditStatus, CREDIT_STATUS_BADGE } from '../utils/creditReceipts';
 import '../styles/ReportsShared.css';
 import { useSelectedBranch } from '../hooks/useSelectedBranch';
 
@@ -48,6 +49,7 @@ const STATUS_OPTIONS = [
   { value: 'completed', label: 'Completed' },
   { value: 'partially_refunded', label: 'Partially Refunded' },
   { value: 'refunded', label: 'Refunded' },
+  { value: 'cancelled', label: 'Cancelled' },
   { value: 'voided', label: 'Voided' },
 ];
 
@@ -56,12 +58,15 @@ const STATUS_COLORS = {
   partially_refunded: { bg: '#fef9c3', color: '#0891b2' },
   refunded: { bg: '#fef9c3', color: '#0891b2' },
   voided: { bg: '#fee2e2', color: '#ef4444' },
+  // A credit SALE is cancelled, never "refunded".
+  cancelled: { bg: '#fee2e2', color: '#ef4444' },
 };
 
 const METHOD_ICONS = {
   cash: { label: 'Cash', bg: '#dcfce7', color: '#16a34a' },
   card: { label: 'Card', bg: '#eff6ff', color: '#0891b2' },
   mobile: { label: 'Mobile Pay', bg: '#f5f3ff', color: '#7c3aed' },
+  credit: { label: 'On Credit', bg: '#ffedd5', color: '#ea580c' },
 };
 
 const RECEIPT_TYPE_CONFIG = {
@@ -69,6 +74,7 @@ const RECEIPT_TYPE_CONFIG = {
   laybye_deposit: { label: 'LAYBYE DEPOSIT', bg: '#effcdc', color: '#6366F1' },
   laybye_payment: { label: 'LAYBYE PAYMENT', bg: '#fcf6dc', color: '#0891b2' },
   laybye_final: { label: 'LAYBYE FINAL PAYMENT', bg: '#fce3dc', color: '#7C3AED' },
+  credit_payment: { label: 'CREDIT PAYMENT', bg: '#DCFCE7', color: '#16A34A' },
 };
 
 // ─── Printable single-receipt template ──────────────────────────────────
@@ -248,11 +254,14 @@ export default function Receipts() {
       
     } catch (e) { /* ignore */ }
     const payment = payments[0];
+    // owing | paid | cancelled for a credit SALE (null otherwise)
+    const creditStatus = getCreditStatus({ ...r, totals, baseTotals });
     return {
       ...r,
       id: r.receiptId || r.id,
       store: branchName || r.store || 'Store',
-      method: payment?.method || r.method || 'cash',
+      creditStatus,
+      method: creditStatus ? 'credit' : (payment?.method || r.method || 'cash'),
       total: totals.grandTotal || totals.total || r.total || 0,
       baseTotal: baseTotals.grandTotal ?? (totals.grandTotal || totals.total || r.total || 0),
       totals,
@@ -355,11 +364,13 @@ export default function Receipts() {
 
   const receiptStats = useMemo(() => {
     const total = filteredReceipts.length;
+    // A credit SALE collected nothing so it is not sales (its money is counted
+    // on the credit PAYMENT receipt); cancelled/voided are not sales either.
     const totalSales = filteredReceipts
-      .filter(r => r.status !== 'voided')
+      .filter(r => r.status !== 'voided' && r.status !== 'cancelled' && !r.creditStatus)
       .reduce((sum, r) => sum + (r.baseTotal || 0), 0);
     const completedCount = filteredReceipts.filter(r => r.status === 'completed').length;
-    const refundedCount = filteredReceipts.filter(r => r.status === 'refunded' || r.status === 'partially_refunded').length;
+    const refundedCount = filteredReceipts.filter(r => !r.creditStatus && (r.status === 'refunded' || r.status === 'partially_refunded')).length;
     return { total, totalSales, completedCount, refundedCount };
   }, [filteredReceipts]);
 
@@ -533,9 +544,9 @@ export default function Receipts() {
   const renderReceiptDetail = () => {
     if (!selectedReceipt) return null;
     const r = selectedReceipt;
-    const status = STATUS_COLORS[r.status] || STATUS_COLORS.completed;
+    const status = r.creditStatus ? CREDIT_STATUS_BADGE[r.creditStatus] : (STATUS_COLORS[r.status] || STATUS_COLORS.completed);
     const method = METHOD_ICONS[r.method] || METHOD_ICONS.cash;
-    const statusLabel = r.status?.charAt(0).toUpperCase() + r.status?.slice(1) || 'Completed';
+    const statusLabel = r.creditStatus ? CREDIT_STATUS_BADGE[r.creditStatus].label : (r.status?.charAt(0).toUpperCase() + r.status?.slice(1) || 'Completed');
     const receiptType = r.receiptType || 'sale';
     const typeConfig = RECEIPT_TYPE_CONFIG[receiptType] || RECEIPT_TYPE_CONFIG.sale;
     const isLaybyeReceipt = ['laybye_deposit', 'laybye_payment', 'laybye_final'].includes(receiptType);
@@ -749,6 +760,30 @@ export default function Receipts() {
           </div>
 
           <hr className="reports-modal-divider" />
+          {(r.creditStatus || isCreditPaymentReceipt(r)) && (
+            <div style={{
+              padding: 12, borderRadius: 10, textAlign: 'center', marginBottom: 8,
+              background: r.creditStatus === 'owing' ? '#fff7ed' : r.creditStatus === 'cancelled' ? '#fef2f2' : '#f0fdf4',
+              border: `1px solid ${r.creditStatus === 'owing' ? '#fed7aa' : r.creditStatus === 'cancelled' ? '#fecaca' : '#bbf7d0'}`,
+            }}>
+              <div style={{ fontWeight: 800, fontSize: 12, letterSpacing: 0.5, color: r.creditStatus ? CREDIT_STATUS_BADGE[r.creditStatus].color : '#16a34a' }}>
+                {r.creditStatus === 'owing' ? 'SOLD ON CREDIT — OWES'
+                  : r.creditStatus === 'paid' ? 'PAID UP'
+                  : r.creditStatus === 'cancelled' ? 'CREDIT SALE CANCELLED'
+                  : 'CREDIT PAID IN FULL'}
+              </div>
+              {r.creditStatus === 'owing' && (
+                <div style={{ color: '#9a3412', marginTop: 4, fontSize: 13 }}>{sym}{Number(r.totals?.balanceDue || r.totals?.grandTotal || 0).toFixed(2)} not yet collected</div>
+              )}
+              {r.creditStatus === 'paid' && r.totals?.creditPaymentReceiptNumber && (
+                <div style={{ color: '#166534', marginTop: 4, fontSize: 13 }}>Settled by receipt {r.totals.creditPaymentReceiptNumber}</div>
+              )}
+              {isCreditPaymentReceipt(r) && r.totals?.creditParentReceiptNumber && (
+                <div style={{ color: '#166534', marginTop: 4, fontSize: 13 }}>Settles credit receipt {r.totals.creditParentReceiptNumber}</div>
+              )}
+            </div>
+          )}
+          {!r.creditStatus && (<>
           <div className="reports-modal-section-title">Payment Method</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
             <div style={{ width: 30, height: 30, borderRadius: 8, background: method.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -762,6 +797,7 @@ export default function Receipts() {
 
           <div className="reports-modal-row"><span className="reports-modal-row-label">Total Paid</span><span>{sym}{Number(r.totals?.paid ?? r.payments?.[0]?.amount ?? 0).toFixed(2)}</span></div>
           <div className="reports-modal-row"><span className="reports-modal-row-label" style={{ color: '#16a34a' }}>Change</span><span style={{ color: '#16a34a' }}>{sym}{Number(r.totals?.change ?? 0).toFixed(2)}</span></div>
+          </>)}
         </div>
       </div>
     );
@@ -880,7 +916,7 @@ export default function Receipts() {
           ) : (
             <>
               {visibleReceipts.map(r => {
-                const status = STATUS_COLORS[r.status] || STATUS_COLORS.completed;
+                const status = r.creditStatus ? CREDIT_STATUS_BADGE[r.creditStatus] : (STATUS_COLORS[r.status] || STATUS_COLORS.completed);
                 const method = METHOD_ICONS[r.method] || METHOD_ICONS.cash;
                 return (
                   <div key={r.id} className="reports-list-item" onClick={() => handleReceiptClick(r)}>
@@ -911,8 +947,11 @@ export default function Receipts() {
                         <span>{r.store}</span>
                         <span>{new Date(r.createdAt).toLocaleString()}</span>
                         <span className={`reports-list-item-badge ${r.status}`} style={{ background: status.bg, color: status.color }}>
-                          {r.status?.charAt(0).toUpperCase() + r.status?.slice(1)}
+                          {r.creditStatus ? CREDIT_STATUS_BADGE[r.creditStatus].label : (r.status?.charAt(0).toUpperCase() + r.status?.slice(1))}
                         </span>
+                        {isCreditPaymentReceipt(r) && (
+                          <span style={{ background: '#dcfce7', color: '#16a34a', padding: '0 6px', borderRadius: 3, fontSize: 10, fontWeight: 600 }}>Credit Payment</span>
+                        )}
                         <span style={{ background: method.bg, color: method.color, padding: '0 6px', borderRadius: 3, fontSize: 10, fontWeight: 600 }}>{method.label}</span>
                       </div>
                     </div>

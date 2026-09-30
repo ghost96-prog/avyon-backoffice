@@ -15,6 +15,8 @@ import Shifts from "./pages/Shifts";
 import CashManagement from "./pages/CashManagement";
 import Customers from "./pages/Customers";
 import Laybyes from "./pages/Laybyes";
+import Credit from "./pages/Credit"; // ✅ NEW — credit sales / receivables
+import CustomerCreditLedger from "./pages/CustomerCreditLedger"; // ✅ NEW
 import Products from "./pages/Products";
 import ProductForm from "./pages/ProductForm";
 import CategoriesDiscounts from "./pages/CategoriesDiscounts";
@@ -48,6 +50,7 @@ const REAL_PAGES = {
   '/reports/shifts': Shifts,
   '/reports/cash-management': CashManagement,
   '/reports/laybyes': Laybyes,
+  '/credit': Credit,
   '/customers': Customers,
   '/inventory/products': Products,
   '/inventory/import-stock': ImportStock,
@@ -127,6 +130,17 @@ export default function App() {
                 element={
                   <RequirePermission permission={P.VIEW_STOCK}>
                     <ProductForm />
+                  </RequirePermission>
+                }
+              />
+
+              {/* ✅ NEW — customer credit statement / record payment. Reached
+                  via navigate() from Customers.jsx or Credit.jsx, not a nav link. */}
+              <Route
+                path="credit/:customerId"
+                element={
+                  <RequirePermission permission={P.MANAGE_CUSTOMERS}>
+                    <CustomerCreditLedger />
                   </RequirePermission>
                 }
               />

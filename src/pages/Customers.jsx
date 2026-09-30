@@ -37,6 +37,10 @@ export default function Customers() {
   const [detailBranchId, setDetailBranchId] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState(emptyForm);
+  // ✅ NEW — credit settings, edited separately from the basic profile
+  // fields above. outstandingBalance is never part of this form — it's
+  // read-only here and only ever moves via a sale or a recorded payment.
+  const [editCreditForm, setEditCreditForm] = useState({ creditEnabled: false, creditLimit: '', allowCreditAboveLimit: false });
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState(emptyForm);
@@ -110,6 +114,11 @@ export default function Customers() {
     setDetailCustomer({ ...customer, previousPurchases: parsePurchases(customer.previousPurchases) });
     setDetailBranchId(customer.branchId);
     setEditForm({ name: customer.name || '', email: customer.email || '', phone: customer.phone || '', address: customer.address || '', notes: customer.notes || '' });
+    setEditCreditForm({
+      creditEnabled: !!customer.creditEnabled,
+      creditLimit: customer.creditLimit ? String(customer.creditLimit) : '',
+      allowCreditAboveLimit: !!customer.allowCreditAboveLimit,
+    });
     setIsEditing(false);
   };
 
@@ -121,7 +130,14 @@ export default function Customers() {
     try {
       await apiFetch(`/business/${businessId}/branches/${detailBranchId}/customers/${detailCustomer.customerId}`, {
         method: 'PUT',
-        body: JSON.stringify({ ...editForm, staffId }),
+        body: JSON.stringify({
+          ...editForm,
+          // ✅ NEW — credit settings (outstandingBalance is never sent here)
+          creditEnabled: editCreditForm.creditEnabled,
+          creditLimit: parseFloat(editCreditForm.creditLimit) || 0,
+          allowCreditAboveLimit: editCreditForm.allowCreditAboveLimit,
+          staffId,
+        }),
       });
       await fetchCustomers();
       setIsEditing(false);
@@ -132,7 +148,7 @@ export default function Customers() {
     } finally {
       setSaving(false);
     }
-  }, [apiFetch, businessId, detailBranchId, detailCustomer, editForm, staffId, fetchCustomers]);
+  }, [apiFetch, businessId, detailBranchId, detailCustomer, editForm, editCreditForm, staffId, fetchCustomers]);
 
   const handleDelete = useCallback(async (customer) => {
     if (!window.confirm(`Delete "${customer.name}"? This cannot be undone.`)) return;
@@ -196,6 +212,12 @@ export default function Customers() {
           <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
             <Store size={14} /> <span>{selectedBranchName}</span>
           </button>
+          {/* ✅ NEW — quick link to the branch-wide receivables dashboard */}
+          <button
+            onClick={() => navigate('/credit')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid #FED7AA', background: '#FFF7ED', color: '#EA580C', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+            Credit / Receivables
+          </button>
           <button
             onClick={openCreateModal}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 8, border: '1px solid #BFDBFE', background: '#EFF6FF', color: '#0891B2', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
@@ -242,6 +264,12 @@ export default function Customers() {
               <div className="reports-list-item-right">
                 <div className="reports-list-item-amount">{formatMoney(c.totalSpent || 0, baseCurrency)}</div>
                 <div style={{ fontSize: 11, color: '#8b97a7' }}>{c.visits || 0} visits</div>
+                {/* ✅ NEW — quick-glance credit balance */}
+                {c.creditEnabled && (c.outstandingBalance || 0) > 0 && (
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#EA580C', marginTop: 2 }}>
+                    Owes {formatMoney(c.outstandingBalance, baseCurrency)}
+                  </div>
+                )}
               </div>
               <button onClick={(e) => { e.stopPropagation(); handleDelete(c); }} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 8, marginLeft: 4 }}>
                 <Trash2 size={16} color="#EF4444" />
@@ -308,6 +336,29 @@ export default function Customers() {
                     </div>
                   </div>
 
+                  {/* ✅ NEW — Credit account (only shown once enabled) */}
+                  {!!detailCustomer.creditEnabled && (
+                    <>
+                      <hr className="reports-modal-divider" />
+                      <div className="reports-modal-section-title">Credit Account</div>
+                      <div className="reports-modal-row">
+                        <span className="reports-modal-row-label">Outstanding balance</span>
+                        <span style={{ fontWeight: 700, color: (detailCustomer.outstandingBalance || 0) > 0 ? '#EA580C' : '#0F172A' }}>
+                          {formatMoney(detailCustomer.outstandingBalance || 0, baseCurrency)}
+                        </span>
+                      </div>
+                      <div className="reports-modal-row">
+                        <span className="reports-modal-row-label">Credit limit</span>
+                        <span>{detailCustomer.creditLimit ? formatMoney(detailCustomer.creditLimit, baseCurrency) : 'No limit'}</span>
+                      </div>
+                      <button
+                        onClick={() => navigate(`/credit/${detailCustomer.customerId}`, { state: { branchId: detailBranchId } })}
+                        style={{ width: '100%', marginTop: 6, marginBottom: 8, padding: '9px', borderRadius: 8, border: '1px solid #0891B2', background: '#fff', color: '#0891B2', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                        View Statement / Record Payment
+                      </button>
+                    </>
+                  )}
+
                   <hr className="reports-modal-divider" />
                   <div className="reports-modal-section-title">Previous Purchases</div>
                   {(() => {
@@ -343,6 +394,45 @@ export default function Customers() {
                       />
                     </div>
                   ))}
+
+                  {/* ✅ NEW — credit settings. outstandingBalance is never
+                      edited here — only via a sale or a recorded payment. */}
+                  <hr className="reports-modal-divider" />
+                  <div className="reports-modal-section-title">Credit Sales</div>
+                  <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, cursor: 'pointer' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>Enable credit for this customer</span>
+                    <input
+                      type="checkbox"
+                      checked={editCreditForm.creditEnabled}
+                      onChange={(e) => setEditCreditForm({ ...editCreditForm, creditEnabled: e.target.checked })}
+                      style={{ width: 18, height: 18, cursor: 'pointer' }}
+                    />
+                  </label>
+                  {editCreditForm.creditEnabled && (
+                    <>
+                      <div style={{ marginBottom: 14 }}>
+                        <label style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', display: 'block', marginBottom: 4 }}>
+                          Credit limit ({baseCurrency?.symbol || '$'})
+                        </label>
+                        <input
+                          value={editCreditForm.creditLimit}
+                          onChange={(e) => setEditCreditForm({ ...editCreditForm, creditLimit: e.target.value.replace(/[^0-9.]/g, '') })}
+                          placeholder="0.00"
+                          style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14, boxSizing: 'border-box' }}
+                        />
+                      </div>
+                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, cursor: 'pointer' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>Allow sales above the limit</span>
+                        <input
+                          type="checkbox"
+                          checked={editCreditForm.allowCreditAboveLimit}
+                          onChange={(e) => setEditCreditForm({ ...editCreditForm, allowCreditAboveLimit: e.target.checked })}
+                          style={{ width: 18, height: 18, cursor: 'pointer' }}
+                        />
+                      </label>
+                    </>
+                  )}
+
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button onClick={() => setIsEditing(false)} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                     <button onClick={handleSaveEdit} disabled={saving || !editForm.name.trim()} style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.7 : 1 }}>
