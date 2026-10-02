@@ -39,6 +39,7 @@ import PurchaseOrders from "./pages/PurchaseOrders";
 import Quotations from "./pages/Qoutations";
 import Suppliers from "./pages/Suppliers";
 import Community from "./pages/Community";
+import PrinterGroups from "./pages/PrinterGroups";
 // import CommunityPostDetail from "./pages/CommunityPostDetail";
 
 const REAL_PAGES = {
@@ -65,6 +66,7 @@ const REAL_PAGES = {
   '/branches': BranchComparison,
   '/staff': StaffPerformance,
   '/business': BusinessProfile,
+'/system/printer-groups': PrinterGroups,
 '/purchase-orders': PurchaseOrders,
 '/quotations': Quotations,
 '/suppliers': Suppliers,

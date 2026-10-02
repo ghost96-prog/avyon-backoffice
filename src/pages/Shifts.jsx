@@ -136,6 +136,8 @@ export default function Shifts() {
     cardSales: s.cardSales || 0,
     mobileSales: s.mobileSales || 0,
     otherSales: s.otherSales || 0,
+    // Credit sold this shift — NOT collected, NOT in gross/net sales.
+    creditSales: s.creditSales || 0,
     totalPayIn: s.totalPayIn || 0,
     totalPayOut: s.totalPayOut || 0,
     totalExpenses: s.totalExpenses || 0,
@@ -600,6 +602,7 @@ export default function Shifts() {
         ['Cash', formatMoney(s.cashSales, baseCurrency)],
         ['Card', formatMoney(s.cardSales, baseCurrency)],
         ['Mobile Pay', formatMoney(s.mobileSales, baseCurrency)],
+        ...(s.creditSales > 0 ? [['Credit (not collected)', formatMoney(s.creditSales, baseCurrency)]] : []),
         ['Receipts', s.receiptCount],
         ['Refunds', s.refundCount],
         ['Gross Sales', formatMoney(s.grossSales, baseCurrency)],
@@ -748,6 +751,9 @@ export default function Shifts() {
             <div className="reports-modal-row"><span className="reports-modal-row-label">Cash</span><span>{formatMoney(s.cashSales, baseCurrency)}</span></div>
             <div className="reports-modal-row"><span className="reports-modal-row-label">Card</span><span>{formatMoney(s.cardSales, baseCurrency)}</span></div>
             <div className="reports-modal-row"><span className="reports-modal-row-label">Mobile Pay</span><span>{formatMoney(s.mobileSales, baseCurrency)}</span></div>
+            {s.creditSales > 0 && (
+              <div className="reports-modal-row"><span className="reports-modal-row-label" style={{ color: '#ea580c' }}>Credit (not collected)</span><span style={{ color: '#ea580c' }}>{formatMoney(s.creditSales, baseCurrency)}</span></div>
+            )}
             <div className="reports-modal-row"><span className="reports-modal-row-label">Receipts</span><span>{s.receiptCount}</span></div>
             <div className="reports-modal-row"><span className="reports-modal-row-label">Refunds</span><span>{s.refundCount}</span></div>
             <div className="reports-modal-row"><span className="reports-modal-row-label">Gross Sales</span><span>{formatMoney(s.grossSales, baseCurrency)}</span></div>

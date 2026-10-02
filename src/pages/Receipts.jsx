@@ -122,6 +122,7 @@ function ReceiptPrintTemplate({ receipt }) {
       </div>
 
       <div style={{ borderTop: '1px dashed #000', borderBottom: '1px dashed #000', padding: '6px 0', marginBottom: 8, textAlign: 'center' }}>
+        {r.totals?.orderNumber != null && <div style={{ fontWeight: 700 }}>Order #{r.totals.orderNumber}</div>}
         <div>{r.receiptNumber}</div>
         <div>{new Date(r.createdAt).toLocaleDateString()}</div>
         <div>{new Date(r.createdAt).toLocaleTimeString()}</div>
@@ -599,6 +600,7 @@ export default function Receipts() {
             <span>Cashier: {r.cashierName}</span>
           </div>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 13, color: '#5e6f8a', marginBottom: 12 }}>
+            {r.totals?.orderNumber != null && <span style={{ fontWeight: 700, color: '#0F172A' }}>Order #{r.totals.orderNumber}</span>}
             <span>Customer: {r.customerName}</span>
             {r.shiftNumber && <span>Shift #{r.shiftNumber}</span>}
           </div>

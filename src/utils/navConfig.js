@@ -29,6 +29,7 @@ import {
     Truck,
   FileText,
   CreditCard,
+  Printer,
 
 } from "lucide-react";
 import { BACKOFFICE_PERMISSIONS as P } from "./permissions";
@@ -101,6 +102,7 @@ export const NAV_SECTIONS = [
     label: "System",
     items: [
       { id: "business", label: "Business Profile", to: "/business", icon: Building2, permission: "*" },
+      { id: "printer-groups", label: "Printer Groups", to: "/system/printer-groups", icon: Printer, permission: P.MANAGE_SETTINGS },
     ],
   },
 ];
