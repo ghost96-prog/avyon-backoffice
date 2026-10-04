@@ -1,7 +1,7 @@
 // src/components/common/DateRangeNav.jsx
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
-import { DATE_OPTIONS, formatDateRangeLabel } from '../../hooks/useDateRange';
+import { DATE_OPTIONS, formatDateRangeLabel, toApiDate } from '../../hooks/useDateRange';
 import Button from './Button';
 import './DateRangeNav.css';
 
@@ -25,8 +25,8 @@ export default function DateRangeNav({ startDate, endDate, onNavigate, onOptionS
 
   const handleOptionClick = (option) => {
     if (option.id === 'custom') {
-      setCustomStart(startDate.toISOString().split('T')[0]);
-      setCustomEnd(endDate.toISOString().split('T')[0]);
+      setCustomStart(toApiDate(startDate));
+      setCustomEnd(toApiDate(endDate));
       setShowCustomPicker(true);
       return;
     }

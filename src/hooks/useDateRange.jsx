@@ -14,8 +14,10 @@ export const DATE_OPTIONS = [
   { id: 'custom', label: 'Custom Range', type: 'custom', value: 0 },
 ];
 
+// Local calendar date (YYYY-MM-DD). NOT toISOString(): that converts local midnight to UTC,
+// which shifts the date back a day in any timezone ahead of UTC (e.g. Harare, UTC+2).
 export function toApiDate(d) {
-  return d.toISOString().split('T')[0];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export function formatDateDisplay(d) {

@@ -55,8 +55,10 @@ const STAT_META = {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// Local calendar date (YYYY-MM-DD). NOT toISOString(): that converts local midnight to UTC,
+// which shifts the date back a day in any timezone ahead of UTC (e.g. Harare, UTC+2).
 function toApiDate(d) {
-  return d.toISOString().split("T")[0];
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function formatDateDisplay(d) {

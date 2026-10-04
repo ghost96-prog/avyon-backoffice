@@ -23,9 +23,15 @@ export function formatCompact(value) {
   return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
 
+// Local calendar date (YYYY-MM-DD). NOT toISOString(): that converts local midnight to UTC,
+// which shifts the date back a day in any timezone ahead of UTC (e.g. Harare, UTC+2).
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function todayRange() {
   const d = new Date();
-  const iso = d.toISOString().slice(0, 10);
+  const iso = localDate(d);
   return { startDate: iso, endDate: iso };
 }
 
@@ -33,5 +39,5 @@ export function lastNDaysRange(n) {
   const end = new Date();
   const start = new Date();
   start.setDate(start.getDate() - (n - 1));
-  return { startDate: start.toISOString().slice(0, 10), endDate: end.toISOString().slice(0, 10) };
+  return { startDate: localDate(start), endDate: localDate(end) };
 }
