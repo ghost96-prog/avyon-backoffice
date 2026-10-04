@@ -14,6 +14,15 @@ export const DATE_OPTIONS = [
   { id: 'custom', label: 'Custom Range', type: 'custom', value: 0 },
 ];
 
+// Inclusive number of CALENDAR days from a to b (ignores time of day).
+// A raw ms difference rounded up turns a 7-day range into 8 when the two dates
+// carry different times of day (date pickers keep the previous date's time).
+function inclusiveDays(a, b) {
+  const d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const d1 = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round(Math.abs(d1 - d0) / 86400000) + 1;
+}
+
 // Local calendar date (YYYY-MM-DD). NOT toISOString(): that converts local midnight to UTC,
 // which shifts the date back a day in any timezone ahead of UTC (e.g. Harare, UTC+2).
 export function toApiDate(d) {
@@ -77,7 +86,7 @@ function computeRangeForOption(optionId, currentStart, currentEnd) {
       start = currentStart || today;
       end = currentEnd || today;
       type = 'custom';
-      value = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1;
+      value = inclusiveDays(start, end);
       break;
     default:
       break;
@@ -203,7 +212,7 @@ export function useDateRange(initialOption = 'today') {
   const handleOptionSelect = useCallback(
     (optionId, customStart, customEnd) => {
       if (optionId === 'custom' && customStart && customEnd) {
-        const days = Math.ceil(Math.abs(customEnd - customStart) / (1000 * 60 * 60 * 24)) + 1;
+        const days = inclusiveDays(customStart, customEnd);
         updateDateRange('custom', customStart, customEnd, 'custom', days);
         return;
       }
@@ -230,14 +239,21 @@ export function useDateRange(initialOption = 'today') {
         newEnd.setDate(newEnd.getDate() + days);
       } else if (dateRangeType === 'month') {
         const months = dateRangeValue * sign;
-        newStart.setMonth(newStart.getMonth() + months);
-        newEnd.setMonth(newEnd.getMonth() + months);
+        // Whole calendar months: first day of the target month to its LAST day.
+        // (Adding a month to each date separately gives Oct 30 / "Sep 31" -> Oct 1.)
+        const _mStart = new Date(newStart.getFullYear(), newStart.getMonth() + (months), 1);
+        const _mEnd = new Date(_mStart.getFullYear(), _mStart.getMonth() + dateRangeValue, 0);
+        newStart.setTime(_mStart.getTime());
+        newEnd.setTime(_mEnd.getTime());
       } else if (dateRangeType === 'year') {
         const years = dateRangeValue * sign;
-        newStart.setFullYear(newStart.getFullYear() + years);
-        newEnd.setFullYear(newEnd.getFullYear() + years);
+        // Whole calendar years: Jan 1 to Dec 31.
+        const _yStart = new Date(newStart.getFullYear() + (years), 0, 1);
+        const _yEnd = new Date(_yStart.getFullYear() + dateRangeValue - 1, 11, 31);
+        newStart.setTime(_yStart.getTime());
+        newEnd.setTime(_yEnd.getTime());
       } else if (dateRangeType === 'custom') {
-        const diffDays = (Math.ceil(Math.abs(endDate - startDate) / (1000 * 60 * 60 * 24)) + 1) * sign;
+        const diffDays = (inclusiveDays(startDate, endDate)) * sign;
         newStart.setDate(newStart.getDate() + diffDays);
         newEnd.setDate(newEnd.getDate() + diffDays);
       }
