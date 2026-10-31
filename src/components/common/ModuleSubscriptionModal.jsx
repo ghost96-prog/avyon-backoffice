@@ -6,9 +6,11 @@
 // subscription. Shows what the module unlocks, its price, and lets the
 // person reach support directly to pay — no in-app payment flow, matches
 // the existing SubscriptionsScreen "contact support to pay" pattern.
+// Update: it can also pay online via EcoCash (see handlePayNow) — same flow
+// as the base subscription — with support kept as the fallback.
 
 import React, { useState } from 'react';
-import { X, Lock, Clock, AlertTriangle, Check, MessageCircle, Phone, Mail } from 'lucide-react';
+import { X, Lock, Clock, AlertTriangle, Check, MessageCircle, Phone, Mail, Smartphone } from 'lucide-react';
 import { getModuleInfo } from '../../utils/moduleCatalog';
 import { useAppContext } from '../../context/AppContext';
 import './ModuleSubscriptionModal.css';
@@ -62,6 +64,18 @@ export default function ModuleSubscriptionModal({ moduleId, moduleState, onClose
     } finally {
       setTrialLoading(false);
     }
+  };
+
+  // Same EcoCash (ZB Smile&Pay) flow as the base subscription, scoped to this
+  // module. SubscriptionPayHost (mounted in the TopBar) owns the pay modal.
+  const handlePayNow = () => {
+    if (!activeBranchId) return;
+    window.dispatchEvent(
+      new CustomEvent('subscription-pay:open', {
+        detail: { branchId: activeBranchId, moduleId, moduleLabel: info.label },
+      })
+    );
+    onClose?.();
   };
 
   const supportMessage = `Hi, I'd like to subscribe to the "${info.label}" module${
@@ -166,11 +180,27 @@ export default function ModuleSubscriptionModal({ moduleId, moduleState, onClose
           </div>
         )}
 
+        {/* Pay online — same EcoCash flow as the base subscription */}
+        {!trialJustStarted && !isSuspended && (
+          <div className="msm-trial-block">
+            <button
+              className="msm-trial-btn"
+              style={{ background: info.color }}
+              onClick={handlePayNow}
+              disabled={!activeBranchId}
+            >
+              <Smartphone size={15} style={{ verticalAlign: '-2px', marginRight: 6 }} />
+              {isExpired ? 'Renew with EcoCash' : 'Subscribe with EcoCash'}
+            </button>
+            <div className="msm-trial-hint">${info.price}{info.period} · pay securely from your phone.</div>
+          </div>
+        )}
+
         {/* Footer — support actions (skip trial / renew / resolve suspension) */}
         {!trialJustStarted && (
           <div className="msm-footer">
             <div className="msm-footer-label">
-              {canStartTrial ? "Prefer to subscribe directly? Contact support:" : "Ready to subscribe? Contact support to activate:"}
+              {canStartTrial ? "Prefer to subscribe directly? Contact support:" : "Need help? Contact support:"}
             </div>
             <div className="msm-support-actions">
               <a className="msm-support-btn msm-support-btn--whatsapp" href={whatsappUrl} target="_blank" rel="noopener noreferrer">

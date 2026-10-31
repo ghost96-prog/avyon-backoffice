@@ -29,6 +29,7 @@ import StockTake from "./pages/StockTake";
 import SalesAnalytics from "./pages/SalesAnalytics";
 import ProfitAnalytics from "./pages/ProfitAnalytics";
 import ProductPerformance from "./pages/ProductPerformance";
+import Intelligence from "./pages/Intelligence";
 import InventoryAnalytics from "./pages/InventoryAnalytics";
 import { NAV_SECTIONS } from "./utils/navConfig";
 import { BACKOFFICE_PERMISSIONS as P } from "./utils/permissions";
@@ -40,6 +41,7 @@ import Quotations from "./pages/Qoutations";
 import Suppliers from "./pages/Suppliers";
 import Community from "./pages/Community";
 import PrinterGroups from "./pages/PrinterGroups";
+import Taxes from "./pages/Taxes";
 // import CommunityPostDetail from "./pages/CommunityPostDetail";
 
 const REAL_PAGES = {
@@ -67,6 +69,7 @@ const REAL_PAGES = {
   '/staff': StaffPerformance,
   '/business': BusinessProfile,
 '/system/printer-groups': PrinterGroups,
+'/system/taxes': Taxes,
 '/purchase-orders': PurchaseOrders,
 '/quotations': Quotations,
 '/suppliers': Suppliers,
@@ -143,6 +146,16 @@ export default function App() {
                 element={
                   <RequirePermission permission={P.MANAGE_CUSTOMERS}>
                     <CustomerCreditLedger />
+                  </RequirePermission>
+                }
+              />
+
+              {/* ✅ Avyon Intelligence — not in sidebar nav, reached via the TopBar button */}
+              <Route
+                path="intelligence"
+                element={
+                  <RequirePermission permission={P.VIEW_SALES_REPORTS}>
+                    <Intelligence />
                   </RequirePermission>
                 }
               />

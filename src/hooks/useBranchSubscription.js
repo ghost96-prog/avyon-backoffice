@@ -62,6 +62,14 @@ export function useBranchSubscriptions() {
     refresh();
   }, [refresh]);
 
+  // A payment (SubscriptionPayModal) just landed — refetch so the countdown
+  // bar and badges flip to the new expiry without a page reload.
+  useEffect(() => {
+    const onRefresh = () => refresh();
+    window.addEventListener('branch-subscriptions:refresh', onRefresh);
+    return () => window.removeEventListener('branch-subscriptions:refresh', onRefresh);
+  }, [refresh]);
+
   // Real-time: recompute every second
   const [now, setNow] = useState(Date.now());
   useEffect(() => {

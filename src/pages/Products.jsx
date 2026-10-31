@@ -17,6 +17,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { downloadProductTemplate, downloadProductsForReimport } from '../utils/csvUtils';
 import { useModuleGate } from '../hooks/useModuleGate';
+import { useBranchTax } from '../hooks/useBranchTax';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 
 // Lightweight success/error banner — auto-dismisses after 3 seconds.
@@ -330,6 +331,7 @@ export default function Products() {
   const [deleteProgress, setDeleteProgress] = useState(null);
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
+  const branchTax = useBranchTax(selectedBranchId); // enabled = fiscalised store (HS code / tax columns in CSVs)
 
   const cacheKey = businessId && selectedBranchId ? `${businessId}:${selectedBranchId}` : null;
 
@@ -790,11 +792,11 @@ export default function Products() {
     setIsExporting(true);
     try {
       const branchTag = selectedBranchName.toLowerCase().replace(/\s+/g, '-');
-      downloadProductsForReimport(filteredProducts, branchTag);
+      downloadProductsForReimport(filteredProducts, branchTag, categories, branchTax.enabled);
     } finally {
       setIsExporting(false);
     }
-  }, [filteredProducts, selectedBranchName, isExporting, guardAction]);
+  }, [filteredProducts, selectedBranchName, isExporting, guardAction, categories, branchTax.enabled]);
 
   const handleExportPdf = useCallback(() => {
     if (isExporting || !filteredProducts.length) return;
@@ -886,8 +888,8 @@ export default function Products() {
 
   const handleDownloadTemplate = useCallback(() => {
     if (!guardAction('inventory_mgmt')) return;
-    downloadProductTemplate();
-  }, [guardAction]);
+    downloadProductTemplate(branchTax.enabled);
+  }, [guardAction, branchTax.enabled]);
 
   const showStockColumn = canViewStock;
   const showLoadingBar = loading || refreshing;

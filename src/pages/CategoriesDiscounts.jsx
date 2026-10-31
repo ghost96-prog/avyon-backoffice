@@ -5,6 +5,8 @@ import {
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useSelectedBranch } from '../hooks/useSelectedBranch';
+import { useBranchTax } from '../hooks/useBranchTax';
+import { isValidHsCode, normalizeHsCode, HS_REQUIRED_MSG } from '../utils/fiscal';
 import ConfirmDeleteModal from '../components/common/ConfirmDeleteModal';
 import '../styles/ReportsShared.css';
 
@@ -86,6 +88,7 @@ export default function CategoriesDiscounts() {
   const [catModalOpen, setCatModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [catName, setCatName] = useState('');
+  const [catHsCode, setCatHsCode] = useState(''); // ZIMRA HS code, 8 digits (required on fiscalised stores)
   const [catSaving, setCatSaving] = useState(false);
 
   const [discModalOpen, setDiscModalOpen] = useState(false);
@@ -97,6 +100,8 @@ export default function CategoriesDiscounts() {
   const [deleteItem, setDeleteItem] = useState(null);
   const [deleteType, setDeleteType] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const branchTax = useBranchTax(selectedBranchId); // enabled = fiscalised store
 
   const selectedBranchName = branches?.find((b) => b.branchId === selectedBranchId)?.name || 'Select Store';
 
@@ -141,23 +146,40 @@ const fetchData = useCallback(async () => {
   const openCategoryModal = (cat = null) => {
     setEditingCategory(cat);
     setCatName(cat?.name || '');
+    setCatHsCode(cat?.hsCode || '');
     setCatModalOpen(true);
   };
 
   const handleSaveCategory = useCallback(async () => {
     if (!catName.trim()) return;
+    // Don't guess whether the store is fiscalised while its tax settings are still loading.
+    if (!branchTax.loaded) {
+      setError('Loading this store\'s tax settings. Try again in a moment.');
+      return;
+    }
+    const hsCode = normalizeHsCode(catHsCode);
+    if (branchTax.enabled && !hsCode) {
+      setError(HS_REQUIRED_MSG);
+      return;
+    }
+    if (!isValidHsCode(hsCode)) {
+      setError(branchTax.enabled
+        ? 'HS code must be exactly 8 digits (e.g. 22021000).'
+        : 'HS code must be exactly 8 digits (e.g. 22021000), or leave it empty.');
+      return;
+    }
     setCatSaving(true);
     setError(null);
     try {
       if (editingCategory) {
         await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories/${editingCategory.categoryId}`, {
           method: 'PUT',
-          body: JSON.stringify({ staffId, name: catName.trim() }),
+          body: JSON.stringify({ staffId, name: catName.trim(), hsCode }),
         });
       } else {
         await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/categories`, {
           method: 'POST',
-          body: JSON.stringify({ posId: 'web-dashboard', staffId, name: catName.trim() }),
+          body: JSON.stringify({ posId: 'web-dashboard', staffId, name: catName.trim(), hsCode }),
         });
       }
       setCatModalOpen(false);
@@ -168,7 +190,7 @@ const fetchData = useCallback(async () => {
     } finally {
       setCatSaving(false);
     }
-  }, [apiFetch, businessId, selectedBranchId, staffId, catName, editingCategory, fetchData]);
+  }, [apiFetch, businessId, selectedBranchId, staffId, catName, catHsCode, editingCategory, fetchData, branchTax.enabled, branchTax.loaded]);
 
   const openDeleteModal = useCallback((item, type) => {
     setDeleteItem(item);
@@ -417,6 +439,18 @@ const showLoadingBar = loading || catSaving || discSaving || isDeleting;
 >
   <span>{count}</span>
   <span>product{count !== 1 ? 's' : ''}</span>
+  {!isNoCategory && branchTax.enabled && (
+    <span style={{
+      fontSize: 10,
+      color: c.hsCode ? '#0891B2' : '#B45309',
+      background: c.hsCode ? '#EFF6FF' : '#FEF3C7',
+      padding: '1px 8px',
+      borderRadius: 4,
+      marginLeft: 4,
+    }}>
+      {c.hsCode ? `HS ${c.hsCode}` : 'No HS code'}
+    </span>
+  )}
   {isNoCategory && (
     <span style={{ 
       fontSize: 10, 
@@ -652,7 +686,14 @@ const showLoadingBar = loading || catSaving || discSaving || isDeleting;
               <div className="reports-modal-body">
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Category Name</label>
                 <input style={fieldInput()} value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Beverages" autoFocus />
-                <button onClick={handleSaveCategory} disabled={catSaving || !catName.trim()}
+                {/* ZIMRA field: exists only on a fiscalised (tax-enabled) store */}
+                {branchTax.enabled && (<>
+                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', margin: '12px 0 6px' }}>HS Code (ZIMRA) *</label>
+                <input style={fieldInput()} value={catHsCode} onChange={(e) => setCatHsCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))} placeholder="8 digits, e.g. 22021000 (required)" inputMode="numeric" maxLength={8} />
+                <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 4 }}>Required on fiscalised stores. Printed on fiscal receipts for every product in this category.</div>
+                </>)}
+                {error && <div style={{ fontSize: 12, color: '#DC2626', marginTop: 8 }}>{error}</div>}
+                <button onClick={handleSaveCategory} disabled={catSaving || !catName.trim() || (branchTax.enabled && !catHsCode)}
                   style={{ width: '100%', marginTop: 14, padding: 11, borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: catSaving ? 0.7 : 1 }}>
                   {catSaving ? 'Saving...' : editingCategory ? 'Save Changes' : 'Create Category'}
                 </button>

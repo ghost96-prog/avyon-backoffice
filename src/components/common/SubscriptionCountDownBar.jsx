@@ -138,8 +138,8 @@ export default function SubscriptionCountdownBar() {
                       </>
                     ) : row.reason === "expired" ? (
                       <>
-                        Branch <strong>{row.branchName}</strong> subscription has <strong>expired</strong>. Contact
-                        support to reactivate.
+                        Branch <strong>{row.branchName}</strong> subscription has <strong>expired</strong>. Subscribe now
+                        to reactivate.
                       </>
                     ) : (
                       <>
@@ -167,7 +167,7 @@ export default function SubscriptionCountdownBar() {
                           for <strong>{branchName}</strong>
                         </>
                       ) : null}{" "}
-                      has <strong>expired</strong>. Contact support to reactivate.
+                      has <strong>expired</strong>. Subscribe now to reactivate.
                     </>
                   ) : (
                     <>
@@ -178,11 +178,45 @@ export default function SubscriptionCountdownBar() {
                           for <strong>{branchName}</strong>
                         </>
                       ) : null}{" "}
-                      expires in <strong>{formatCountdown(row.msRemaining)}</strong> — renew to avoid interruption.
+                      expires in <strong>{formatCountdown(row.msRemaining)}</strong> — extend to avoid interruption.
                     </>
                   )}
                 </span>
               </div>
+
+              {/* {row.kind === "base" && row.reason !== "suspended" && (
+                <button
+                  className="sub-countdown-bar-btn sub-countdown-bar-btn--renew"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("subscription-pay:open", { detail: { branchId: row.branchId } })
+                    )
+                  }
+                >
+                  Subscribe now
+                </button>
+              )} */}
+
+              {/* Module rows: same EcoCash flow, scoped to the module. Expired → "Subscribe now",
+                  still active but ending soon → "Extend". Suspended modules go via support only. */}
+              {/* {row.kind === "module" && row.reason !== "suspended" && (
+                <button
+                  className="sub-countdown-bar-btn sub-countdown-bar-btn--renew"
+                  onClick={() =>
+                    window.dispatchEvent(
+                      new CustomEvent("subscription-pay:open", {
+                        detail: {
+                          branchId: effectiveBranchId,
+                          moduleId: row.moduleId,
+                          moduleLabel: row.info.label,
+                        },
+                      })
+                    )
+                  }
+                >
+                  {row.reason === "expired" ? "Subscribe now" : "Extend"}
+                </button>
+              )} */}
 
               <div className="sub-countdown-bar-support-wrap">
                 <button

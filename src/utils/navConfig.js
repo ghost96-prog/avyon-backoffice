@@ -30,6 +30,7 @@ import {
   FileText,
   CreditCard,
   Printer,
+  Percent,
 
 } from "lucide-react";
 import { BACKOFFICE_PERMISSIONS as P } from "./permissions";
@@ -103,6 +104,7 @@ export const NAV_SECTIONS = [
     items: [
       { id: "business", label: "Business Profile", to: "/business", icon: Building2, permission: "*" },
       { id: "printer-groups", label: "Printer Groups", to: "/system/printer-groups", icon: Printer, permission: P.MANAGE_SETTINGS },
+      { id: "taxes", label: "Taxes", to: "/system/taxes", icon: Percent, permission: P.MANAGE_SETTINGS },
     ],
   },
 ];

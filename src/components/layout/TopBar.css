@@ -257,3 +257,94 @@
     padding: 0 6px;
   }
 }
+
+/* ── Avyon Intelligence button: heartbeat + exploding fireworks ─────────────
+   One 2.4s loop. The icon does a "lub-dub"; the second beat (~24%) fires an
+   expanding ring and 12 sparks that fly outward and fade before the next loop. */
+.topbar-intel-btn {
+  --intel-accent: #f59e0b;
+  --intel-cycle: 2.4s;
+  position: relative;
+  overflow: visible;
+}
+
+.topbar-intel-btn .topbar-intel-icon {
+  color: var(--intel-accent);
+  filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.55));
+  transform-origin: center;
+  animation: intel-heartbeat var(--intel-cycle) ease-in-out infinite;
+}
+
+/* expanding shock-wave ring, timed to the second beat */
+.topbar-intel-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-sm);
+  border: 2px solid var(--intel-accent);
+  opacity: 0;
+  pointer-events: none;
+  animation: intel-ring var(--intel-cycle) ease-out infinite;
+}
+
+/* sparks are centred on the icon and thrown outward by rotating then translating */
+.topbar-intel-sparks {
+  position: absolute;
+  top: 50%;
+  left: 21px; /* desktop: 12px button padding + half of the 18px icon */
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.topbar-intel-spark {
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 6px 1px var(--c);
+  opacity: 0;
+  animation: intel-spark var(--intel-cycle) cubic-bezier(0.1, 0.7, 0.3, 1) infinite;
+}
+
+@keyframes intel-heartbeat {
+  0%   { transform: scale(1); }
+  8%   { transform: scale(1.3); }   /* lub */
+  16%  { transform: scale(1); }
+  24%  { transform: scale(1.22); }  /* dub — fireworks fire here */
+  36%  { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes intel-ring {
+  0%, 22% { opacity: 0; transform: scale(0.9); }
+  26%     { opacity: 0.55; transform: scale(1); }
+  55%     { opacity: 0; transform: scale(1.7); }
+  100%    { opacity: 0; transform: scale(1.7); }
+}
+
+@keyframes intel-spark {
+  0%, 22% { opacity: 0; transform: rotate(var(--a)) translateX(0) scale(0.4); }
+  26%     { opacity: 1; transform: rotate(var(--a)) translateX(4px) scale(1.2); }
+  58%     { opacity: 1; transform: rotate(var(--a)) translateX(var(--d)) scale(0.9); }
+  78%     { opacity: 0; transform: rotate(var(--a)) translateX(calc(var(--d) + 8px)) scale(0.2); }
+  100%    { opacity: 0; transform: rotate(var(--a)) translateX(calc(var(--d) + 8px)) scale(0.2); }
+}
+
+/* icon-only layout (≤768px): the button is a 36px square, so the icon centre is at 18px */
+@media (max-width: 768px) {
+  .topbar-intel-sparks { left: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-intel-btn .topbar-intel-icon,
+  .topbar-intel-btn::after,
+  .topbar-intel-spark {
+    animation: none;
+  }
+  .topbar-intel-sparks { display: none; }
+}

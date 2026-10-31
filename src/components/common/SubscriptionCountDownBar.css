@@ -155,3 +155,15 @@
     white-space: normal;
   }
 }
+/* Primary "Renew now" — sits left of Contact Support */
+.sub-countdown-bar-btn--renew {
+  margin-right: 8px;
+  flex-shrink: 0;
+  background: #234c6a;
+  border-color: #234c6a;
+  color: #fff;
+}
+.sub-countdown-bar-btn--renew:hover {
+  background: #357abd;
+  border-color: #357abd;
+}

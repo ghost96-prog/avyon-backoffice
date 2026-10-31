@@ -7,6 +7,7 @@ import {
 import { useAppContext } from '../context/AppContext';
 import { uploadProductImage, deleteProductImage } from '../services/productImageApi';
 import PackLinksEditor from '../components/common/PackLinksEditor';
+import { isValidHsCode, hasValidHsCode, normalizeHsCode, findDefaultVatTax, HS_REQUIRED_MSG } from '../utils/fiscal';
 import { computeUnitMultiplier, parsePackLinks } from '../utils/stockTransfer';
 import '../styles/ReportsShared.css';
 
@@ -71,7 +72,7 @@ const emptyForm = {
   sellingPrice: '0.00', costPrice: '0.00',
   trackInventory: true, currentStock: '0', lowStockThreshold: '0',
   status: 'active',
-  taxable: false, taxName: '', taxPercent: '0', taxInclusive: false,
+  taxId: null, // one branch tax per product (null = untaxed); prices always include tax
 };
 
 export default function ProductForm() {
@@ -89,6 +90,10 @@ export default function ProductForm() {
 
   const [form, setForm] = useState(emptyForm);
   const [categories, setCategories] = useState([]);
+  // Branch tax config (Taxes page): master switch + the list of taxes a product can use.
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [taxLoaded, setTaxLoaded] = useState(false); // false until this store's tax settings have arrived
+  const [taxes, setTaxes] = useState([]);
   const [loading, setLoading] = useState(isEdit);
   const [loadingSku, setLoadingSku] = useState(!isEdit);
   const [saving, setSaving] = useState(false);
@@ -103,6 +108,7 @@ export default function ProductForm() {
 
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryHsCode, setNewCategoryHsCode] = useState(''); // ZIMRA HS code, 8 digits (required on fiscalised stores)
 
   const [stockAdjustType, setStockAdjustType] = useState('add');
   const [adjustmentValue, setAdjustmentValue] = useState('');
@@ -189,6 +195,20 @@ const generateNextSKU = useCallback(async () => {
     }
   }, [apiFetch, businessId, branchId]);
 
+  useEffect(() => {
+    if (!businessId || !branchId) return;
+    let alive = true;
+    apiFetch(`/business/${businessId}/branches/${branchId}/settings`)
+      .then((st) => {
+        if (!alive) return;
+        setTaxEnabled(st?.taxEnabled === true);
+        setTaxes(Array.isArray(st?.taxes) ? st.taxes : []);
+        setTaxLoaded(true);
+      })
+      .catch((e) => { console.error('Load tax settings error:', e); if (alive) setTaxLoaded(true); });
+    return () => { alive = false; };
+  }, [apiFetch, businessId, branchId]);
+
   const loadProduct = useCallback(async () => {
     if (!isEdit || !businessId || !branchId) return;
     setLoading(true);
@@ -210,10 +230,7 @@ const generateNextSKU = useCallback(async () => {
         currentStock: String(p.currentStock ?? 0),
         lowStockThreshold: String(p.lowStockThreshold ?? 0),
         status: p.status || 'active',
-        taxable: !!p.taxable,
-        taxName: p.taxName || '',
-        taxPercent: p.taxPercent ? String(p.taxPercent) : '0',
-        taxInclusive: !!p.taxInclusive,
+        taxId: p.taxId || null,
       });
       setOriginalStock(p.currentStock || 0);
       setExistingImageUrl(p.imageUrl || null);
@@ -394,21 +411,31 @@ const generateNextSKU = useCallback(async () => {
 
   const handleAddCategory = useCallback(async () => {
     if (!newCategoryName.trim()) return;
+    const hsCode = normalizeHsCode(newCategoryHsCode);
+    if (taxEnabled && !hsCode) {
+      setError(HS_REQUIRED_MSG);
+      return;
+    }
+    if (!isValidHsCode(hsCode)) {
+      setError('HS code must be exactly 8 digits (e.g. 22021000)' + (taxEnabled ? '.' : ', or leave it empty.'));
+      return;
+    }
     try {
       const res = await apiFetch(`/business/${businessId}/branches/${branchId}/categories`, {
         method: 'POST',
-        body: JSON.stringify({ name: newCategoryName.trim(), posId: DASHBOARD_POS_ID, staffId }),
+        body: JSON.stringify({ name: newCategoryName.trim(), hsCode, posId: DASHBOARD_POS_ID, staffId }),
       });
       await loadCategories();
       setField('categoryId', res.categoryId);
       setField('categoryName', res.name);
       setNewCategoryName('');
+      setNewCategoryHsCode('');
       setAddCategoryOpen(false);
     } catch (e) {
       console.error('Add category error:', e);
       setError(e.message || 'Failed to add category');
     }
-  }, [apiFetch, businessId, branchId, newCategoryName, staffId, loadCategories]);
+  }, [apiFetch, businessId, branchId, newCategoryName, newCategoryHsCode, staffId, loadCategories, taxEnabled]);
 
   const searchReceivingProducts = useCallback(async (query) => {
     if (!query.trim() || !businessId || !branchId) {
@@ -700,6 +727,14 @@ const executeManualTransfer = useCallback(async () => {
     if (skuError) return skuError;
     if (isNaN(parseFloat(form.sellingPrice))) return 'Selling price is invalid';
     if (selectedUnit.requiresQuantityPerUnit && !form.itemsPerUnit) return `${selectedUnit.placeholder} is required`;
+    if (!taxLoaded) return 'Loading this store\'s tax settings. Try again in a moment.';
+    // Fiscalised store: the category must carry an HS code or the receipt can't be fiscalised.
+    if (taxEnabled) {
+      const cat = categories.find((c) => c.categoryId === form.categoryId);
+      if (!cat || !hasValidHsCode(cat.hsCode)) {
+        return `The category "${form.categoryName || 'No Category'}" has no HS code. This store is fiscalised, so pick (or create) a category with an 8-digit HS code before saving this product.`;
+      }
+    }
     return null;
   };
 
@@ -760,10 +795,10 @@ const executeManualTransfer = useCallback(async () => {
           lowStockThreshold: parseInt(form.lowStockThreshold, 10) || 0,
           reservedStock: 0,
           availableStock: 0,
-          taxable: false,
-          taxName: null,
-          taxPercent: 0,
-          taxInclusive: false,
+          // Tax only travels when tax is enabled for the branch; the server copies the
+          // tax name/rate from the branch tax list. Prices are always tax-inclusive.
+          // Fiscalised store + no tax picked = the store's standard-rated tax.
+          ...(taxEnabled ? { taxId: form.taxId || findDefaultVatTax(taxes)?.id || null } : {}),
           status: form.status,
           // ✅ NEW — same field/shape the POS app writes and reads for its
           // auto-transfer-on-low-stock feature. Only the target reference
@@ -895,6 +930,8 @@ return;
         markupPercent: 0,
         trackInventory: form.trackInventory,
         lowStockThreshold: parseInt(form.lowStockThreshold, 10) || 0,
+        // Fiscalised store + no tax picked = the store's standard-rated tax.
+          ...(taxEnabled ? { taxId: form.taxId || findDefaultVatTax(taxes)?.id || null } : {}),
         status: form.status,
         // ✅ NEW — see the create-path comment above; same field, same
         // shape, kept in sync with whatever the Stock Breaking editor
@@ -1010,7 +1047,7 @@ navigate('/inventory/products', {
       setSaving(false);
       savingRef.current = false;
     }
-  }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU, adjustReason]);
+  }, [form, isEdit, productId, apiFetch, businessId, branchId, staffId, staffName, baseCurrency, imageFile, navigate, loadProduct, originalStock, stockAdjustType, calculatedStock, selectedUnit, generateNextSKU, adjustReason, taxEnabled, taxLoaded, categories]);
 
   const handleRemoveImage = useCallback(async () => {
     if (!existingImageUrl && !isEdit) { setImageFile(null); setImagePreview(null); return; }
@@ -1160,30 +1197,45 @@ navigate('/inventory/products', {
 
             
 
-              {/* Tax */}
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Tax</label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 13, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.taxable} onChange={(e) => setField('taxable', e.target.checked)} />
-                  This product is taxable
-                </label>
-                {form.taxable && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Tax Name</label>
-                      <input style={fieldInput()} value={form.taxName} onChange={(e) => setField('taxName', e.target.value)} placeholder="e.g. VAT" />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 6 }}>Tax Percent</label>
-                      <input type="number" step="0.01" min="0" style={fieldInput()} value={form.taxPercent} onChange={(e) => setField('taxPercent', e.target.value)} />
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', gridColumn: '1 / -1' }}>
-                      <input type="checkbox" checked={form.taxInclusive} onChange={(e) => setField('taxInclusive', e.target.checked)} />
-                      Tax is included in selling price
-                    </label>
+              {/* Tax: one switch per branch tax, all off by default. Only shown when tax is enabled
+                  for the store (Taxes page). The price entered above always includes tax. */}
+              {taxEnabled && (() => {
+                const selectedTax = taxes.find((t) => t.id === form.taxId) || null;
+                const catHs = (categories.find((c) => c.categoryId === form.categoryId)?.hsCode || '').trim();
+                const needsFullHs = selectedTax && selectedTax.kind !== 'standard';
+                return (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 2 }}>Tax</label>
+                    <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 8 }}>The selling price above already includes tax. If none is switched on, the standard-rated VAT applies.</div>
+                    {taxes.length === 0 && (
+                      <div style={{ fontSize: 13, color: '#94A3B8' }}>No taxes set up yet. Add them on the Taxes page.</div>
+                    )}
+                    {taxes.map((t) => {
+                      const on = form.taxId === t.id;
+                      return (
+                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '9px 12px', border: '1px solid #E2E8F0', borderRadius: 8, marginBottom: 6, cursor: 'pointer', background: on ? '#ECFEFF' : '#fff' }}>
+                          <span>
+                            <span style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>
+                              {t.name}{t.kind === 'standard' ? ` ${t.rate}%` : ''}
+                            </span>
+                            <span style={{ display: 'block', fontSize: 12, color: '#94A3B8' }}>
+                              {t.kind === 'standard' ? 'Standard rate' : t.kind === 'zero' ? 'Zero-rated (0%)' : 'VAT exempt'}
+                            </span>
+                          </span>
+                          <input type="checkbox" role="switch" checked={on} onChange={(e) => setField('taxId', e.target.checked ? t.id : null)} style={{ width: 18, height: 18 }} />
+                        </label>
+                      );
+                    })}
+                    {!catHs && (
+                      <div style={{ fontSize: 12, color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8, padding: '8px 12px', marginTop: 6 }}>
+                        {needsFullHs
+                          ? "ZIMRA requires a full 8-digit HS code on zero-rated and exempt items. Add one to this product's category or the receipt may be rejected."
+                          : "This product's category has no HS code. ZIMRA expects at least the first 4 digits on every fiscal item."}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Inventory */}
               <div style={{ marginBottom: 12 }}>
@@ -1406,7 +1458,11 @@ navigate('/inventory/products', {
               </div>
               <div className="reports-modal-body">
                 <input style={fieldInput()} value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Category name" autoFocus />
-                <button onClick={handleAddCategory} disabled={!newCategoryName.trim()} style={{ width: '100%', marginTop: 12, padding: 10, borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Add Category</button>
+                {/* ZIMRA field: exists only on a fiscalised (tax-enabled) store */}
+                {taxEnabled && (
+                  <input style={{ ...fieldInput(), marginTop: 10 }} value={newCategoryHsCode} onChange={(e) => setNewCategoryHsCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))} placeholder="HS code for ZIMRA receipts (8 digits, required)" inputMode="numeric" maxLength={8} />
+                )}
+                <button onClick={handleAddCategory} disabled={!newCategoryName.trim() || (taxEnabled && !newCategoryHsCode)} style={{ width: '100%', marginTop: 12, padding: 10, borderRadius: 8, border: 'none', background: '#0891B2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Add Category</button>
               </div>
             </div>
           </div>

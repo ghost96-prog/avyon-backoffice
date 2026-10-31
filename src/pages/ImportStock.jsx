@@ -7,11 +7,13 @@ import {
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useSelectedBranch } from '../hooks/useSelectedBranch';
+import { useBranchTax } from '../hooks/useBranchTax';
+import { findDefaultVatTax, normalizeHsCode } from '../utils/fiscal';
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import {
   UNITS, parseCsvText, parseBool, downloadProductTemplate,
-  downloadProductsForReimport, evaluateImportRow, triggerCsvDownload,
+  downloadProductsForReimport, evaluateImportRow, triggerCsvDownload, buildCsvHsMap,
 } from '../utils/csvUtils';
 import '../styles/ReportsShared.css';
 
@@ -124,9 +126,12 @@ export default function ImportStock() {
   const navigate = useNavigate();
   const location = useLocation();
   const { apiFetch, businessId, branches, baseCurrency, activeStaff, userProfile } = useAppContext();
-
+  // This store's tax setup, used to turn a CSV "Tax Name" into a taxId.
   // ✅ Use the shared selected branch hook
   const { selectedBranchId, setSelectedBranchId } = useSelectedBranch();
+  // Tax setup of the selected store. `enabled` === fiscalised: only then do the HS code rules and
+  // the standard-rated tax default apply to an import. Non-fiscalised stores import exactly as before.
+  const branchTax = useBranchTax(selectedBranchId);
 
   // ✅ Module gate for Inventory Management
   const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
@@ -239,9 +244,13 @@ export default function ImportStock() {
   //     (update), same as before this change.
   //   - { categoryId, name } otherwise, whether matched to an existing
   //     category or freshly created.
-  const getOrCreateCategoryForRow = useCallback(async (rawCategoryName) => {
+  //
+  // `rawHsCode` (fiscalised stores only): the 8-digit HS code for the category. Sent when the
+  // category is created, and applied to an existing category that doesn't have one yet.
+  const getOrCreateCategoryForRow = useCallback(async (rawCategoryName, rawHsCode = '') => {
     const trimmedName = (rawCategoryName || '').trim();
     if (!trimmedName) return null;
+    const hsCode = branchTax.enabled ? normalizeHsCode(rawHsCode) : '';
 
     // 1. Case-insensitive match against everything we know about right now
     //    — original branch categories PLUS anything created earlier in
@@ -251,6 +260,15 @@ export default function ImportStock() {
       (c) => (c.name || '').trim().toLowerCase() === trimmedName.toLowerCase()
     );
     if (existing) {
+      // Fiscalised store: a category with no HS code yet gets the one from the CSV.
+      if (hsCode && !normalizeHsCode(existing.hsCode)) {
+        await apiFetch(
+          `/business/${businessId}/branches/${selectedBranchId}/categories/${existing.categoryId}`,
+          { method: 'PUT', body: JSON.stringify({ staffId, name: existing.name, hsCode }) }
+        );
+        existing.hsCode = hsCode;
+        setCategories((prev) => prev.map((c) => (c.categoryId === existing.categoryId ? { ...c, hsCode } : c)));
+      }
       return { categoryId: existing.categoryId, name: existing.name };
     }
 
@@ -266,6 +284,7 @@ export default function ImportStock() {
             name: trimmedName,
             posId: DASHBOARD_POS_ID,
             staffId,
+            ...(branchTax.enabled ? { hsCode } : {}),
           }),
         }
       );
@@ -274,7 +293,7 @@ export default function ImportStock() {
         throw new Error(`Failed to create category "${trimmedName}"`);
       }
 
-      const newCategory = { categoryId: created.categoryId, name: trimmedName };
+      const newCategory = { categoryId: created.categoryId, name: trimmedName, hsCode: hsCode || '' };
 
       // Update the ref synchronously (so the very next row in this same
       // import loop sees it immediately) AND the React state (so the UI —
@@ -325,7 +344,7 @@ export default function ImportStock() {
         `Category "${trimmedName}" already exists on the server but could not be resolved to a categoryId`
       );
     }
-  }, [apiFetch, businessId, selectedBranchId, staffId]);
+  }, [apiFetch, businessId, selectedBranchId, staffId, branchTax.enabled]);
 
   // ─── File handling ──────────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
@@ -372,12 +391,16 @@ export default function ImportStock() {
     return new Set(Object.keys(counts).filter((k) => counts[k] > 1));
   }, [parsedRows]);
 
+  // Fiscalised store: the HS code the CSV gives for each category (typed once per category).
+  const csvHsMap = useMemo(() => buildCsvHsMap(parsedRows, branchTax.enabled), [parsedRows, branchTax.enabled]);
+
   const evaluatedRows = useMemo(() => {
+    const fiscal = { enabled: branchTax.enabled, categories, csvHsMap };
     return parsedRows.map((row, idx) => {
-      const { action, targetProductId, errors } = evaluateImportRow(row, allProducts, duplicateSkuSet);
+      const { action, targetProductId, errors } = evaluateImportRow(row, allProducts, duplicateSkuSet, fiscal);
       return { ...row, _index: idx, action, targetProductId, errors };
     });
-  }, [parsedRows, allProducts, duplicateSkuSet]);
+  }, [parsedRows, allProducts, duplicateSkuSet, branchTax.enabled, categories, csvHsMap]);
 
   // ✅ NEW — the preview table below used to render every row of the parsed
   // CSV into the DOM immediately, which gets expensive fast on large
@@ -427,7 +450,7 @@ export default function ImportStock() {
     // field) while `categoryId` silently fell back to 'no-category'. Now it
     // actually creates the category first (or reuses one created earlier in
     // this same import) and links the product to the real categoryId.
-    const category = await getOrCreateCategoryForRow(row.category);
+    const category = await getOrCreateCategoryForRow(row.category, row.hsCode || csvHsMap[String(row.category || '').trim().toLowerCase()]);
     const unitDef = UNITS.find((u) => u.value === (row.unit || 'each').trim().toLowerCase()) || UNITS[0];
     const itemsPerUnitValue = unitDef.requiresQuantityPerUnit ? (parseInt(row.itemsPerUnit, 10) || 1) : 1;
     const trackInventory = row.trackInventory === '' || row.trackInventory === undefined ? true : parseBool(row.trackInventory);
@@ -455,10 +478,16 @@ export default function ImportStock() {
       lowStockThreshold: parseInt(row.lowStockThreshold, 10) || 0,
       reservedStock: 0,
       availableStock: 0,
-      taxable: parseBool(row.taxable),
-      taxName: row.taxName?.trim() || null,
-      taxPercent: parseFloat(row.taxPercent) || 0,
-      taxInclusive: parseBool(row.taxInclusive),
+      // Tax: the CSV "Tax Name" is matched to one of this store's taxes (Taxes page),
+      // case-insensitive. Tax switched off = untaxed. On a fiscalised store, no match = the
+      // the store's standard-rated tax. Prices always include tax.
+      ...(() => {
+        if (!branchTax.enabled) return {};
+        const wanted = String(row.taxName || '').trim().toLowerCase();
+        const t = (wanted ? branchTax.taxes.find((x) => String(x.name).toLowerCase() === wanted) : null)
+          || findDefaultVatTax(branchTax.taxes);
+        return t ? { taxId: t.id } : {};
+      })(),
       status: (row.status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active',
       storeIds: JSON.stringify([selectedBranchId]),
       posIds: JSON.stringify([DASHBOARD_POS_ID]),
@@ -489,7 +518,7 @@ export default function ImportStock() {
         }),
       });
     }
-  }, [apiFetch, businessId, selectedBranchId, getOrCreateCategoryForRow, baseCurrency, staffId, staffName]);
+  }, [apiFetch, businessId, selectedBranchId, getOrCreateCategoryForRow, baseCurrency, staffId, staffName, branchTax, csvHsMap]);
 
   const updateProductFromRow = useCallback(async (row) => {
     const target = allProducts.find((p) => p.productId === row.targetProductId);
@@ -499,7 +528,7 @@ export default function ImportStock() {
     // real category instead of only matching against categories that
     // already existed when the page loaded. A blank cell still falls back
     // to the product's current category, unchanged from before.
-    const category = await getOrCreateCategoryForRow(row.category);
+    const category = await getOrCreateCategoryForRow(row.category, row.hsCode || csvHsMap[String(row.category || '').trim().toLowerCase()]);
     const unitDef = UNITS.find((u) => u.value === (row.unit || target.unit || 'each').trim().toLowerCase()) || UNITS[0];
     const itemsPerUnitValue = unitDef.requiresQuantityPerUnit
       ? (parseInt(row.itemsPerUnit, 10) || target.itemsPerUnit || 1)
@@ -527,6 +556,16 @@ export default function ImportStock() {
       markupPercent: 0,
       trackInventory,
       lowStockThreshold: parseInt(row.lowStockThreshold, 10) || 0,
+      // Tax is only touched on a fiscalised store (a non-tax store's update never changes a product's tax).
+      // There, a CSV "Tax Name" re-points the product; a product with no tax yet gets the standard-rated tax.
+      ...(() => {
+        if (!branchTax.enabled) return {};
+        const wanted = String(row.taxName || '').trim().toLowerCase();
+        if (!wanted && target.taxId) return {};
+        const t = (wanted ? branchTax.taxes.find((x) => String(x.name).toLowerCase() === wanted) : null)
+          || findDefaultVatTax(branchTax.taxes);
+        return t ? { taxId: t.id } : {};
+      })(),
       status: (row.status || 'active').trim().toLowerCase() === 'inactive' ? 'inactive' : 'active',
     };
 
@@ -559,13 +598,18 @@ export default function ImportStock() {
         });
       }
     }
-  }, [apiFetch, businessId, selectedBranchId, allProducts, getOrCreateCategoryForRow, baseCurrency, staffId, staffName]);
+  }, [apiFetch, businessId, selectedBranchId, allProducts, getOrCreateCategoryForRow, baseCurrency, staffId, staffName, branchTax, csvHsMap]);
 
   // ─── Run the import ───────────────────────────────────────────────────────────
   const handleImport = useCallback(async () => {
     // ✅ Guard: Check if user has inventory management module access
     if (!guardAction('inventory_mgmt')) return;
     if (!canImport) return;
+    // Don't guess whether the store is fiscalised while its tax settings are still loading.
+    if (!branchTax.loaded) {
+      alert('Loading this store\'s tax settings. Try again in a moment.');
+      return;
+    }
 
     setImporting(true);
     setImportResults(null);
@@ -586,7 +630,7 @@ export default function ImportStock() {
     setImportResults(results);
     setImporting(false);
     await fetchBranchData();
-  }, [canImport, rowsToImport, createProductFromRow, updateProductFromRow, fetchBranchData, guardAction]);
+  }, [canImport, rowsToImport, createProductFromRow, updateProductFromRow, fetchBranchData, guardAction, branchTax.loaded]);
 
   const handleDownloadFailedRows = useCallback(() => {
     if (!importResults) return;
@@ -702,14 +746,14 @@ export default function ImportStock() {
         }}>
           <button onClick={() => {
             if (!guardAction('inventory_mgmt')) return;
-            downloadProductTemplate();
+            downloadProductTemplate(branchTax.enabled);
           }} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
             <FileDown size={15} /> Download Template
           </button>
           <button
             onClick={() => {
               if (!guardAction('inventory_mgmt')) return;
-              downloadProductsForReimport(allProducts, (branchName || 'branch').toLowerCase().replace(/\s+/g, '-'));
+              downloadProductsForReimport(allProducts, (branchName || 'branch').toLowerCase().replace(/\s+/g, '-'), categories, branchTax.enabled);
             }}
             disabled={!allProducts.length}
             style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#F8FAFC', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer', opacity: allProducts.length ? 1 : 0.5 }}>
@@ -834,7 +878,7 @@ export default function ImportStock() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #E2E8F0', background: '#F8FAFC' }}>
-                    {['', 'Status', 'SKU', 'Name', 'Category', 'Unit', 'Items/Unit', 'Price', 'Cost', 'Stock', 'Low Alert', 'Status', 'Notes'].map((h) => (
+                    {['', 'Status', 'SKU', 'Name', 'Category', ...(branchTax.enabled ? ['HS Code'] : []), 'Unit', 'Items/Unit', 'Price', 'Cost', 'Stock', 'Low Alert', 'Status', 'Notes'].map((h) => (
                       <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#94A3B8', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -864,6 +908,13 @@ export default function ImportStock() {
                         <td style={{ padding: '6px 8px', minWidth: 120 }}>
                           <input style={fieldInput()} value={row.category || ''} onChange={(e) => updateRowField(row._index, 'category', e.target.value)} placeholder="No Category" />
                         </td>
+                        {branchTax.enabled && (
+                          <td style={{ padding: '6px 8px', minWidth: 110 }}>
+                            <input style={fieldInput()} value={row.hsCode || ''} inputMode="numeric" maxLength={8}
+                              onChange={(e) => updateRowField(row._index, 'hsCode', e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
+                              placeholder="8 digits" />
+                          </td>
+                        )}
                         <td style={{ padding: '6px 8px', minWidth: 90 }}>
                           <select style={fieldInput()} value={(row.unit || 'each').toLowerCase()} onChange={(e) => updateRowField(row._index, 'unit', e.target.value)}>
                             {UNITS.map((u) => <option key={u.value} value={u.value}>{u.label}</option>)}
@@ -903,14 +954,14 @@ export default function ImportStock() {
                   })}
                   {evaluatedRows.length > 0 && !importRowsReveal.isDone && (
                     <tr>
-                      <td colSpan={13} ref={importRowsReveal.sentinelRef} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: '#94A3B8' }}>
+                      <td colSpan={14} ref={importRowsReveal.sentinelRef} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: '#94A3B8' }}>
                         Loading more rows…
                       </td>
                     </tr>
                   )}
                   {evaluatedRows.length > 0 && importRowsReveal.isDone && (
                     <tr>
-                      <td colSpan={13} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: '#CBD5E1' }}>
+                      <td colSpan={14} style={{ padding: '10px 8px', textAlign: 'center', fontSize: 11, color: '#CBD5E1' }}>
                         — End of list ({evaluatedRows.length} row{evaluatedRows.length !== 1 ? 's' : ''}) —
                       </td>
                     </tr>

@@ -16,6 +16,9 @@ export const PRODUCT_CSV_COLUMNS = [
   { key: 'name', label: 'Name' },
   { key: 'barcode', label: 'Barcode' },
   { key: 'category', label: 'Category' },
+  // Category-level ZIMRA HS code (8 digits). Required on fiscalised (tax-enabled) stores for any
+  // category that doesn't already have one; applied to the category, not stored per product.
+  { key: 'hsCode', label: 'HS Code' },
   { key: 'unit', label: 'Unit' },
   { key: 'itemsPerUnit', label: 'Items Per Unit' },
   { key: 'description', label: 'Description' },
@@ -31,6 +34,12 @@ export const PRODUCT_CSV_COLUMNS = [
   { key: 'taxInclusive', label: 'Tax Inclusive' },
 ];
 
+// Columns that only exist on a fiscalised (tax-enabled) store - same as the POS template.
+// Non-fiscalised stores get a template / export without them.
+export const FISCAL_ONLY_KEYS = ['hsCode', 'taxable', 'taxName', 'taxPercent', 'taxInclusive'];
+const fiscalKeep = (fiscalEnabled) =>
+  PRODUCT_CSV_COLUMNS.map((c) => fiscalEnabled === true || !FISCAL_ONLY_KEYS.includes(c.key));
+
 const HEADER_ALIASES = {
   'product id': 'productId',
   productid: 'productId',
@@ -40,6 +49,10 @@ const HEADER_ALIASES = {
   'product name': 'name',
   barcode: 'barcode',
   category: 'category',
+  'hs code': 'hsCode',
+  hscode: 'hsCode',
+  hs: 'hsCode',
+  'hs-code': 'hsCode',
   unit: 'unit',
   'items per unit': 'itemsPerUnit',
   itemsperunit: 'itemsPerUnit',
@@ -147,28 +160,33 @@ export function triggerCsvDownload(filename, rows) {
 }
 
 // ─── Template: headers + one example row ──────────────────────────────────────
-export function downloadProductTemplate() {
-  const headers = PRODUCT_CSV_COLUMNS.map((c) => c.label);
+export function downloadProductTemplate(fiscalEnabled = false) {
+  const keep = fiscalKeep(fiscalEnabled);
+  const headers = PRODUCT_CSV_COLUMNS.filter((_, i) => keep[i]).map((c) => c.label);
   // ✅ CHANGED — sample SKU is now a plain numeric value starting at 10000
   // (matches the app's own auto-generated SKU numbering, e.g. getHighestSKU()
   // in realm/schema.js), instead of the old prefixed "SKU1001" placeholder.
   const example = [
-    '', '10000', 'Sample Product', '', 'No Category', 'each', '',
+    '', '10000', 'Sample Product', '', 'No Category', '22021000', 'each', '',
     'Optional description', '9.99', '5.00', 'TRUE', '20', '5', 'active',
     'FALSE', '', '0', 'FALSE',
   ];
-  triggerCsvDownload('product_import_template.csv', [headers, example]);
+  triggerCsvDownload('product_import_template.csv', [headers, example.filter((_, i) => keep[i])]);
 }
 
 // ─── Export current products in a re-uploadable format ───────────────────────
-export function downloadProductsForReimport(products, branchTag) {
-  const headers = PRODUCT_CSV_COLUMNS.map((c) => c.label);
+export function downloadProductsForReimport(products, branchTag, categories = [], fiscalEnabled = false) {
+  const keep = fiscalKeep(fiscalEnabled);
+  const hsByCategoryId = {};
+  (categories || []).forEach((c) => { if (c?.categoryId) hsByCategoryId[c.categoryId] = c.hsCode || ''; });
+  const headers = PRODUCT_CSV_COLUMNS.filter((_, i) => keep[i]).map((c) => c.label);
   const rows = products.map((p) => ([
     p.productId || '',
     p.sku || '',
     p.name || '',
     p.barcode || '',
     p.category || 'No Category',
+    hsByCategoryId[p.categoryId] || '',
     p.unit || 'each',
     p.itemsPerUnit || '',
     p.description || '',
@@ -182,12 +200,35 @@ export function downloadProductsForReimport(products, branchTag) {
     p.taxName || '',
     p.taxPercent ?? 0,
     p.taxInclusive ? 'TRUE' : 'FALSE',
-  ]));
+  ].filter((_, i) => keep[i])));
   triggerCsvDownload(`products_${branchTag}_reimport.csv`, [headers, ...rows]);
 }
 
 // ─── Row evaluation: decide create / update / error ───────────────────────────
-export function evaluateImportRow(row, allProducts, duplicateSkuSet) {
+// Normalised key for matching a category name typed in the CSV.
+const catKey = (n) => String(n || '').trim().toLowerCase();
+
+/**
+ * For a fiscalised store: category name (lower-cased) -> the HS code the CSV supplies for it.
+ * Any row naming the category with a code counts, so the code only has to be typed once per
+ * category. Returns {} for non-fiscalised stores.
+ */
+export function buildCsvHsMap(rows, fiscalEnabled) {
+  const map = {};
+  if (!fiscalEnabled) return map;
+  (rows || []).forEach((r) => {
+    const code = String(r.hsCode || '').replace(/\s+/g, '');
+    const key = catKey(r.category);
+    if (key && /^\d{8}$/.test(code) && code !== '00000000' && !map[key]) map[key] = code;
+  });
+  return map;
+}
+
+/**
+ * `fiscal` (optional) = { enabled, categories, csvHsMap }. Only when enabled (the store has tax
+ * switched on) do the HS code rules apply; non-fiscalised imports behave exactly as before.
+ */
+export function evaluateImportRow(row, allProducts, duplicateSkuSet, fiscal = null) {
   const errors = [];
   const name = (row.name || '').trim();
   const skuRaw = (row.sku || '').trim();
@@ -234,6 +275,32 @@ export function evaluateImportRow(row, allProducts, duplicateSkuSet) {
     const existing = allProducts.find((p) => (p.sku || '').toUpperCase() === sku && sku);
     if (existing) {
       errors.push(`SKU "${sku}" already exists (${existing.name}) — change the SKU, or add Product ID "${existing.productId}" to update it instead`);
+    }
+  }
+
+  // ─── Fiscalised store: every product's category needs an 8-digit HS code ───
+  if (fiscal?.enabled) {
+    const typedHs = String(row.hsCode || '').replace(/\s+/g, '');
+    if (typedHs && (!/^\d{8}$/.test(typedHs) || typedHs === '00000000')) {
+      errors.push(`HS code "${row.hsCode}" must be exactly 8 digits (e.g. 22021000)`);
+    } else {
+      const cats = fiscal.categories || [];
+      const key = catKey(row.category);
+      let targetCat = null;
+      if (key) {
+        targetCat = cats.find((c) => catKey(c.name) === key) || null;
+      } else if (action === 'update' && targetProductId) {
+        // blank category on an update keeps the product's current category
+        const target = allProducts.find((p) => p.productId === targetProductId);
+        targetCat = cats.find((c) => c.categoryId === target?.categoryId) || null;
+      }
+      const existingHs = String(targetCat?.hsCode || '').replace(/\s+/g, '');
+      const csvHs = key ? (fiscal.csvHsMap || {})[key] : '';
+      if (!key && !targetCat) {
+        errors.push('Category is required on a fiscalised store (its HS code goes on the receipt)');
+      } else if (!existingHs && !csvHs) {
+        errors.push(`Category "${row.category || targetCat?.name || 'No Category'}" has no HS code — add an "HS Code" (8 digits) to this row`);
+      }
     }
   }
 

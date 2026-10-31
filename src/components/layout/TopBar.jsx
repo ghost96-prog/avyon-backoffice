@@ -1,16 +1,25 @@
 // src/components/layout/TopBar.jsx
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Menu, ChevronDown, Lock, LogOut, Repeat, Bell, MessagesSquare } from "lucide-react";
+import { Menu, ChevronDown, Lock, LogOut, Repeat, Bell, MessagesSquare, Sparkles } from "lucide-react";
 import { useAppContext } from "../../context/AppContext";
 import { useCommunityUnread } from "../../context/CommunityUnreadContext";
-import { ROLE_BADGE_COLORS, ROLE_LABELS } from "../../utils/permissions";
+import { ROLE_BADGE_COLORS, ROLE_LABELS, BACKOFFICE_PERMISSIONS as P } from "../../utils/permissions";
 import SubscriptionCountdownBar from "../common/SubscriptionCountDownBar";
 import "./TopBar.css";
 
+// Fireworks around the Intelligence button: 12 sparks fanning out in a circle,
+// alternating long/short throws and cycling colours. All motion is CSS (see TopBar.css).
+const INTEL_SPARK_COLORS = ["#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#22c55e", "#ec4899"];
+const INTEL_SPARKS = Array.from({ length: 12 }, (_, i) => ({
+  angle: i * 30,
+  dist: i % 2 ? 19 : 30,
+  color: INTEL_SPARK_COLORS[i % INTEL_SPARK_COLORS.length],
+}));
+
 export default function TopBar({ onOpenMobileNav, title }) {
   const navigate = useNavigate();
-  const { businessName, branches, branchId, selectedBranchId, activeStaff, requiresPin, lockSession, logout } =
+  const { businessName, branches, branchId, selectedBranchId, activeStaff, requiresPin, lockSession, logout, hasBackofficePermission } =
     useAppContext();
   const { unreadCount } = useCommunityUnread();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,6 +69,28 @@ export default function TopBar({ onOpenMobileNav, title }) {
         </div>
 
         <div className="topbar-right">
+          {/* ✅ Avyon Intelligence — only for staff who can view sales reports (same permission as the route) */}
+          {hasBackofficePermission(P.VIEW_SALES_REPORTS) && (
+            <button
+              className="topbar-icon-btn topbar-community-btn topbar-intel-btn"
+              aria-label="Avyon Intelligence"
+              title="Avyon Intelligence"
+              onClick={() => navigate("/intelligence")}
+            >
+              <span className="topbar-intel-sparks" aria-hidden="true">
+                {INTEL_SPARKS.map((sp, i) => (
+                  <span
+                    key={i}
+                    className="topbar-intel-spark"
+                    style={{ "--a": `${sp.angle}deg`, "--d": `${sp.dist}px`, "--c": sp.color }}
+                  />
+                ))}
+              </span>
+              <Sparkles size={18} className="topbar-intel-icon" />
+              <span className="topbar-community-label">Avyon Intelligence - AI</span>
+            </button>
+          )}
+
           {/* ✅ Community button with label on desktop */}
           <button
             className="topbar-icon-btn topbar-community-btn"

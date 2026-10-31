@@ -11,9 +11,14 @@ import { useInsights } from '../../hooks/useInsights';
 import ToastStack from '../common/ToastStack';
 import InsightToastStack from '../common/InsightToastStack';
 import AskAvyonButton from '../common/AskAvyonButton'; // ✅ NEW — floating "Ask Avyon" button
+import SubscriptionPayHost from '../subscription/SubscriptionPayHost'; // ✅ owns the EcoCash pay modal (opened by "Renew now" via the subscription-pay:open event)
 import { useAppContext } from '../../context/AppContext';
 
+// Routes reached from the TopBar rather than the sidebar nav have no nav label to read.
+const EXTRA_TITLES = { "/intelligence": "Avyon Intelligence" };
+
 function titleForPath(pathname) {
+  if (EXTRA_TITLES[pathname]) return EXTRA_TITLES[pathname];
   for (const section of NAV_SECTIONS) {
     for (const item of section.items) {
       if (item.to === pathname) return item.label;
@@ -74,6 +79,10 @@ export default function DashboardLayout() {
       </div>
 
       <AskAvyonButton />
+
+      {/* ✅ Listens for "subscription-pay:open" from the countdown bar / module modal.
+          This was never mounted, so Renew now fired an event nobody heard. */}
+      <SubscriptionPayHost />
     </div>
   );
 }
