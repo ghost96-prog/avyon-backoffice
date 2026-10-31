@@ -10,7 +10,7 @@ import { useBranchNotifications } from '../../hooks/useBranchNotification';
 import { useInsights } from '../../hooks/useInsights';
 import ToastStack from '../common/ToastStack';
 import InsightToastStack from '../common/InsightToastStack';
-import AskAvyonButton from '../common/AskAvyonButton'; // ✅ NEW — floating "Ask Avyon" button
+import IntelligenceFab from '../common/IntelligenceFab'; // ✅ floating button → /intelligence (replaces the old Ask Avyon panel)
 import SubscriptionPayHost from '../subscription/SubscriptionPayHost'; // ✅ owns the EcoCash pay modal (opened by "Renew now" via the subscription-pay:open event)
 import { useAppContext } from '../../context/AppContext';
 
@@ -78,7 +78,7 @@ export default function DashboardLayout() {
         </main>
       </div>
 
-      <AskAvyonButton />
+      <IntelligenceFab />
 
       {/* ✅ Listens for "subscription-pay:open" from the countdown bar / module modal.
           This was never mounted, so Renew now fired an event nobody heard. */}

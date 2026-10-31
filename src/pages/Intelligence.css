@@ -30,6 +30,10 @@
 /* ── header ─────────────────────────────────────────────── */
 .ix-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
 .ix-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.ix-back { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ix-border-strong); background: var(--ix-surface); color: var(--ix-muted); height: 36px; padding: 0 12px; border-radius: 9px; font-weight: 600; font-size: 13px; cursor: pointer; flex: none; }
+.ix-back:hover { background: rgba(0, 0, 0, 0.04); }
+.ix-back--icon { width: 36px; padding: 0; justify-content: center; }
+.ix-page > .ix-back { margin-bottom: 12px; }
 .ix-title h1 { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 .ix-title p { margin: 2px 0 0; font-size: 13px; color: var(--ix-muted); }
 .ix-badge {

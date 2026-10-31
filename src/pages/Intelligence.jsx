@@ -14,7 +14,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, Calendar, ChevronDown, Store, Download, RefreshCw, Lock, Sparkles,
+  ArrowLeft, ChevronLeft, ChevronRight, Calendar, ChevronDown, Store, Download, RefreshCw, Lock, Sparkles,
   AlertOctagon, HelpCircle, Check,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
@@ -184,6 +184,13 @@ export default function Intelligence() {
     result, loading, refreshing, error, refresh, selectedBranchId, setSelectedBranchId, branchOptions, isMultiStore,
   } = intel;
 
+  // Back to wherever the owner came from (TopBar / floating button / a deep link);
+  // if this page was opened directly with nothing behind it, fall back to the dashboard.
+  const goBack = useCallback(() => {
+    if (window.history.state && window.history.state.idx > 0) navigate(-1);
+    else navigate('/');
+  }, [navigate]);
+
   const [storeModalOpen, setStoreModalOpen] = useState(false);
   const branchName = selectedBranchId === 'all' ? 'All stores' : branchOptions.find((b) => b.value === selectedBranchId)?.label || 'Store';
   const activeMeta = tabs.find((t) => t.id === activeTab);
@@ -197,6 +204,9 @@ export default function Intelligence() {
     const info = getModuleInfo('analytics');
     return (
       <div className="reports-page ix-page">
+        <button type="button" className="ix-back" onClick={goBack} aria-label="Go back">
+          <ArrowLeft size={18} /><span>Back</span>
+        </button>
         <div className="ix-locked">
           <div className="ix-locked-icon"><Lock size={30} /></div>
           <h2>{info?.label || 'Analytics'} required</h2>
@@ -225,6 +235,9 @@ export default function Intelligence() {
     <div className="reports-page ix-page">
       <header className="ix-header">
         <div className="ix-title">
+          <button type="button" className="ix-back ix-back--icon" onClick={goBack} aria-label="Go back" title="Back">
+            <ArrowLeft size={18} />
+          </button>
           <span className="ix-badge"><Sparkles size={16} /></span>
           <div>
             <h1>Avyon Intelligence</h1>
