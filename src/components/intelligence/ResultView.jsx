@@ -70,10 +70,11 @@ function ReorderSettings({ settings, onChange }) {
 }
 
 function Kpis({ metrics, sym }) {
-  if (!metrics?.length) return null;
+  const list = (metrics || []).filter(Boolean); // tolerate empty slots in the array
+  if (!list.length) return null;
   return (
     <div className="ix-kpis">
-      {metrics.map((m, i) => (
+      {list.map((m, i) => (
         <div key={`${m.label}-${i}`} className={`ix-kpi ${m.tone ? `ix-kpi-${m.tone}` : ''}`}>
           <span className="ix-kpi-label">{m.label}</span>
           <span className="ix-kpi-value">{fmtMetric(m, sym)}</span>
@@ -90,8 +91,9 @@ function Kpis({ metrics, sym }) {
   );
 }
 
-function Insights({ insights }) {
-  if (!insights?.length) return null;
+function Insights({ insights: raw }) {
+  const insights = (raw || []).filter(Boolean);
+  if (!insights.length) return null;
   return (
     <section className="ix-card">
       <h3 className="ix-card-title"><Lightbulb size={16} /> What Avyon noticed</h3>
@@ -114,8 +116,9 @@ function Insights({ insights }) {
   );
 }
 
-function Actions({ actions, sym, onGoTab, onNavigate }) {
-  if (!actions?.length) return null;
+function Actions({ actions: raw, sym, onGoTab, onNavigate }) {
+  const actions = (raw || []).filter(Boolean);
+  if (!actions.length) return null;
   return (
     <section className="ix-card">
       <h3 className="ix-card-title"><ListChecks size={16} /> What to do</h3>
@@ -147,7 +150,7 @@ function Actions({ actions, sym, onGoTab, onNavigate }) {
 function Cards({ section, onGoTab }) {
   return (
     <div className="ix-cards">
-      {section.cards.map((c) => {
+      {(section.cards || []).filter(Boolean).map((c) => {
         const tone = toneOf(c.severity);
         const Icon = SEV[tone].icon;
         return (
@@ -199,8 +202,9 @@ function Method({ notes, methodology }) {
 export default function ResultView({ result, settings, onSettingsChange, onGoTab, onNavigate }) {
   const sym = result.currency || '$';
   // the Briefing's "cards" section replaces the need for a separate list, so render it right after the KPIs
-  const cardSections = (result.sections || []).filter((s) => s.kind === 'cards');
-  const otherSections = (result.sections || []).filter((s) => s.kind !== 'cards');
+  const sections = (result.sections || []).filter(Boolean);
+  const cardSections = sections.filter((s) => s.kind === 'cards');
+  const otherSections = sections.filter((s) => s.kind !== 'cards');
   return (
     <div className="ix-result">
       <Hero result={result} />

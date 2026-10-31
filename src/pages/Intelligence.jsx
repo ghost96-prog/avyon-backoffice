@@ -26,6 +26,7 @@ import { getModuleInfo } from '../utils/moduleCatalog';
 import Button from '../components/common/Button';
 import { useIntelligence, PERIOD_OPTIONS, formatRange } from '../hooks/useIntelligence';
 import ResultView, { TAB_ICONS } from '../components/intelligence/ResultView';
+import ResultBoundary from '../components/intelligence/ResultBoundary';
 import '../styles/ReportsShared.css';
 import './Intelligence.css';
 
@@ -269,7 +270,9 @@ export default function Intelligence() {
         ) : showSkeleton ? (
           <Skeleton />
         ) : result ? (
-          <ResultView result={result} settings={settings} onSettingsChange={setSettings} onGoTab={goTab} onNavigate={navigate} />
+          <ResultBoundary resetKey={`${activeTab}|${period.startDate}|${period.endDate}|${selectedBranchId}`} onRetry={refresh}>
+            <ResultView result={result} settings={settings} onSettingsChange={setSettings} onGoTab={goTab} onNavigate={navigate} />
+          </ResultBoundary>
         ) : null}
       </div>
 
