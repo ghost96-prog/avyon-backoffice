@@ -9,9 +9,12 @@ import React from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } from 'recharts';
 import { fmtCompact, fmtMoney, fmtNumber } from './format';
 
-const TONE_COLOR = { critical: '#d64545', warning: '#d99020', info: '#4f6bd8', success: '#1c9d6c' };
-const ACCENT = '#357abd';
-const FORECAST = '#a9c6e8';
+const TONE_COLOR = { critical: '#FF7A7A', warning: '#F4B860', info: '#6CCBF0', success: '#5FE3B0' };
+const ACCENT = '#6CCBF0';
+const FORECAST = 'rgba(108, 203, 240, 0.35)';
+const MUTED_BAR = 'rgba(255, 255, 255, 0.16)';
+const GRID = 'rgba(255, 255, 255, 0.08)';
+const TICK = '#8FA6BB';
 
 export default function IntelChart({ section, sym }) {
   const { data = [], series = [], xKey = 'label', money = true } = section;
@@ -26,12 +29,14 @@ export default function IntelChart({ section, sym }) {
     <div className="ix-chart" role="img" aria-label={section.title}>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 6, right: 8, left: 0, bottom: 0 }} barCategoryGap={hasTime ? '18%' : '28%'}>
-          <CartesianGrid vertical={false} stroke="#e6eaf0" />
-          <XAxis dataKey={xKey} tickLine={false} axisLine={{ stroke: '#e6eaf0' }} tick={{ fontSize: 11, fill: '#8b97a7' }} interval={tickEvery} />
-          <YAxis tickLine={false} axisLine={false} width={48} tick={{ fontSize: 11, fill: '#8b97a7' }} tickFormatter={(v) => (money ? fmtCompact(sym, v) : fmtNumber(v))} />
+          <CartesianGrid vertical={false} stroke={GRID} />
+          <XAxis dataKey={xKey} tickLine={false} axisLine={{ stroke: GRID }} tick={{ fontSize: 11, fill: TICK }} interval={tickEvery} />
+          <YAxis tickLine={false} axisLine={false} width={48} tick={{ fontSize: 11, fill: TICK }} tickFormatter={(v) => (money ? fmtCompact(sym, v) : fmtNumber(v))} />
           <Tooltip
-            cursor={{ fill: 'rgba(53,122,189,0.06)' }}
-            contentStyle={{ borderRadius: 10, border: '1px solid #e6eaf0', boxShadow: '0 4px 16px rgba(22,32,43,.08)', fontSize: 12 }}
+            cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+            contentStyle={{ borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)', background: '#0E2740', boxShadow: '0 10px 30px rgba(0,0,0,.45)', fontSize: 12, color: '#EAF1F7' }}
+            labelStyle={{ color: '#9AB0C4' }}
+            itemStyle={{ color: '#EAF1F7' }}
             formatter={(v, name) => [fmt(v), name]}
           />
           {hasTime ? (
@@ -42,7 +47,7 @@ export default function IntelChart({ section, sym }) {
           ) : (
             <Bar dataKey={series[0]?.key || 'value'} name={series[0]?.label || 'Value'} radius={[4, 4, 0, 0]}>
               {data.map((d, i) => (
-                <Cell key={i} fill={d.tone ? TONE_COLOR[d.tone] : hasHighlight ? (d.highlight ? ACCENT : '#c9d9ec') : ACCENT} />
+                <Cell key={i} fill={d.tone ? TONE_COLOR[d.tone] : hasHighlight ? (d.highlight ? ACCENT : MUTED_BAR) : ACCENT} />
               ))}
             </Bar>
           )}

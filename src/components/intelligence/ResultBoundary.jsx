@@ -6,7 +6,7 @@
 // a Try again button (the tabs / period bar above stay usable) and the real
 // error is logged to the console for debugging.
 import React from 'react';
-import { AlertOctagon } from 'lucide-react';
+import AvyonBot from './AvyonBot';
 
 export default class ResultBoundary extends React.Component {
   constructor(props) {
@@ -31,15 +31,18 @@ export default class ResultBoundary extends React.Component {
     if (!this.state.error) return this.props.children;
     return (
       <div className="ix-error" role="alert">
-        <AlertOctagon size={22} />
-        <p>Avyon couldn't display this result. {this.state.error?.message ? `(${this.state.error.message})` : ''}</p>
-        <button
-          type="button"
-          className="ix-apply"
-          onClick={() => { this.setState({ error: null }); this.props.onRetry?.(); }}
-        >
-          Try again
-        </button>
+        <AvyonBot mood="sad" size={120} title="Avyon, apologetic" />
+        <div className="ix-error-copy">
+          <h2>I could not draw that answer</h2>
+          <p>Something in the result was not in a shape I could display{this.state.error?.message ? ` (${this.state.error.message})` : ''}.</p>
+          <button
+            type="button"
+            className="ix-apply"
+            onClick={() => { this.setState({ error: null }); this.props.onRetry?.(); }}
+          >
+            Try again
+          </button>
+        </div>
       </div>
     );
   }

@@ -10,13 +10,17 @@ import { fmtMoney, fmtNumber, fmtPercent } from './format';
 
 const INITIAL_ROWS = 10;
 
+// A cell value that is an object ({ text, tone }) must never be rendered directly:
+// React throws on objects and the whole screen goes blank.
+const asText = (v) => (v && typeof v === 'object' ? (v.text ?? '') : v);
+
 function Cell({ col, row, sym }) {
   const v = row[col.key];
   switch (col.type) {
     case 'product':
       return (
         <div className="ix-prod">
-          <span className="ix-prod-name">{v}</span>
+          <span className="ix-prod-name">{asText(v)}</span>
           {row.sub && <span className="ix-prod-sub">{row.sub}</span>}
         </div>
       );
@@ -37,9 +41,9 @@ function Cell({ col, row, sym }) {
         </span>
       );
     case 'tag':
-      return v ? <span className={`ix-chip ix-chip-${v.tone || 'neutral'}`}>{v.text}</span> : null;
+      return v ? <span className={`ix-chip ix-chip-${v.tone || 'neutral'}`}>{asText(v)}</span> : null;
     default:
-      return <span className={col.wide ? 'ix-wrap' : ''}>{v ?? '—'}</span>;
+      return <span className={col.wide ? 'ix-wrap' : ''}>{asText(v) ?? '—'}</span>;
   }
 }
 

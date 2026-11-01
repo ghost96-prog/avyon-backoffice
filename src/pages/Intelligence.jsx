@@ -8,14 +8,17 @@
 // and writes the narrative; this screen only picks the period + tab and
 // renders whatever comes back with one generic renderer.
 //
-// Same rules as the floating Ask Avyon button: deterministic arithmetic over
-// the business's own data, not an AI model; read-only; nothing is ever
-// written.
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+// Presented as a briefing from Avyon, the assistant: it "walks through the
+// account" while it works, then speaks the answer next to a cartoon of the
+// situation, and the whole screen takes on the mood of the news.
+//
+// Same rules as before: deterministic arithmetic over the business's own data,
+// not an AI model; read-only; nothing is ever written.
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, Calendar, ChevronDown, Store, Download, RefreshCw, Lock, Sparkles,
-  AlertOctagon, HelpCircle, Check,
+  ArrowLeft, ChevronLeft, ChevronRight, Calendar, ChevronDown, Store, Download, RefreshCw, Lock,
+  HelpCircle, Check,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { BACKOFFICE_PERMISSIONS as P } from '../utils/permissions';
@@ -23,10 +26,11 @@ import { downloadCsv } from '../utils/exportUtils';
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
-import Button from '../components/common/Button';
 import { useIntelligence, PERIOD_OPTIONS, formatRange } from '../hooks/useIntelligence';
-import ResultView, { TAB_ICONS } from '../components/intelligence/ResultView';
+import ResultView, { TAB_ICONS, moodOf } from '../components/intelligence/ResultView';
 import ResultBoundary from '../components/intelligence/ResultBoundary';
+import AvyonBot from '../components/intelligence/AvyonBot';
+import Working from '../components/intelligence/Working';
 import '../styles/ReportsShared.css';
 import './Intelligence.css';
 
@@ -121,38 +125,34 @@ function PeriodBar({ period, onSelect, onNavigate }) {
   );
 }
 
-// ── Tab strip ───────────────────────────────────────────────────────────────
-function TabStrip({ tabs, active, onChange, severity }) {
+// ── Topic rail ──────────────────────────────────────────────────────────────
+function TopicRail({ tabs, active, onChange, severity }) {
   const onKey = (e) => {
     const i = tabs.findIndex((t) => t.id === active);
-    if (e.key === 'ArrowRight') onChange(tabs[(i + 1) % tabs.length].id);
-    else if (e.key === 'ArrowLeft') onChange(tabs[(i - 1 + tabs.length) % tabs.length].id);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); onChange(tabs[(i + 1) % tabs.length].id); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); onChange(tabs[(i - 1 + tabs.length) % tabs.length].id); }
   };
   return (
-    <div className="ix-tabs" role="tablist" aria-label="Intelligence questions" onKeyDown={onKey}>
-      {tabs.map((t) => {
-        const Icon = TAB_ICONS[t.icon] || HelpCircle;
-        const sev = severity[t.id];
-        return (
-          <button key={t.id} id={`ix-tab-${t.id}`} type="button" role="tab" aria-selected={active === t.id} aria-controls="ix-panel"
-            tabIndex={active === t.id ? 0 : -1} className={`ix-tab ${active === t.id ? 'is-active' : ''}`} onClick={() => onChange(t.id)}>
-            <Icon size={16} />
-            <span>{t.label}</span>
-            {sev && sev !== 'success' && sev !== 'info' && <i className={`ix-dot ix-dot-${sev}`} aria-label={sev === 'critical' ? 'needs attention' : 'worth a look'} />}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function Skeleton() {
-  return (
-    <div className="ix-skeleton" aria-busy="true" aria-label="Avyon is working this out">
-      <div className="ix-sk ix-sk-hero" />
-      <div className="ix-sk-row">{[1, 2, 3, 4].map((i) => <div key={i} className="ix-sk ix-sk-kpi" />)}</div>
-      <div className="ix-sk-row ix-sk-row2"><div className="ix-sk ix-sk-card" /><div className="ix-sk ix-sk-card" /></div>
-    </div>
+    <nav className="ix-rail" aria-label="What would you like to know?">
+      <p className="ix-rail-title">What would you like to know?</p>
+      <div className="ix-rail-list" role="tablist" aria-orientation="horizontal" onKeyDown={onKey}>
+        {tabs.map((t) => {
+          const Icon = TAB_ICONS[t.icon] || HelpCircle;
+          const sev = severity[t.id];
+          const on = active === t.id;
+          return (
+            <button key={t.id} id={`ix-tab-${t.id}`} type="button" role="tab" aria-selected={on} aria-controls="ix-panel"
+              tabIndex={on ? 0 : -1} className={`ix-topic-tab ${on ? 'is-active' : ''}`} onClick={() => onChange(t.id)}>
+              <span className="ix-topic-tab-icon"><Icon size={16} /></span>
+              <span className="ix-topic-tab-label">{t.label}</span>
+              {sev && sev !== 'success' && sev !== 'info' && (
+                <i className={`ix-dot ix-dot-${sev}`} aria-label={sev === 'critical' ? 'needs attention' : 'worth a look'} />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
@@ -174,7 +174,7 @@ function exportFirstTable(result) {
 // ── Page ────────────────────────────────────────────────────────────────────
 export default function Intelligence() {
   const navigate = useNavigate();
-  const { hasBackofficePermission } = useAppContext();
+  const { hasBackofficePermission, activeStaff } = useAppContext();
   const canView = hasBackofficePermission(P.VIEW_SALES_REPORTS);
   const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
   const hasAnalytics = hasModuleAccess('analytics');
@@ -200,19 +200,29 @@ export default function Intelligence() {
 
   const goTab = useCallback((id) => { setActiveTab(id); window.scrollTo({ top: 0, behavior: 'smooth' }); }, [setActiveTab]);
 
+  // the whole screen takes on the mood of the answer (calm while working)
+  const showAnswer = !!result && !showSkeleton && !(error && !loading);
+  const mood = error && !loading ? 'sad' : showAnswer ? moodOf(result) : 'calm';
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const firstName = (activeStaff?.name || '').trim().split(' ')[0];
+
   // ── gated / denied states ──
   if (!hasAnalytics) {
     const info = getModuleInfo('analytics');
     return (
-      <div className="reports-page ix-page">
+      <div className="ix-page ix-mood-calm">
         <button type="button" className="ix-back" onClick={goBack} aria-label="Go back">
           <ArrowLeft size={18} /><span>Back</span>
         </button>
         <div className="ix-locked">
-          <div className="ix-locked-icon"><Lock size={30} /></div>
-          <h2>{info?.label || 'Analytics'} required</h2>
-          <p>Avyon Intelligence is part of the <strong>{info?.label || 'Analytics'}</strong> module. Subscribe to unlock best-seller, reorder, dead-stock, loss and forecast insights for <strong>{branchName}</strong>.</p>
-          <button type="button" className="ix-apply" onClick={() => guardAction('analytics')}>Subscribe now</button>
+          <AvyonBot mood="calm" locked size={150} title="Avyon, waiting for access" />
+          <div className="ix-locked-copy">
+            <h2>I need the {info?.label || 'Analytics'} module to get started</h2>
+            <p>With it I can tell you what is selling best, what to reorder, what is gathering dust, where you are losing money and what is coming next for <strong>{branchName}</strong>.</p>
+            <button type="button" className="ix-apply" onClick={() => guardAction('analytics')}>Subscribe now</button>
+          </div>
         </div>
         {gateModalModuleId && <ModuleSubscriptionModal moduleId={gateModalModuleId} moduleState={getModuleState(gateModalModuleId)} onClose={closeGateModal} />}
       </div>
@@ -233,47 +243,63 @@ export default function Intelligence() {
   }
 
   return (
-    <div className="reports-page ix-page">
+    <div className={`ix-page ix-mood-${mood}`}>
       <header className="ix-header">
         <div className="ix-title">
           <button type="button" className="ix-back ix-back--icon" onClick={goBack} aria-label="Go back" title="Back">
             <ArrowLeft size={18} />
           </button>
-          <span className="ix-badge"><Sparkles size={16} /></span>
           <div>
             <h1>Avyon Intelligence</h1>
-            <p>Ask your business anything — for any period, past or future.</p>
+            <p>{greeting}{firstName ? `, ${firstName}` : ''}. Ask me anything about your business, past or future.</p>
           </div>
         </div>
         <div className="ix-header-actions">
           {isMultiStore && (
-            <button type="button" className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
+            <button type="button" className="ix-btn" onClick={() => setStoreModalOpen(true)}>
               <Store size={14} /><span>{branchName}</span>
             </button>
           )}
-          <Button variant="secondary" size="sm" icon={Download} onClick={() => exportFirstTable(result)} disabled={!hasTable}>CSV</Button>
-          <Button variant="secondary" size="sm" icon={RefreshCw} onClick={refresh} loading={refreshing}>Refresh</Button>
+          <button type="button" className="ix-btn" onClick={() => exportFirstTable(result)} disabled={!hasTable}>
+            <Download size={14} /><span>CSV</span>
+          </button>
+          <button type="button" className="ix-btn" onClick={refresh} disabled={refreshing}>
+            <RefreshCw size={14} className={refreshing ? 'ix-spin' : ''} /><span>Refresh</span>
+          </button>
         </div>
       </header>
 
       <PeriodBar period={period} onSelect={selectOption} onNavigate={navigatePeriod} />
-      <TabStrip tabs={tabs} active={activeTab} onChange={setActiveTab} severity={tabSeverity} />
-      {activeMeta && <p className="ix-question">{activeMeta.question}</p>}
 
-      <div id="ix-panel" role="tabpanel" aria-labelledby={`ix-tab-${activeTab}`} className={loading && !showSkeleton ? 'ix-dim' : ''}>
-        {error && !loading ? (
-          <div className="ix-error" role="alert">
-            <AlertOctagon size={22} />
-            <p>{error}</p>
-            <button type="button" className="ix-apply" onClick={refresh}>Try again</button>
-          </div>
-        ) : showSkeleton ? (
-          <Skeleton />
-        ) : result ? (
-          <ResultBoundary resetKey={`${activeTab}|${period.startDate}|${period.endDate}|${selectedBranchId}`} onRetry={refresh}>
-            <ResultView result={result} settings={settings} onSettingsChange={setSettings} onGoTab={goTab} onNavigate={navigate} />
-          </ResultBoundary>
-        ) : null}
+      <div className="ix-shell">
+        <TopicRail tabs={tabs} active={activeTab} onChange={setActiveTab} severity={tabSeverity} />
+
+        <main id="ix-panel" role="tabpanel" aria-labelledby={`ix-tab-${activeTab}`} className={`ix-main ${loading && !showSkeleton ? 'ix-dim' : ''}`}>
+          {error && !loading ? (
+            <div className="ix-error" role="alert">
+              <AvyonBot mood="sad" size={120} title="Avyon, apologetic" />
+              <div className="ix-error-copy">
+                <h2>I could not finish that one</h2>
+                <p>{error}</p>
+                <button type="button" className="ix-apply" onClick={refresh}>Try again</button>
+              </div>
+            </div>
+          ) : showSkeleton ? (
+            <Working tab={activeTab} range={formatRange(period.startDate, period.endDate)} where={branchName} name={firstName} />
+          ) : result ? (
+            <ResultBoundary resetKey={`${activeTab}|${period.startDate}|${period.endDate}|${selectedBranchId}`} onRetry={refresh}>
+              <ResultView
+                key={`${activeTab}|${period.startDate}|${period.endDate}|${selectedBranchId}`}
+                result={result}
+                question={activeMeta?.question}
+                settings={settings}
+                onSettingsChange={setSettings}
+                onGoTab={goTab}
+                onNavigate={navigate}
+              />
+            </ResultBoundary>
+          ) : null}
+        </main>
       </div>
 
       {storeModalOpen && (
