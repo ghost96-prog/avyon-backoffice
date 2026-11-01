@@ -837,10 +837,53 @@
 @media (max-width: 1000px) {
   .ix-page { padding: 18px; border-radius: 22px; }
 }
+
+/* ── phones and small tablets: smaller type, tighter spacing, smaller art ── */
 @media (max-width: 680px) {
-  .ix-title h1 { font-size: 27px; }
-  .ix-stage { grid-template-columns: minmax(0, 1fr); padding: 22px 18px; gap: 18px; }
-  .ix-voice { padding: 18px; border-radius: 22px; }
+  .ix-page { padding: 14px; border-radius: 20px; }
+  .ix-page > .ix-back { margin-bottom: 10px; }
+
+  /* header */
+  .ix-header { gap: 12px; }
+  .ix-title { gap: 10px; }
+  .ix-title h1 { font-size: 24px; }
+  .ix-title p { margin-top: 4px; font-size: 12.5px; line-height: 1.45; }
+  .ix-back, .ix-btn { height: 34px; padding: 0 11px; gap: 6px; border-radius: 10px; font-size: 12.5px; }
+  .ix-back--icon { width: 34px; padding: 0; }
+  .ix-header-actions { width: 100%; gap: 6px; }
+  .ix-header-actions .ix-btn:not(.ix-btn--icon-mobile) { flex: 1; min-width: 0; justify-content: center; }
+  .ix-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* period bar */
+  .ix-period { gap: 10px; margin-top: 14px; }
+  .ix-chips {
+    flex-wrap: nowrap;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ix-chips::-webkit-scrollbar { display: none; }
+  .ix-pchip { flex: none; padding: 6px 12px; font-size: 12.5px; }
+  .ix-period-right { width: 100%; }
+  .ix-range { width: 100%; }
+  .ix-range-arrow { width: 34px; height: 34px; }
+  .ix-range-label { flex: 1; justify-content: center; height: 34px; font-size: 12.5px; }
+  .ix-popover { left: 0; right: 0; width: auto; }
+
+  /* topic strip */
+  .ix-shell { margin-top: 14px; }
+  .ix-rail-title { margin: 0 0 8px 2px; font-size: 17px; }
+  .ix-rail-list { gap: 4px; padding: 4px; border-radius: 15px; }
+  .ix-topic-tab { gap: 8px; padding: 6px 11px 6px 6px; border-radius: 11px; }
+  .ix-topic-tab-icon { width: 24px; height: 24px; border-radius: 8px; }
+  .ix-topic-tab-label { font-size: 12.5px; }
+  .ix-topic-tab.is-active::after { left: 10px; right: 10px; }
+  .ix-main { margin-top: 14px; }
+
+  /* the stage */
+  .ix-stage { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 16px 14px 18px; border-radius: 20px; }
+  .ix-stage-bot .avy-bot { width: 104px; height: auto; }
+  .ix-voice { padding: 14px 14px 16px; border-radius: 18px; }
   .ix-voice::before {
     left: 50%;
     top: -8px;
@@ -849,13 +892,115 @@
     border-top: 1px solid var(--ix-line-2);
     border-left: 1px solid var(--ix-line-2);
   }
-  .ix-headline { font-size: 27px; }
-  .ix-fig-value { font-size: 34px; }
-  .ix-work { grid-template-columns: minmax(0, 1fr); padding: 24px 18px; }
-  .ix-work-lead { font-size: 25px; text-align: center; }
-  .ix-header-actions { width: 100%; }
-  .ix-period { justify-content: flex-start; }
-  .ix-popover { right: auto; left: 0; }
+  .ix-voice-meta { gap: 6px; }
+  .ix-sev, .ix-mode { padding: 3px 9px; font-size: 11.5px; }
+  .ix-voice-q { margin: 10px 0 4px; font-size: 14px; }
+  .ix-headline { font-size: 24px; line-height: 1.15; }
+  .ix-summary { margin-top: 10px; font-size: 13.5px; line-height: 1.6; }
+  .ix-stage-scene { max-width: 290px; }
+  .ix-stage-scene .vg { border-radius: 14px; }
+
+  /* tab-specific settings */
+  .ix-settings { gap: 10px; margin-top: 12px; padding: 12px 14px; border-radius: 15px; }
+  .ix-settings-lead { flex-basis: 100%; font-size: 15px; }
+  .ix-stepper { width: 100%; justify-content: space-between; }
+  .ix-stepper-label { font-size: 12px; }
+  .ix-stepper-ctl button { width: 30px; height: 32px; }
+  .ix-stepper-ctl span { min-width: 58px; font-size: 12.5px; }
+
+  /* figures: two per row */
+  .ix-ledger { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 12px; border-radius: 16px; }
+  .ix-fig { gap: 3px; padding: 12px 13px; }
+  .ix-fig-label { font-size: 11.5px; }
+  .ix-fig-value { font-size: 26px; }
+  .ix-fig-delta { flex-wrap: wrap; gap: 3px 5px; font-size: 11.5px; }
+  .ix-fig-hint { font-size: 11px; }
+
+  /* conversation and plan */
+  .ix-talk { gap: 12px; margin-top: 12px; }
+  .ix-panel { padding: 16px 14px; border-radius: 18px; }
+  .ix-panel-title { font-size: 20px; }
+  .ix-msgs { gap: 12px; margin-top: 14px; }
+  .ix-msg { grid-template-columns: 26px minmax(0, 1fr); gap: 9px; }
+  .ix-minibot { width: 26px; height: 26px; }
+  .ix-bubble { padding: 10px 12px 11px; }
+  .ix-bubble-title { font-size: 13px; }
+  .ix-bubble-body { font-size: 12.5px; line-height: 1.6; }
+  .ix-plan { margin-top: 14px; }
+  .ix-step { grid-template-columns: 20px minmax(0, 1fr); gap: 8px; padding-bottom: 16px; }
+  .ix-step-pri { font-size: 11px; }
+  .ix-step-title { font-size: 13.5px; }
+  .ix-step-detail { font-size: 12.5px; line-height: 1.6; }
+  .ix-step-foot { gap: 6px 14px; margin-top: 8px; }
+  .ix-impact { font-size: 12px; }
+  .ix-impact strong { font-size: 17px; }
+  .ix-link { font-size: 12.5px; }
+
+  /* sections */
+  .ix-sec { margin-top: 24px; }
+  .ix-sec-head { margin-bottom: 10px; }
+  .ix-sec-title { font-size: 21px; }
+  .ix-sec-sub { font-size: 12px; }
+  .ix-topics { grid-template-columns: minmax(0, 1fr); border-radius: 16px; }
+  .ix-topic { gap: 11px; padding: 12px 13px; }
+  .ix-topic-icon { width: 30px; height: 30px; }
+  .ix-topic-title { font-size: 13px; }
+  .ix-topic-headline { font-size: 12px; }
+  .ix-table-wrap { border-radius: 15px; }
+  .ix-table { font-size: 12px; }
+  .ix-table th { padding: 9px 10px; font-size: 11px; }
+  .ix-table td { padding: 9px 10px; }
+  .ix-wide { min-width: 150px; }
+  .ix-prod-sub { font-size: 11px; }
+  .ix-chip { padding: 2px 8px; font-size: 11px; }
+  .ix-showall { padding: 8px 14px; font-size: 12.5px; }
+  .ix-empty { padding: 20px; font-size: 13px; }
+  .ix-chart { padding: 12px 4px 6px; border-radius: 16px; }
+  .ix-chart-legend { gap: 14px; font-size: 11.5px; }
+
+  /* notes + method */
+  .ix-method { margin-top: 22px; padding-top: 14px; }
+  .ix-notes li { font-size: 12px; }
+  .ix-method-toggle { font-size: 12.5px; }
+  .ix-method-body { font-size: 12.5px; line-height: 1.7; }
+
+  /* working scene */
+  .ix-work { grid-template-columns: minmax(0, 1fr); gap: 14px; padding: 20px 14px; border-radius: 20px; }
+  .ix-work-bot .avy-bot { width: 112px; height: auto; }
+  .ix-work-lead { margin-bottom: 14px; font-size: 21px; text-align: center; }
+  .ix-work-steps { gap: 10px; }
+  .ix-work-step { gap: 10px; font-size: 12.5px; }
+  .ix-work-mark { width: 18px; height: 18px; }
+  .ix-work-bar { margin-top: 18px; }
+
+  /* locked + error */
+  .ix-locked { gap: 16px; margin: 8px auto 0; padding: 20px 4px; text-align: center; }
+  .ix-locked .avy-bot { width: 120px; height: auto; }
+  .ix-locked-copy h2 { font-size: 23px; }
+  .ix-locked-copy p { font-size: 13.5px; line-height: 1.65; }
+  .ix-error { justify-content: center; gap: 12px; padding: 20px 16px; border-radius: 20px; text-align: center; }
+  .ix-error .avy-bot { width: 92px; height: auto; }
+  .ix-error-copy h2 { font-size: 22px; }
+  .ix-error-copy p { font-size: 13px; }
+  .ix-apply { height: 38px; padding: 0 18px; font-size: 13px; }
+}
+
+@media (max-width: 680px) {
+  .ix-btn--icon-mobile { width: 34px; padding: 0; justify-content: center; }
+  .ix-btn--icon-mobile span { display: none; }
+}
+
+/* small phones */
+@media (max-width: 400px) {
+  .ix-page { padding: 12px; border-radius: 18px; }
+  .ix-title h1 { font-size: 22px; }
+  .ix-headline { font-size: 22px; }
+  .ix-fig { padding: 11px 12px; }
+  .ix-fig-value { font-size: 23px; }
+  .ix-stage-bot .avy-bot { width: 92px; }
+  .ix-work-lead { font-size: 19px; }
+  .ix-sec-title { font-size: 19px; }
+  .ix-panel-title { font-size: 18px; }
 }
 
 /* ═════════════════════════════════════════════════════════════════════════

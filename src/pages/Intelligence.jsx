@@ -260,10 +260,10 @@ export default function Intelligence() {
               <Store size={14} /><span>{branchName}</span>
             </button>
           )}
-          <button type="button" className="ix-btn" onClick={() => exportFirstTable(result)} disabled={!hasTable}>
+          <button type="button" className="ix-btn ix-btn--icon-mobile" onClick={() => exportFirstTable(result)} disabled={!hasTable} aria-label="Download CSV" title="Download CSV">
             <Download size={14} /><span>CSV</span>
           </button>
-          <button type="button" className="ix-btn" onClick={refresh} disabled={refreshing}>
+          <button type="button" className="ix-btn ix-btn--icon-mobile" onClick={refresh} disabled={refreshing} aria-label="Refresh" title="Refresh">
             <RefreshCw size={14} className={refreshing ? 'ix-spin' : ''} /><span>Refresh</span>
           </button>
         </div>
