@@ -33,13 +33,20 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 
-const POLL_INTERVAL_MS = 15000;
+// Polling cost: Firestore bills per document returned, and this runs for every open
+// app all day. So each poll sends `since` (a cursor = the newest thing already seen)
+// and the server returns only what is NEW (usually nothing, billed as 1 read) instead
+// of re-reading the whole unread pile every time. 30s is plenty for a toast, and polls
+// pause while the tab is hidden.
+const POLL_INTERVAL_MS = 30000;
+const CURSOR_OVERLAP_MS = 5000; // small overlap so nothing created mid-request is missed (seenIds dedupes)
 const MAX_STACKED_TOASTS = 5;
 
 export function useInsights() {
   const { apiFetch, businessId } = useAppContext();
   const [toasts, setToasts] = useState([]);
   const seenIdsRef = useRef(new Set());
+  const sinceRef = useRef(null); // newest createdAt (server clock) already seen
 
   const markReadOnServer = useCallback(
     (insight) => {
@@ -93,8 +100,15 @@ export function useInsights() {
   const poll = useCallback(async () => {
     if (!businessId) return;
     try {
-      const res = await apiFetch(`/business/${businessId}/insights?unreadOnly=true&limit=20`);
-      (res?.insights || []).forEach(enqueue);
+      // First poll loads any unread insights (as before); after that only newer ones.
+      const res = await apiFetch(
+        `/business/${businessId}/insights?unreadOnly=true&limit=20${sinceRef.current ? `&since=${sinceRef.current}` : ''}`
+      );
+      const incoming = res?.insights || [];
+      const newest = incoming.reduce((m, i) => Math.max(m, i.createdAt || 0), 0);
+      const serverNow = typeof res?.serverTime === 'number' ? res.serverTime : Date.now();
+      sinceRef.current = Math.max(sinceRef.current || 0, newest, serverNow - CURSOR_OVERLAP_MS);
+      incoming.forEach(enqueue);
     } catch (e) {
       // Silent — polling failures shouldn't be noisy
     }
@@ -102,12 +116,15 @@ export function useInsights() {
 
   useEffect(() => {
     seenIdsRef.current = new Set();
+    sinceRef.current = null;
     setToasts([]);
     if (!businessId) return undefined;
 
     poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => { if (!document.hidden) poll(); }, POLL_INTERVAL_MS);
+    const onVisible = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [businessId]);
 
