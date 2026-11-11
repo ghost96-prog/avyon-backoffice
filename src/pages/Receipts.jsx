@@ -92,6 +92,13 @@ function PrintRow({ label, value, bold }) {
   );
 }
 
+// Payment-type name + code (several payment types can share a code, e.g. EcoCash USD / Swipe USD = ZWD)
+const receiptCurrencyText = (r) => {
+  const code = r?.transactionCurrency || r?.currency || r?.baseCurrency || 'USD';
+  const name = String(r?.transactionCurrencyName || '').trim();
+  return name && name.toUpperCase() !== String(code).toUpperCase() ? `${name} (${code})` : code;
+};
+
 function ReceiptPrintTemplate({ receipt }) {
   if (!receipt) return null;
   const r = receipt;
@@ -131,6 +138,7 @@ function ReceiptPrintTemplate({ receipt }) {
       <div style={{ marginBottom: 8 }}>
         <div>Cashier: {r.cashierName}</div>
         <div>Customer: {r.customerName}</div>
+        <div>Currency: {receiptCurrencyText(r)}</div>
       </div>
 
       <div style={{ borderTop: '1px dashed #000', paddingTop: 6, marginBottom: 8 }}>
@@ -276,6 +284,9 @@ export default function Receipts() {
       createdAt: r.createdAt || Date.now(),
       receiptNumber: r.receiptNumber || `REC-${String(r.receiptId || r.id).slice(-6)}`,
       currencySymbol: r.currencySymbol || '$',
+      transactionCurrency: r.transactionCurrency || r.currency || r.baseCurrency || 'USD',
+      transactionCurrencyName: r.transactionCurrencyName || null,
+      currencyFlag: r.currencyFlag || null,
     };
   }, []);
 
@@ -390,7 +401,7 @@ export default function Receipts() {
     if (isExporting || !filteredReceipts.length) return;
     setIsExporting(true);
     try {
-      const header = ['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Total', 'Has Discount'];
+      const header = ['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Currency', 'Total', 'Has Discount'];
       const rows = filteredReceipts.map(r => [
         r.receiptNumber,
         r.store,
@@ -399,6 +410,7 @@ export default function Receipts() {
         r.cashierName,
         r.method || 'cash',
         r.status,
+        receiptCurrencyText(r),
         (r.total || 0).toFixed(2),
         r.hasDiscount ? 'Yes' : 'No',
       ]);
@@ -431,7 +443,7 @@ export default function Receipts() {
       doc.text(`${branchLabel} • ${toApiDate(startDate)} to ${toApiDate(endDate)}`, 32, 46);
       doc.setTextColor(20, 24, 30);
 
-      const tableHead = [['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Total', 'Discount']];
+      const tableHead = [['Receipt #', 'Store', 'Date', 'Customer', 'Cashier', 'Method', 'Status', 'Currency', 'Total', 'Discount']];
       const tableBody = filteredReceipts.map(r => [
         r.receiptNumber,
         r.store,
@@ -440,7 +452,8 @@ export default function Receipts() {
         r.cashierName,
         r.method || 'cash',
         r.status || 'completed',
-        formatMoney(r.total, baseCurrency),
+        receiptCurrencyText(r),
+        `${r.currencySymbol || '$'}${Number(r.total || 0).toFixed(2)}`,
         r.hasDiscount ? '✓' : '',
       ]);
 
@@ -603,6 +616,7 @@ export default function Receipts() {
             {r.totals?.orderNumber != null && <span style={{ fontWeight: 700, color: '#0F172A' }}>Order #{r.totals.orderNumber}</span>}
             <span>Customer: {r.customerName}</span>
             {r.shiftNumber && <span>Shift #{r.shiftNumber}</span>}
+            <span>Currency: {r.currencyFlag ? `${r.currencyFlag} ` : ''}{receiptCurrencyText(r)}</span>
           </div>
 
           <hr className="reports-modal-divider" />
@@ -955,10 +969,11 @@ export default function Receipts() {
                           <span style={{ background: '#dcfce7', color: '#16a34a', padding: '0 6px', borderRadius: 3, fontSize: 10, fontWeight: 600 }}>Credit Payment</span>
                         )}
                         <span style={{ background: method.bg, color: method.color, padding: '0 6px', borderRadius: 3, fontSize: 10, fontWeight: 600 }}>{method.label}</span>
+                        <span style={{ background: '#E0F2FE', color: '#0369A1', padding: '0 6px', borderRadius: 3, fontSize: 10, fontWeight: 700 }}>{r.currencyFlag ? `${r.currencyFlag} ` : ''}{receiptCurrencyText(r)}</span>
                       </div>
                     </div>
                     <div className="reports-list-item-right">
-                      <div className="reports-list-item-amount">{formatMoney(r.total, baseCurrency)}</div>
+                      <div className="reports-list-item-amount">{r.currencySymbol || '$'}{Number(r.total || 0).toFixed(2)}</div>
                       <div style={{ fontSize: 11, color: '#8b97a7' }}>{r.customerName}</div>
                     </div>
                   </div>

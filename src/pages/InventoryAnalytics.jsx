@@ -1,131 +1,111 @@
-// src/pages/InventoryAnalytics.jsx
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+// src/pages/SalesAnalytics.jsx
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
 } from 'recharts';
 import {
-  ChevronLeft, Store, Lock, Boxes, TrendingUp, TrendingDown, Minus,
-  AlertTriangle, PackageX, Clock, ArrowLeftRight,
+  ChevronLeft,
+  Store,
+  Download,
+  FileText,
+  Lock,
+  Tag,
+  UserCog,
+  CreditCard,
+  Coins,
+  Trophy,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  AlertTriangle,
+  Calendar,
 } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
-import { useSelectedBranch } from '../hooks/useSelectedBranch';
-import DateRangeNav from '../components/common/DateRangeNav';
 import { useDateRange } from '../hooks/useDateRange';
+import DateRangeNav from '../components/common/DateRangeNav';
 import Button from '../components/common/Button';
-import { formatMoney, formatNumber, toApiDate } from '../utils/exportUtils';
+import { formatMoney, formatNumber, downloadCsv, toApiDate } from '../utils/exportUtils';
 import { BACKOFFICE_PERMISSIONS } from '../utils/permissions';
 import { useModuleGate } from '../hooks/useModuleGate';
 import ModuleSubscriptionModal from '../components/common/ModuleSubscriptionModal';
 import { getModuleInfo } from '../utils/moduleCatalog';
 import '../styles/ReportsShared.css';
 import './Dashboard.css';
-
+import { useSelectedBranch } from '../hooks/useSelectedBranch';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const URGENCY_META = {
-  critical: { color: '#ef4444', bg: '#fee2e2', label: 'Critical' },
-  high: { color: '#d97706', bg: '#fef3c7', label: 'High' },
-  medium: { color: '#357abd', bg: '#e6eef9', label: 'Medium' },
-};
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// ✅ NEW — number of parallel report calls `load()` fires, used to drive
-// the progress bar below (5 endpoints: performance, reorder, forecast,
-// dead-stock, movements).
-const TOTAL_ANALYTICS_CALLS = 5;
+const DIMENSIONS = [
+  { id: 'branch', label: 'Branch', icon: Store },
+  { id: 'pos', label: 'POS Terminal', icon: CreditCard },
+  { id: 'employee', label: 'Employee', icon: UserCog },
+  { id: 'currency', label: 'Currency', icon: Coins },
+  { id: 'category', label: 'Category', icon: Tag },
+];
 
-// ✅ NEW — inline progress bar shown while the analytics report calls are
-// in flight. Unlike InventoryValue's InlineLoadProgress (which estimates
-// progress via a log curve because it doesn't know the total page count
-// up front), here we know exactly how many calls are outstanding, so the
-// bar fills in exact fifths as each request resolves.
-const LoadProgressBar = ({ loading, completed, total }) => {
-  const [visible, setVisible] = useState(false);
-  const hideTimeoutRef = useRef(null);
+const DIM_COLORS = ['#357abd', '#50C878', '#FF6B6B', '#FFD93D', '#9C27B0', '#FF9800', '#00BCD4', '#A9A9A9'];
 
-  useEffect(() => {
-    if (loading) {
-      setVisible(true);
-      if (hideTimeoutRef.current) {
-        clearTimeout(hideTimeoutRef.current);
-        hideTimeoutRef.current = null;
-      }
-    } else if (visible) {
-      hideTimeoutRef.current = setTimeout(() => setVisible(false), 500);
-    }
-    return () => {
-      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
-
-  if (!visible) return null;
-
-  const percent = loading ? Math.min(100, Math.round((completed / total) * 100)) : 100;
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 190 }}>
-      <div style={{ width: 90, height: 6, borderRadius: 3, background: '#E2E8F0', overflow: 'hidden', flexShrink: 0 }}>
-        <div style={{
-          height: '100%',
-          width: `${percent}%`,
-          borderRadius: 3,
-          background: percent >= 100 ? '#16A34A' : 'linear-gradient(90deg, #234C6A 0%, #3B82F6 100%)',
-          transition: 'width 0.35s ease, background 0.25s ease',
-        }} />
-      </div>
-      <span style={{ fontSize: 11, color: '#64748B', whiteSpace: 'nowrap' }}>
-        {percent >= 100 ? 'Loaded' : `Loading data… (${completed}/${total})`}
-      </span>
-    </div>
-  );
-};
-
-function TrendIcon({ trend }) {
-  if (trend === 'up') return <TrendingUp size={12} color="#16a34a" />;
-  if (trend === 'down') return <TrendingDown size={12} color="#ef4444" />;
-  return <Minus size={12} color="#8b97a7" />;
+function formatDateDisplay(d) {
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
-function HealthBar({ healthyPercent, lowStockPercent, outOfStockPercent }) {
+function GrowthBadge({ value }) {
+  if (value == null) return null;
+  const isUp = value > 0.5;
+  const isDown = value < -0.5;
+  const color = isUp ? '#16a34a' : isDown ? '#ef4444' : '#8b97a7';
+  const Icon = isUp ? TrendingUp : isDown ? TrendingDown : Minus;
   return (
-    <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', background: '#f0f2f5' }}>
-      <div style={{ width: `${healthyPercent}%`, background: '#16a34a' }} />
-      <div style={{ width: `${lowStockPercent}%`, background: '#d97706' }} />
-      <div style={{ width: `${outOfStockPercent}%`, background: '#ef4444' }} />
-    </div>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700, color }}>
+      <Icon size={11} />{value >= 0 ? '+' : ''}{value.toFixed(1)}%
+    </span>
   );
 }
 
-export default function InventoryAnalytics() {
+export default function SalesAnalytics() {
   const navigate = useNavigate();
   const { apiFetch, businessId, branches, baseCurrency, hasBackofficePermission } = useAppContext();
-  const canView = hasBackofficePermission(BACKOFFICE_PERMISSIONS.ADVANCED_INVENTORY);
+
+  const canView = hasBackofficePermission(BACKOFFICE_PERMISSIONS.VIEW_SALES_REPORTS);
 
   // ✅ Module gate for Analytics
   const { guardAction, hasModuleAccess, getModuleState, gateModalModuleId, closeGateModal } = useModuleGate();
   const hasAnalytics = hasModuleAccess('analytics');
 
-  // ✅ Use the shared selected branch hook with "All Stores" option
+  const {
+    startDate,
+    endDate,
+    selectedOption,
+    handleOptionSelect,
+    navigateDate,
+    reload: reloadDateRange,
+  } = useDateRange('today');
+
   const { selectedBranchId, setSelectedBranchId } = useSelectedBranch({ allowAll: true });
-
-  const { startDate, endDate, selectedOption, handleOptionSelect, navigateDate, reload: reloadDateRange } = useDateRange('last30days');
-
   const [storeModalOpen, setStoreModalOpen] = useState(false);
-  const [leadTimeDays, setLeadTimeDays] = useState(7);
-  const [urgencyFilter, setUrgencyFilter] = useState('all');
+  const [dimension, setDimension] = useState('branch');
 
-  const [performance, setPerformance] = useState(null);
-  const [reorder, setReorder] = useState(null);
-  const [forecast, setForecast] = useState(null);
-  const [deadStock, setDeadStock] = useState(null);
-  const [movements, setMovements] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [dailyRows, setDailyRows] = useState([]);
+  const [dimensionRows, setDimensionRows] = useState([]);
+  const [branchComparison, setBranchComparison] = useState(null);
 
   const [loading, setLoading] = useState(true);
+  const [dimensionLoading, setDimensionLoading] = useState(true);
+  const [branchLoading, setBranchLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
-  // ✅ NEW — how many of the TOTAL_ANALYTICS_CALLS report calls have
-  // resolved so far; drives LoadProgressBar.
-  const [loadCompleted, setLoadCompleted] = useState(0);
+  const [isExportingCsv, setIsExportingCsv] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const hasMultipleBranches = (branches || []).length > 1;
 
   const branchOptions = useMemo(
     () => [{ value: 'all', label: 'All Stores' }, ...(branches || []).map((b) => ({ value: b.branchId, label: b.name }))],
@@ -133,77 +113,289 @@ export default function InventoryAnalytics() {
   );
   const selectedBranchName = selectedBranchId === 'all' ? 'All Stores' : branchOptions.find((b) => b.value === selectedBranchId)?.label || '';
 
-  const load = useCallback(async (isRefresh = false) => {
+  const branchNameMap = useMemo(() => {
+    const map = {};
+    (branches || []).forEach((b) => { map[b.branchId] = b.name; });
+    return map;
+  }, [branches]);
+
+  const visibleDimensions = useMemo(
+    () => DIMENSIONS.filter((d) => d.id !== 'branch' || hasMultipleBranches),
+    [hasMultipleBranches]
+  );
+
+  // ─── Fetch summary + daily trend ──────────────────────────────────────────
+  const loadOverview = useCallback(async (isRefresh = false) => {
     if (!businessId) return;
     isRefresh ? setRefreshing(true) : setLoading(true);
     setError(null);
-    setLoadCompleted(0);
     try {
-      const rangeParams = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
-      const branchParams = new URLSearchParams();
-      if (selectedBranchId !== 'all') {
-        rangeParams.set('branchId', selectedBranchId);
-        branchParams.set('branchId', selectedBranchId);
-      }
-      const reorderParams = new URLSearchParams(branchParams);
-      reorderParams.set('leadTimeDays', leadTimeDays);
+      const params = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
+      if (selectedBranchId !== 'all') params.set('branchId', selectedBranchId);
 
-      // ✅ NEW — wraps each call so LoadProgressBar can tick up as each of
-      // the 5 report endpoints resolves, instead of the whole KPI/section
-      // block staying blank until every request comes back at once.
-      const trackedFetch = (url) => apiFetch(url).then((res) => {
-        setLoadCompleted((c) => c + 1);
-        return res;
-      });
-
-      const [perf, reo, fc, dead, moves] = await Promise.all([
-        trackedFetch(`/business/${businessId}/reports/inventory-performance?${rangeParams.toString()}`),
-        trackedFetch(`/business/${businessId}/reports/reorder-recommendations?${reorderParams.toString()}`),
-        trackedFetch(`/business/${businessId}/reports/demand-forecast?${branchParams.toString()}`),
-        trackedFetch(`/business/${businessId}/reports/dead-stock?${branchParams.toString()}`),
-        trackedFetch(`/business/${businessId}/reports/stock-movement-analytics?${rangeParams.toString()}`),
+      const [summaryRes, dailyRes] = await Promise.all([
+        apiFetch(`/business/${businessId}/reports/sales-summary?${params.toString()}`),
+        apiFetch(`/business/${businessId}/reports/daily-breakdown?${params.toString()}`),
       ]);
-      setPerformance(perf);
-      setReorder(reo);
-      setForecast(fc);
-      setDeadStock(dead);
-      setMovements(moves);
+
+      setSummary(summaryRes.summary || null);
+      setDailyRows(dailyRes.days || []);
     } catch (e) {
-      console.error('Inventory analytics error:', e);
-      setError('Failed to load inventory analytics');
+      console.error('Sales analytics overview error:', e);
+      setError('Failed to load sales analytics');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [apiFetch, businessId, startDate, endDate, selectedBranchId, leadTimeDays]);
+  }, [apiFetch, businessId, startDate, endDate, selectedBranchId]);
 
+  // ─── Fetch current dimension breakdown ───────────────────────────────────
+  const loadDimension = useCallback(async () => {
+    if (!businessId) return;
+    setDimensionLoading(true);
+    try {
+      const params = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
+      if (selectedBranchId !== 'all') params.set('branchId', selectedBranchId);
+
+      const res = await apiFetch(`/business/${businessId}/reports/sales-by/${dimension}?${params.toString()}`);
+      setDimensionRows(res.rows || []);
+    } catch (e) {
+      console.error('Sales-by-dimension error:', e);
+      setDimensionRows([]);
+    } finally {
+      setDimensionLoading(false);
+    }
+  }, [apiFetch, businessId, startDate, endDate, selectedBranchId, dimension]);
+
+  // ─── Fetch branch comparison (always all-branch, ignores store filter) ────
+  const loadBranchComparison = useCallback(async () => {
+    if (!businessId || !hasMultipleBranches) { setBranchLoading(false); return; }
+    setBranchLoading(true);
+    try {
+      const params = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
+      const res = await apiFetch(`/business/${businessId}/reports/branch-comparison?${params.toString()}`);
+      setBranchComparison(res);
+    } catch (e) {
+      console.error('Branch comparison error:', e);
+      setBranchComparison(null);
+    } finally {
+      setBranchLoading(false);
+    }
+  }, [apiFetch, businessId, startDate, endDate, hasMultipleBranches]);
+
+  // ─── Combined refresh ──────────────────────────────────────────────────────
+  const refreshAll = useCallback(async () => {
+    if (!businessId) return;
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        startDate: toApiDate(startDate),
+        endDate: toApiDate(endDate)
+      });
+      if (selectedBranchId !== 'all') params.set('branchId', selectedBranchId);
+
+      const calls = [
+        apiFetch(`/business/${businessId}/reports/sales-summary?${params.toString()}`),
+        apiFetch(`/business/${businessId}/reports/daily-breakdown?${params.toString()}`),
+        apiFetch(`/business/${businessId}/reports/sales-by/${dimension}?${params.toString()}`),
+      ];
+      if (hasMultipleBranches) {
+        const bParams = new URLSearchParams({ startDate: toApiDate(startDate), endDate: toApiDate(endDate) });
+        calls.push(apiFetch(`/business/${businessId}/reports/branch-comparison?${bParams.toString()}`));
+      }
+
+      const results = await Promise.all(calls);
+      setSummary(results[0].summary || null);
+      setDailyRows(results[1].days || []);
+      setDimensionRows(results[2].rows || []);
+      if (hasMultipleBranches) setBranchComparison(results[3]);
+    } catch (e) {
+      console.error('Refresh all error:', e);
+      setError('Failed to refresh data');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [apiFetch, businessId, startDate, endDate, selectedBranchId, dimension, hasMultipleBranches]);
+
+  // ─── Effects ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleVisibilityChange = () => { if (document.visibilityState === 'visible') reloadDateRange(); };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [reloadDateRange]);
 
-  useEffect(() => { 
-    if (businessId && hasAnalytics) {
-      load(); 
-    }
-  }, [businessId, startDate, endDate, selectedBranchId, leadTimeDays, load, hasAnalytics]);
+  useEffect(() => {
+    const handlePopState = () => reloadDateRange();
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [reloadDateRange]);
 
-  const filteredRecs = useMemo(() => {
-    const recs = reorder?.recommendations || [];
-    return urgencyFilter === 'all' ? recs : recs.filter((r) => r.urgency === urgencyFilter);
-  }, [reorder, urgencyFilter]);
+  useEffect(() => { if (businessId && hasAnalytics) loadOverview(); }, [businessId, startDate, endDate, selectedBranchId, loadOverview, hasAnalytics]);
+  useEffect(() => { if (businessId && hasAnalytics) loadDimension(); }, [businessId, startDate, endDate, selectedBranchId, dimension, loadDimension, hasAnalytics]);
+  useEffect(() => { if (businessId && hasAnalytics) loadBranchComparison(); }, [businessId, startDate, endDate, loadBranchComparison, hasAnalytics]);
+
+  // ─── Row label / sub-label per dimension ─────────────────────────────────
+  const rowLabel = useCallback((row) => {
+    switch (dimension) {
+      case 'category': return row.name || row.id;
+      case 'employee': return row.name || row.id;
+      case 'branch': return branchNameMap[row.id] || row.id;
+      case 'pos': return row.name || `POS ${String(row.id).slice(0, 4)}`;
+      case 'currency':
+        if (row.name && row.symbol) {
+          return `${row.name} (${row.symbol})`;
+        }
+        return row.name || row.id;
+      default: return row.id;
+    }
+  }, [dimension, branchNameMap]);
+
+  // Money for a breakdown row. In the "Currency" view each row is in ITS OWN currency, so use that
+  // row's symbol (e.g. ZiG, R, $) - not the business base-currency symbol.
+  const rowMoney = useCallback((row, amount) => {
+    if (dimension === 'currency' && row?.symbol) return formatMoney(amount, { symbol: row.symbol });
+    return formatMoney(amount, baseCurrency);
+  }, [dimension, baseCurrency]);
+
+  const rowSubLabel = useCallback((row) => {
+    if (dimension === 'employee') {
+      return [row.role, row.branchName, row.transactions != null ? `${row.transactions} transactions` : null].filter(Boolean).join(' · ');
+    }
+    if (dimension === 'pos') {
+      return [row.branchName, row.transactions != null ? `${row.transactions} transactions` : null].filter(Boolean).join(' · ');
+    }
+    if (dimension === 'category' && row.qty != null) return `${row.qty} sold`;
+    if (dimension === 'currency') {
+      const parts = [];
+      if (row.name) parts.push(row.name);
+      if (row.symbol && row.symbol !== row.name) parts.push(row.symbol);
+      if (row.transactions != null) parts.push(`${row.transactions} transactions`);
+      return parts.join(' · ') || null;
+    }
+    if (row.transactions != null) return `${row.transactions} transactions`;
+    return null;
+  }, [dimension]);
+
+  // ─── Client-side insight: best day of week (no extra backend call) ───────
+  const bestDayInsight = useMemo(() => {
+    if (!dailyRows.length) return null;
+    const byDow = {};
+    dailyRows.forEach((d) => {
+      const dow = new Date(d.date).getDay();
+      if (!byDow[dow]) byDow[dow] = { total: 0, count: 0 };
+      byDow[dow].total += d.sales || 0;
+      byDow[dow].count += 1;
+    });
+    let best = null;
+    Object.entries(byDow).forEach(([dow, v]) => {
+      const avg = v.total / v.count;
+      if (!best || avg > best.avg) best = { dow: Number(dow), avg };
+    });
+    if (!best || best.avg <= 0) return null;
+    return { day: DAY_NAMES[best.dow], avg: best.avg };
+  }, [dailyRows]);
+
+  // ─── Exports ──────────────────────────────────────────────────────────────
+  const handleExportCsv = useCallback(() => {
+    if (isExportingCsv || !dimensionRows.length) return;
+    setIsExportingCsv(true);
+    try {
+      const header = ['Rank', 'Name', 'Sales', 'Share (%)'];
+      const rows = dimensionRows.map((r, i) => [i + 1, rowLabel(r), (r.sales || 0).toFixed(2), (r.percentage || 0).toFixed(1)]);
+      const branchTag = selectedBranchId === 'all' ? 'all-stores' : selectedBranchName.toLowerCase().replace(/\s+/g, '-');
+      downloadCsv(`sales-by-${dimension}_${branchTag}_${toApiDate(startDate)}_to_${toApiDate(endDate)}.csv`, [header, ...rows]);
+    } finally {
+      setIsExportingCsv(false);
+    }
+  }, [dimensionRows, dimension, rowLabel, selectedBranchId, selectedBranchName, startDate, endDate, isExportingCsv]);
+
+  const handleExportPdf = useCallback(async () => {
+    if (exportingPdf || !summary) return;
+    setExportingPdf(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const autoTableModule = await import('jspdf-autotable');
+      const autoTable = autoTableModule.default || autoTableModule;
+
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+      doc.setFontSize(14);
+      doc.text('Sales Analytics', 32, 30);
+      doc.setFontSize(10);
+      doc.setTextColor(110, 120, 135);
+      doc.text(`${selectedBranchName} • ${toApiDate(startDate)} to ${toApiDate(endDate)}`, 32, 46);
+      doc.setTextColor(20, 24, 30);
+
+      autoTable(doc, {
+        startY: 58,
+        head: [['Metric', 'Value']],
+        body: [
+          ['Gross Sales', formatMoney(summary.grossSales, baseCurrency)],
+          ['Discounts', formatMoney(summary.discounts, baseCurrency)],
+          ['Refunds', formatMoney(summary.refunds, baseCurrency)],
+          ['Net Sales', formatMoney(summary.netSales, baseCurrency)],
+          ['COGS', formatMoney(summary.cogs, baseCurrency)],
+          ['Profit', formatMoney(summary.profit, baseCurrency)],
+          ['Transactions', formatNumber(summary.transactions)],
+          ['Average Sale', formatMoney(summary.averageSale, baseCurrency)],
+        ],
+        styles: { fontSize: 8, cellPadding: 4 },
+        headStyles: { fillColor: [53, 122, 189], fontSize: 8 },
+        margin: { left: 32, right: 32 },
+      });
+
+      const dimHead = [['Rank', `By ${DIMENSIONS.find((d) => d.id === dimension)?.label}`, 'Sales', 'Share']];
+      const dimBody = dimensionRows.map((r, i) => [i + 1, rowLabel(r), rowMoney(r, r.sales), `${(r.percentage || 0).toFixed(1)}%`]);
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 20,
+        head: dimHead,
+        body: dimBody,
+        styles: { fontSize: 8, cellPadding: 4 },
+        headStyles: { fillColor: [53, 122, 189], fontSize: 8 },
+        margin: { left: 32, right: 32 },
+      });
+
+      if (hasMultipleBranches && branchComparison?.branches?.length) {
+        autoTable(doc, {
+          startY: doc.lastAutoTable.finalY + 20,
+          head: [['Rank', 'Branch', 'Sales', 'Growth', 'Transactions', 'Avg Sale']],
+          body: branchComparison.branches.map((b) => [
+            b.salesRank, b.name, formatMoney(b.sales, baseCurrency),
+            `${b.salesGrowth >= 0 ? '+' : ''}${b.salesGrowth.toFixed(1)}%`,
+            formatNumber(b.transactions), formatMoney(b.avgSale, baseCurrency),
+          ]),
+          styles: { fontSize: 8, cellPadding: 4 },
+          headStyles: { fillColor: [53, 122, 189], fontSize: 8 },
+          margin: { left: 32, right: 32 },
+        });
+      }
+
+      const branchTag = selectedBranchId === 'all' ? 'all-stores' : selectedBranchName.toLowerCase().replace(/\s+/g, '-');
+      doc.save(`sales-analytics_${branchTag}_${toApiDate(startDate)}_to_${toApiDate(endDate)}.pdf`);
+    } catch (err) {
+      console.error('Error exporting PDF:', err);
+      setError('Could not generate the PDF. Make sure jspdf and jspdf-autotable are installed.');
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [summary, dimensionRows, dimension, rowLabel, rowMoney, selectedBranchId, selectedBranchName, startDate, endDate, baseCurrency, exportingPdf, hasMultipleBranches, branchComparison]);
 
   const renderStoreModal = () => {
     if (!storeModalOpen) return null;
     return (
       <div className="reports-modal-overlay" onClick={() => setStoreModalOpen(false)}>
         <div className="reports-modal" style={{ maxWidth: 320 }} onClick={(e) => e.stopPropagation()}>
-          <div className="reports-modal-header"><span className="reports-modal-title">Select Store</span></div>
+          <div className="reports-modal-header">
+            <span className="reports-modal-title">Select Store</span>
+          </div>
           <div className="reports-modal-body" style={{ padding: '8px 4px' }}>
             {branchOptions.map((opt) => (
-              <button key={opt.value} className={`reports-filter-option ${selectedBranchId === opt.value ? 'is-active' : ''}`}
-                onClick={() => { setSelectedBranchId(opt.value); setStoreModalOpen(false); }}>
+              <button
+                key={opt.value}
+                className={`reports-filter-option ${selectedBranchId === opt.value ? 'is-active' : ''}`}
+                onClick={() => { setSelectedBranchId(opt.value); setStoreModalOpen(false); }}
+              >
                 {opt.label}
               </button>
             ))}
@@ -213,7 +405,7 @@ export default function InventoryAnalytics() {
     );
   };
 
-  // ─── ACCESS DENIED ────────────────────────────────────────────────────────
+  // ─── ACCESS DENIED (module not subscribed) ───────────────────────────────
   if (!hasAnalytics) {
     const moduleInfo = getModuleInfo('analytics');
     return (
@@ -223,8 +415,8 @@ export default function InventoryAnalytics() {
           <div className="reports-header-left">
             <button className="reports-header-back" onClick={() => navigate('/')}><ChevronLeft size={18} /></button>
             <div>
-              <div className="reports-header-title">Inventory Intelligence</div>
-              <div className="reports-header-sub">Turnover, demand forecasting, and reorder guidance</div>
+              <div className="reports-header-title">Sales Analytics</div>
+              <div className="reports-header-sub">Summary, trend, and breakdowns for this period</div>
             </div>
           </div>
           <div className="reports-header-right">
@@ -243,7 +435,7 @@ export default function InventoryAnalytics() {
               {moduleInfo?.label || 'Analytics'} Required
             </h2>
             <p style={{ fontSize: 14, color: '#64748B', lineHeight: 1.5 }}>
-              You need the <strong>{moduleInfo?.label || 'Analytics'}</strong> module to view inventory intelligence for <strong>{selectedBranchName}</strong>.
+              You need the <strong>{moduleInfo?.label || 'Analytics'}</strong> module to view sales analytics for <strong>{selectedBranchName}</strong>.
               Please subscribe to unlock this functionality.
             </p>
             <div style={{ marginTop: 16, fontSize: 13, color: '#94A3B8' }}>
@@ -251,9 +443,9 @@ export default function InventoryAnalytics() {
                 <span>Price: {moduleInfo.price}{moduleInfo.period || '/month'}</span>
               )}
             </div>
-            <button 
+            <button
               onClick={() => guardAction('analytics')}
-              style={{ 
+              style={{
                 marginTop: 20,
                 padding: '10px 24px',
                 borderRadius: 8,
@@ -285,14 +477,14 @@ export default function InventoryAnalytics() {
     );
   }
 
-  // ─── PERMISSION CHECK ────────────────────────────────────────────────────────
+  // ─── PERMISSION CHECK ─────────────────────────────────────────────────────
   if (!canView) {
     return (
       <div className="reports-access-denied">
         <div className="reports-access-denied-content">
           <Lock size={48} className="reports-access-denied-icon" />
           <h2>Access Denied</h2>
-          <p>You don't have permission to view inventory intelligence.</p>
+          <p>You don't have permission to view sales analytics.</p>
           <p className="reports-access-denied-sub">Contact your administrator to request access.</p>
           <button className="reports-access-denied-btn" onClick={() => navigate('/')}>Go Back</button>
         </div>
@@ -300,253 +492,249 @@ export default function InventoryAnalytics() {
     );
   }
 
+  const bcSummary = branchComparison?.summary;
+  const bcRows = branchComparison?.branches || [];
+
   return (
     <div className="reports-page">
       <div className="reports-header">
         <div className="reports-header-left">
-          <button className="reports-header-back" onClick={() => navigate('/')}><ChevronLeft size={18} /></button>
+          <button className="reports-header-back" onClick={() => navigate('/')}>
+            <ChevronLeft size={18} />
+          </button>
           <div>
-            <div className="reports-header-title">Inventory Intelligence</div>
-            <div className="reports-header-sub">Turnover, demand forecasting, and reorder guidance</div>
+            <div className="reports-header-title">Sales Analytics</div>
+            <div className="reports-header-sub">Summary, trend, and breakdowns for this period</div>
           </div>
         </div>
         <div className="reports-header-right">
-          <LoadProgressBar loading={loading || refreshing} completed={loadCompleted} total={TOTAL_ANALYTICS_CALLS} />
           <button className="reports-store-selector" onClick={() => setStoreModalOpen(true)}>
-            <Store size={14} /><span>{selectedBranchName}</span>
+            <Store size={14} />
+            <span>{selectedBranchName}</span>
           </button>
-          <Button variant="secondary" size="sm" onClick={() => load(true)} loading={refreshing}>Refresh</Button>
+          <Button variant="secondary" size="sm" icon={Download} onClick={handleExportCsv} disabled={isExportingCsv || !dimensionRows.length}>
+            CSV
+          </Button>
+          <Button variant="secondary" size="sm" icon={FileText} onClick={handleExportPdf} disabled={exportingPdf || !summary} loading={exportingPdf}>
+            PDF
+          </Button>
+          <Button variant="secondary" size="sm" onClick={refreshAll} loading={refreshing}>
+            Refresh
+          </Button>
         </div>
       </div>
 
       <div style={{ marginBottom: 16 }}>
-        <DateRangeNav startDate={startDate} endDate={endDate} selectedOption={selectedOption} onNavigate={navigateDate} onOptionSelect={handleOptionSelect} />
+        <DateRangeNav
+          startDate={startDate}
+          endDate={endDate}
+          selectedOption={selectedOption}
+          onNavigate={navigateDate}
+          onOptionSelect={handleOptionSelect}
+        />
       </div>
 
-      {error && <div className="dashboard-error" style={{ marginBottom: 12 }}>{error}</div>}
+      {error && (
+        <div className="dashboard-error" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
 
-      {/* KPI row */}
+      {/* ─── KPI row ─────────────────────────────────────────────────────── */}
       <div className="reports-stats-row">
         {[
-          { label: 'Retail Value', value: performance ? formatMoney(performance.inventoryValue.totalRetailValue, baseCurrency) : '' },
-          { label: 'Inventory Cost Value', value: performance ? formatMoney(performance.inventoryValue.totalCostValue, baseCurrency) : '' },
-          { label: 'Turnover Ratio', value: performance ? `${performance.periodMetrics.turnoverRatio.toFixed(2)}x` : '' },
-          { label: 'GMROI', value: performance ? `${performance.periodMetrics.gmroi.toFixed(2)}x` : '' },
-          { label: 'Low Stock', value: performance ? formatNumber(performance.stockHealth.lowStockCount) : '' },
-          { label: 'Out of Stock', value: performance ? formatNumber(performance.stockHealth.outOfStockCount) : '' },
+          { label: 'Gross Sales', value: summary ? formatMoney(summary.grossSales, baseCurrency) : '' },
+          { label: 'Discounts', value: summary ? formatMoney(summary.discounts, baseCurrency) : '' },
+          { label: 'Refunds', value: summary ? formatMoney(summary.refunds, baseCurrency) : '' },
+          { label: 'Net Sales', value: summary ? formatMoney(summary.netSales, baseCurrency) : '' },
+          { label: 'COGS', value: summary ? formatMoney(summary.cogs, baseCurrency) : '' },
+          { label: 'Profit', value: summary ? formatMoney(summary.profit, baseCurrency) : '' },
+          { label: 'Transactions', value: summary ? formatNumber(summary.transactions) : '' },
+          { label: 'Avg. Sale', value: summary ? formatMoney(summary.averageSale, baseCurrency) : '' },
         ].map((stat) => (
           <div className="reports-stat-card" key={stat.label}>
             <span className="reports-stat-label">{stat.label}</span>
-            {loading ? <div className="skeleton" style={{ height: 18, borderRadius: 4, marginTop: 4 }} /> : <span className="reports-stat-value">{stat.value}</span>}
+            {loading ? (
+              <div className="skeleton" style={{ height: 18, borderRadius: 4, marginTop: 4 }} />
+            ) : (
+              <span className="reports-stat-value">{stat.value}</span>
+            )}
           </div>
         ))}
       </div>
 
-      {/* Stock health + category value */}
-      <div className="reports-list-card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332', marginBottom: 10 }}>Stock health</div>
-        {loading ? <div className="skeleton" style={{ height: 10, borderRadius: 6 }} /> : performance && (
-          <>
-            <HealthBar {...performance.stockHealth} />
-            <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 12, color: '#5e6f8a', flexWrap: 'wrap' }}>
-              <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#16a34a', marginRight: 5 }} />Healthy: {performance.stockHealth.healthyCount}</span>
-              <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#d97706', marginRight: 5 }} />Low: {performance.stockHealth.lowStockCount}</span>
-              <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#ef4444', marginRight: 5 }} />Out: {performance.stockHealth.outOfStockCount}</span>
-            </div>
-          </>
-        )}
-
-        {!loading && performance?.valueByCategory?.length > 0 && (
-          <div className="category-panel" style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 12, color: '#8b97a7', marginBottom: 6 }}>Inventory value by category</div>
-            <div className="category-list">
-              {performance.valueByCategory.slice(0, 8).map((c, i) => (
-                <div key={c.categoryId} className="category-row" style={{ padding: '7px 2px' }}>
-                  <div className="category-row-label" style={{ minWidth: 0 }}>
-                    <span className="color-dot" style={{ background: ['#357abd', '#50C878', '#FF6B6B', '#FFD93D', '#9C27B0', '#FF9800', '#00BCD4', '#A9A9A9'][i % 8] }} />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.categoryName}</div>
-                      <div style={{ fontSize: 10.5, color: '#8b97a7' }}>{c.items} items in stock</div>
-                    </div>
-                  </div>
-                  <div className="category-row-value"><span>{formatMoney(c.costValue, baseCurrency)}</span></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Reorder recommendations */}
-      <div className="reports-list-card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332' }}>Reorder recommendations</div>
-            <div style={{ fontSize: 12, color: '#8b97a7' }}>
-              {reorder ? `${reorder.criticalCount} critical · ${reorder.highCount} high priority` : 'Based on recent sales velocity'}
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <select value={leadTimeDays} onChange={(e) => setLeadTimeDays(Number(e.target.value))}
-              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #e6eaf0', background: '#fff' }}>
-              {[3, 5, 7, 14, 21].map((d) => <option key={d} value={d}>{d}-day lead time</option>)}
-            </select>
-            <div style={{ display: 'flex', gap: 4, background: '#f0f2f5', borderRadius: 6, padding: 2 }}>
-              {['all', 'critical', 'high', 'medium'].map((u) => (
-                <button key={u} className={`reports-filter-option ${urgencyFilter === u ? 'is-active' : ''}`}
-                  onClick={() => setUrgencyFilter(u)} style={{ padding: '4px 10px', borderRadius: 4, fontSize: 12, width: 'auto', textTransform: 'capitalize' }}>
-                  {u}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* ─── Best day insight ────────────────────────────────────────────── */}
+      {!loading && bestDayInsight && (
+        <div className="reports-list-card" style={{ padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Calendar size={14} color="#357abd" />
+          <span style={{ fontSize: 12.5, color: '#1a2332' }}>
+            <strong>{bestDayInsight.day}</strong> is your strongest day, averaging {formatMoney(bestDayInsight.avg, baseCurrency)} in sales.
+          </span>
         </div>
+      )}
 
-        {loading ? (
-          <div className="skeleton" style={{ height: 120, borderRadius: 10 }} />
-        ) : filteredRecs.length === 0 ? (
-          <div className="dashboard-empty" style={{ height: 80 }}>Nothing needs reordering right now.</div>
-        ) : (
-          filteredRecs.slice(0, 30).map((r) => {
-            const meta = URGENCY_META[r.urgency];
-            return (
-              <div key={`${r.branchId}-${r.productId}`} className="reports-list-item">
-                <span style={{
-                  padding: '3px 8px', borderRadius: 5, background: meta.bg, color: meta.color,
-                  fontSize: 10.5, fontWeight: 700, flexShrink: 0, textTransform: 'uppercase',
-                }}>{meta.label}</span>
-                <div className="reports-list-item-info">
-                  <div className="reports-list-item-title">{r.name}</div>
-                  <div className="reports-list-item-sub">
-                    <span>SKU: {r.sku || '—'}</span>
-                    <span>Stock: {r.currentStock}</span>
-                    <span>~{r.avgDailySales.toFixed(1)}/day</span>
-                    {r.daysUntilStockOut != null && <span>{r.daysUntilStockOut.toFixed(0)}d until out</span>}
-                  </div>
-                </div>
-                <div className="reports-list-item-right">
-                  <div className="reports-list-item-amount">Order {r.recommendedQty}</div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Demand forecast + dead stock, side by side stacked */}
+      {/* ─── Trend chart ─────────────────────────────────────────────────── */}
       <div className="reports-list-card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332', marginBottom: 2 }}>Demand forecast</div>
-        <div style={{ fontSize: 12, color: '#8b97a7', marginBottom: 10 }}>
-          {forecast ? `Projected demand over the next ${forecast.horizonDays} days · ${forecast.stockOutRiskCount} at risk of stocking out` : ''}
-        </div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332', marginBottom: 2 }}>Sales trend</div>
+        <div style={{ fontSize: 12, color: '#8b97a7', marginBottom: 10 }}>Net sales per day for the selected period</div>
         {loading ? (
-          <div className="skeleton" style={{ height: 120, borderRadius: 10 }} />
-        ) : !forecast?.items?.length ? (
-          <div className="dashboard-empty" style={{ height: 80 }}>Not enough sales history to forecast demand yet.</div>
-        ) : (
-          forecast.items.slice(0, 15).map((f) => (
-            <div key={f.productId} className="reports-list-item">
-              <div className="reports-list-item-info">
-                <div className="reports-list-item-title">{f.name}</div>
-                <div className="reports-list-item-sub">
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><TrendIcon trend={f.trend} /> {f.trend}</span>
-                  <span>{f.avgDailyDemand.toFixed(1)}/day avg</span>
-                  <span>Stock: {f.currentStock}</span>
-                  {f.willStockOut && <span style={{ color: '#ef4444', fontWeight: 600 }}>Stock-out risk</span>}
-                </div>
-              </div>
-              <div className="reports-list-item-right">
-                <div className="reports-list-item-amount">{Math.round(f.forecastQty)} units</div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <div className="reports-list-card" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332', marginBottom: 2 }}>
-          <PackageX size={14} style={{ marginRight: 6, verticalAlign: -2, color: '#8b97a7' }} />Dead stock
-        </div>
-        <div style={{ fontSize: 12, color: '#8b97a7', marginBottom: 10 }}>
-          {deadStock ? `${deadStock.count} products, no sales in ${deadStock.noSaleDays}+ days · ${formatMoney(deadStock.totalTiedUpValue, baseCurrency)} tied up` : ''}
-        </div>
-        {loading ? (
-          <div className="skeleton" style={{ height: 100, borderRadius: 10 }} />
-        ) : !deadStock?.items?.length ? (
-          <div className="dashboard-empty" style={{ height: 80 }}>No dead stock detected — nice work.</div>
-        ) : (
-          deadStock.items.slice(0, 15).map((d) => (
-            <div key={d.productId} className="reports-list-item">
-              <div className="reports-list-item-info">
-                <div className="reports-list-item-title">{d.name}</div>
-                <div className="reports-list-item-sub">
-                  <span>{d.categoryName}</span>
-                  <span>Stock: {d.currentStock}</span>
-                  <span><Clock size={10} style={{ verticalAlign: -1, marginRight: 2 }} />{d.daysSinceLastSale != null ? `${d.daysSinceLastSale}d since last sale` : 'Never sold'}</span>
-                </div>
-              </div>
-              <div className="reports-list-item-right">
-                <div className="reports-list-item-amount" style={{ color: '#d97706' }}>{formatMoney(d.tiedUpValue, baseCurrency)}</div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Stock movement analytics */}
-      <div className="reports-list-card" style={{ padding: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332', marginBottom: 2 }}>Stock movement activity</div>
-        <div style={{ fontSize: 12, color: '#8b97a7', marginBottom: 10 }}>Daily movement volume for the selected period</div>
-        {loading ? (
-          <div className="skeleton" style={{ height: 200, borderRadius: 10 }} />
-        ) : movements?.dailyTrend?.length ? (
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={movements.dailyTrend} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
+          <div className="skeleton" style={{ height: 220, borderRadius: 10 }} />
+        ) : dailyRows.length ? (
+          <ResponsiveContainer width="100%" height={240}>
+            <AreaChart data={dailyRows} margin={{ top: 6, right: 6, left: -18, bottom: 0 }}>
               <defs>
-                <linearGradient id="moveFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#357abd" stopOpacity={0.3} />
+                <linearGradient id="salesAnalyticsFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#357abd" stopOpacity={0.32} />
                   <stop offset="100%" stopColor="#357abd" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="#eef1f5" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#8b97a7' }} axisLine={{ stroke: '#e6eaf0' }} tickLine={false}
-                tickFormatter={(d) => { const dt = new Date(d); return `${MONTHS[dt.getMonth()]} ${dt.getDate()}`; }} />
-              <YAxis tick={{ fontSize: 10, fill: '#8b97a7' }} axisLine={false} tickLine={false} width={40} />
-              <Tooltip formatter={(v, name) => [v, name === 'qty' ? 'Units moved' : 'Movements']} contentStyle={{ borderRadius: 8, border: '1px solid #e6eaf0', fontSize: 12 }} />
-              <Area type="monotone" dataKey="qty" stroke="#357abd" strokeWidth={2} fill="url(#moveFill)" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 10, fill: '#8b97a7' }}
+                axisLine={{ stroke: '#e6eaf0' }}
+                tickLine={false}
+                tickFormatter={(d) => { const dt = new Date(d); return `${MONTHS[dt.getMonth()]} ${dt.getDate()}`; }}
+              />
+              <YAxis tick={{ fontSize: 10, fill: '#8b97a7' }} axisLine={false} tickLine={false} width={48} />
+              <Tooltip
+                formatter={(v) => formatMoney(v, baseCurrency)}
+                labelFormatter={(d) => formatDateDisplay(new Date(d))}
+                contentStyle={{ borderRadius: 8, border: '1px solid #e6eaf0', fontSize: 12, boxShadow: '0 8px 24px rgba(22,32,43,0.12)' }}
+              />
+              <Area type="monotone" dataKey="sales" stroke="#357abd" strokeWidth={2} fill="url(#salesAnalyticsFill)" />
             </AreaChart>
           </ResponsiveContainer>
         ) : (
-          <div className="dashboard-empty">No stock movements recorded for this period.</div>
+          <div className="dashboard-empty">No sales recorded for this period yet.</div>
         )}
+      </div>
 
-        {!loading && movements && (
-          <div style={{ display: 'flex', gap: 24, marginTop: 16, flexWrap: 'wrap' }}>
-            <div>
-              <div style={{ fontSize: 11, color: '#8b97a7', marginBottom: 4 }}>By type</div>
-              {movements.byType.slice(0, 6).map((t) => (
-                <div key={t.type} style={{ fontSize: 12, color: '#1a2332', marginBottom: 2 }}>
-                  {t.type.replace(/_/g, ' ')}: <strong>{t.count}</strong> ({formatNumber(t.totalQty)} units)
+      {/* ─── Dimension breakdown ─────────────────────────────────────────── */}
+      <div className="reports-list-card" style={{ padding: 16, marginBottom: hasMultipleBranches ? 16 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332' }}>Sales breakdown</div>
+            <div style={{ fontSize: 12, color: '#8b97a7' }}>Share of net sales by {DIMENSIONS.find((d) => d.id === dimension)?.label.toLowerCase()}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 4, background: '#f0f2f5', borderRadius: 6, padding: 2, flexWrap: 'wrap' }}>
+            {visibleDimensions.map((d) => (
+              <button
+                key={d.id}
+                className={`reports-filter-option ${dimension === d.id ? 'is-active' : ''}`}
+                onClick={() => setDimension(d.id)}
+                style={{ padding: '4px 10px', borderRadius: 4, fontSize: 12, width: 'auto' }}
+              >
+                <d.icon size={12} style={{ marginRight: 4 }} />
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {dimensionLoading ? (
+          <div className="skeleton" style={{ height: 180, borderRadius: 10 }} />
+        ) : dimensionRows.length === 0 ? (
+          <div className="dashboard-empty" style={{ height: 100 }}>No data for this dimension in the selected period.</div>
+        ) : (
+          <div className="category-panel">
+            <div className="category-list">
+              {dimensionRows.map((row, index) => (
+                <div key={row.id || index} className="category-row" style={{ padding: '7px 2px' }}>
+                  <div className="category-row-label" style={{ minWidth: 0 }}>
+                    <span className="color-dot" style={{ background: DIM_COLORS[index % DIM_COLORS.length] }} />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{rowLabel(row)}</div>
+                      {rowSubLabel(row) && (
+                        <div style={{ fontSize: 10.5, color: '#8b97a7' }}>{rowSubLabel(row)}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="category-row-value">
+                    <span>{rowMoney(row, row.sales)}</span>
+                    <span className="category-row-percent">({(row.percentage || 0).toFixed(1)}%)</span>
+                  </div>
                 </div>
               ))}
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#8b97a7', marginBottom: 4 }}>
-                <AlertTriangle size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Conflicts
-              </div>
-              <div style={{ fontSize: 12, color: '#1a2332' }}>{movements.conflicts.count} oversells · {movements.conflicts.unfulfilledQty} units unfulfilled</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 11, color: '#8b97a7', marginBottom: 4 }}>
-                <ArrowLeftRight size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Transfers
-              </div>
-              <div style={{ fontSize: 12, color: '#1a2332' }}>
-                Out: {movements.transfers.outQty} · In: {movements.transfers.inQty} · Reversed: {movements.transfers.reversedQty}
-              </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* ─── Branch comparison — "which store is performing better" ──────── */}
+      {hasMultipleBranches && (
+        <div className="reports-list-card" style={{ padding: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a2332', marginBottom: 2 }}>
+            <Trophy size={14} style={{ marginRight: 6, verticalAlign: -2, color: '#d97706' }} />Branch comparison
+          </div>
+          <div style={{ fontSize: 12, color: '#8b97a7', marginBottom: 12 }}>How each store is performing this period, ranked by sales</div>
+
+          {branchLoading ? (
+            <div className="skeleton" style={{ height: 200, borderRadius: 10 }} />
+          ) : !bcRows.length ? (
+            <div className="dashboard-empty" style={{ height: 80 }}>No branch data for this period yet.</div>
+          ) : (
+            <>
+              {/* Headline callouts */}
+              <div className="reports-stats-row" style={{ marginBottom: 16 }}>
+                {bcSummary?.topPerformer && (
+                  <div className="reports-stat-card">
+                    <span className="reports-stat-label"><Trophy size={11} style={{ marginRight: 4, verticalAlign: -1, color: '#d97706' }} />Top Performer</span>
+                    <span className="reports-stat-value" style={{ fontSize: 13 }}>{bcSummary.topPerformer.name}</span>
+                    <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>{formatMoney(bcSummary.topPerformer.sales, baseCurrency)}</div>
+                  </div>
+                )}
+                {bcSummary?.mostImproved && (
+                  <div className="reports-stat-card">
+                    <span className="reports-stat-label"><TrendingUp size={11} style={{ marginRight: 4, verticalAlign: -1 }} />Most Improved</span>
+                    <span className="reports-stat-value" style={{ fontSize: 13 }}>{bcSummary.mostImproved.name}</span>
+                    <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>
+                      {bcSummary.mostImproved.salesGrowth >= 0 ? '+' : ''}{bcSummary.mostImproved.salesGrowth.toFixed(1)}% vs prior period
+                    </div>
+                  </div>
+                )}
+                {bcSummary?.needsAttention && (
+                  <div className="reports-stat-card">
+                    <span className="reports-stat-label"><AlertTriangle size={11} style={{ marginRight: 4, verticalAlign: -1, color: '#ef4444' }} />Needs Attention</span>
+                    <span className="reports-stat-value" style={{ fontSize: 13 }}>{bcSummary.needsAttention.name}</span>
+                    <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 600 }}>
+                      {bcSummary.needsAttention.salesGrowth.toFixed(1)}% vs prior period
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Ranked list */}
+              <div className="category-panel">
+                <div className="category-list">
+                  {bcRows.map((b) => (
+                    <div key={b.branchId} className="reports-list-item" style={{ padding: '10px 2px' }}>
+                      <div style={{
+                        width: 24, height: 24, borderRadius: 6, background: b.salesRank === 1 ? '#fef3c7' : '#f0f2f5',
+                        color: b.salesRank === 1 ? '#d97706' : '#8b97a7', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0,
+                      }}>#{b.salesRank}</div>
+                      <div className="reports-list-item-info">
+                        <div className="reports-list-item-title">{b.name}</div>
+                        <div className="reports-list-item-sub">
+                          <span>{formatNumber(b.transactions)} transactions</span>
+                          <span>Avg {formatMoney(b.avgSale, baseCurrency)}</span>
+                          <span>{b.salesShare.toFixed(1)}% of network sales</span>
+                          {b.topCategory && <span>Top: {b.topCategory}</span>}
+                        </div>
+                      </div>
+                      <div className="reports-list-item-right">
+                        <div className="reports-list-item-amount">{formatMoney(b.sales, baseCurrency)}</div>
+                        <GrowthBadge value={b.salesGrowth} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {renderStoreModal()}
 

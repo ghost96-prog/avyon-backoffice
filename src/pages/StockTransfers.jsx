@@ -704,7 +704,9 @@ export default function StockTransfers() {
   useEffect(() => {
     if (!businessId || !branches?.length || !hasAdvancedInventory) return;
     checkAllBranchesForIncoming();
-    const interval = setInterval(checkAllBranchesForIncoming, 30000);
+    // COST FIX: was every 30s, even in a hidden tab (one query per branch each time,
+    // re-reading every in-transit transfer). Now every 2 min and only while visible.
+    const interval = setInterval(() => { if (!document.hidden) checkAllBranchesForIncoming(); }, 120000);
     return () => clearInterval(interval);
   }, [businessId, branches, hasAdvancedInventory, checkAllBranchesForIncoming]);
 

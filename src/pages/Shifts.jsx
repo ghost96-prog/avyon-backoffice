@@ -619,7 +619,7 @@ export default function Shifts() {
           startY: y,
           head: [['Currency', 'Receipts', 'Net Sales']],
           body: s.currencyBreakdown.map((bd) => [
-            bd.currency, bd.receiptCount, `${bd.symbol || '$'}${Number(bd.netSales || 0).toFixed(2)}`,
+            bd.currencyName ? `${bd.currencyName} (${bd.currency})` : bd.currency, bd.receiptCount, `${bd.symbol || '$'}${Number(bd.netSales || 0).toFixed(2)}`,
           ]),
           styles: { fontSize: 9, cellPadding: 5 },
           headStyles: { fillColor: [53, 122, 189], fontSize: 9 },
@@ -766,9 +766,9 @@ export default function Shifts() {
               <div className="reports-modal-section" style={{ paddingLeft: 0, paddingRight: 0 }}>
                 <div className="reports-modal-section-title">Sales by Currency (Net)</div>
                 {s.currencyBreakdown.map((bd) => (
-                  <div key={bd.currency} className="reports-modal-row">
+                  <div key={`${bd.currency}||${bd.currencyName || ''}`} className="reports-modal-row">
                     <span>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>{bd.currency}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>{bd.currencyName ? `${bd.currencyName} (${bd.currency})` : bd.currency}</div>
                       <div style={{ fontSize: 10, color: '#94A3B8' }}>{bd.receiptCount} receipts</div>
                     </span>
                     <span style={{ fontWeight: 700, color: '#16a34a' }}>{bd.symbol || '$'}{Number(bd.netSales || 0).toFixed(2)}</span>

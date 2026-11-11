@@ -38,7 +38,7 @@ import { useAppContext } from '../context/AppContext';
 // and the server returns only what is NEW (usually nothing, billed as 1 read) instead
 // of re-reading the whole unread pile every time. 30s is plenty for a toast, and polls
 // pause while the tab is hidden.
-const POLL_INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 60000; // cost fix: was 30000
 const CURSOR_OVERLAP_MS = 5000; // small overlap so nothing created mid-request is missed (seenIds dedupes)
 const MAX_STACKED_TOASTS = 5;
 

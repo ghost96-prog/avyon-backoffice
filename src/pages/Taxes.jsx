@@ -9,11 +9,15 @@
 //
 // Stored on the branch settings doc: { taxEnabled, taxes: [{ id, name, rate, kind }] }
 // The first time tax is switched on, the server creates the three standard taxes.
+//
+// The ZIMRA fiscalisation details (merchant ID, token, TIN, VAT, and each store's device ID) are captured
+// at the bottom of this page by <ZimraSettings />.
 import React, { useState, useCallback, useEffect } from 'react';
 import { Store, Plus, X, Percent, Trash2, Pencil, AlertTriangle } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useSelectedBranch } from '../hooks/useSelectedBranch';
 import ConfirmDeleteModal from '../components/common/ConfirmDeleteModal';
+import ZimraSettings from '../components/common/ZimraSettings';
 import '../styles/ReportsShared.css';
 
 const fieldInput = (props) => ({
@@ -230,6 +234,8 @@ export default function Taxes() {
           ))
         )}
       </div>
+
+      <ZimraSettings apiFetch={apiFetch} businessId={businessId} selectedBranchId={selectedBranchId} staffId={staffId} />
 
       <ConfirmDeleteModal
         isOpen={!!deleteTarget}
