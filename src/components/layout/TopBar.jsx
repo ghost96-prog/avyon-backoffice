@@ -93,8 +93,8 @@ export default function TopBar({ onOpenMobileNav, title }) {
 
           {/* ✅ Community button with label on desktop */}
           <button
-            className="topbar-icon-btn topbar-community-btn"
-            aria-label="Community"
+            className={`topbar-icon-btn topbar-community-btn${unreadCount > 0 ? " topbar-community-btn--alert" : ""}`}
+            aria-label={unreadCount > 0 ? `Community, ${unreadCount} new post${unreadCount === 1 ? "" : "s"}` : "Community"}
             title="Community"
             onClick={() => navigate("/community")}
           >

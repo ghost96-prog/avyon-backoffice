@@ -10,6 +10,7 @@ import { useBranchNotifications } from '../../hooks/useBranchNotification';
 import { useInsights } from '../../hooks/useInsights';
 import ToastStack from '../common/ToastStack';
 import InsightToastStack from '../common/InsightToastStack';
+import CommunityPostToast from '../common/CommunityPostToast';
 import IntelligenceFab from '../common/IntelligenceFab'; // ✅ floating button → /intelligence (replaces the old Ask Avyon panel)
 import SubscriptionPayHost from '../subscription/SubscriptionPayHost'; // ✅ owns the EcoCash pay modal (opened by "Renew now" via the subscription-pay:open event)
 import { useAppContext } from '../../context/AppContext';
@@ -72,6 +73,7 @@ export default function DashboardLayout() {
         <TopBar onOpenMobileNav={() => setMobileOpen(true)} title={titleForPath(location.pathname)} />
         <ToastStack toasts={toasts} onDismiss={dismissToast} onMarkRead={markRead} />
         <InsightToastStack toasts={insightToasts} onDismiss={dismissInsightToast} onMarkRead={markInsightRead} />
+        <CommunityPostToast />
 
         <main className="shell-content">
           <Outlet />

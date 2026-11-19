@@ -344,8 +344,38 @@ const CustomItemModal = ({ draft, setDraft, categories, currencySymbol, skuCheck
   );
 };
 
+// ── Terms & Conditions quick-add clauses ────────────────────────────────────
+// One-click starting points. They are appended to the textarea and can be
+// edited freely — users can also just type their own terms from scratch.
+const TERMS_PRESETS = [
+  { label: '50% deposit', text: '50% deposit is required before work begins; the balance is due on completion.' },
+  { label: 'Full payment upfront', text: 'Full payment is required before goods are released or work begins.' },
+  { label: 'Payment on delivery', text: 'Payment is due on delivery.' },
+  { label: 'Prices exclude VAT', text: 'All prices exclude VAT unless stated otherwise.' },
+  { label: 'Prices subject to change', text: 'Prices are subject to change after the validity period of this quotation.' },
+  { label: 'Delivery', text: 'Delivery or collection will be arranged once payment is confirmed.' },
+  { label: 'Goods remain ours', text: 'Goods remain the property of the seller until paid for in full.' },
+  { label: 'No refunds on special orders', text: 'Special orders are non-refundable.' },
+];
+
+const TERMS_MAX_LENGTH = 3000;
+
+// Fetches the branch logo as a data URL (via the backend, which avoids the
+// browser's CORS block on Firebase Storage). Returns null on any failure so a
+// missing logo never stops a PDF from generating.
+async function fetchLogoDataUrl(apiFetch, businessId, branchId) {
+  if (!businessId || !branchId) return null;
+  try {
+    const res = await apiFetch(`/business/${businessId}/branches/${branchId}/settings/logo-data`);
+    return res?.logo || null;
+  } catch (e) {
+    console.warn('Logo fetch failed (PDF will render without it):', e?.message);
+    return null;
+  }
+}
+
 // ── PDF export — a polished, branded quotation document ─────────────────────
-async function exportQuotationPdf({ quotation, business, baseCurrency }) {
+async function exportQuotationPdf({ quotation, business, baseCurrency, logo }) {
   const { jsPDF } = await import('jspdf');
   const autoTableModule = await import('jspdf-autotable');
   const autoTable = autoTableModule.default || autoTableModule;
@@ -375,10 +405,35 @@ async function exportQuotationPdf({ quotation, business, baseCurrency }) {
   doc.setFillColor(TEAL);
   doc.rect(0, bandHeight - 3, pageWidth, 3, 'F');
 
+  // ── Logo (left of the business name) ──────────────────────────────────
+  // Sits on a white rounded tile so dark or transparent logos stay visible
+  // against the dark header band. Aspect ratio is preserved. If the image
+  // can't be decoded (e.g. HEIC), the header just renders without it.
+  let textX = margin;
+  if (logo) {
+    try {
+      const tile = 28;
+      const tileY = (bandHeight - 3 - tile) / 2;
+      const props = doc.getImageProperties(logo);
+      const pad = 2;
+      const maxW = tile - pad * 2;
+      const maxH = tile - pad * 2;
+      const ratio = Math.min(maxW / props.width, maxH / props.height);
+      const w = props.width * ratio;
+      const h = props.height * ratio;
+      doc.setFillColor('#FFFFFF');
+      doc.roundedRect(margin, tileY, tile, tile, 2, 2, 'F');
+      doc.addImage(logo, props.fileType, margin + (tile - w) / 2, tileY + (tile - h) / 2, w, h);
+      textX = margin + tile + 6;
+    } catch (e) {
+      console.warn('Could not embed logo in PDF:', e?.message);
+    }
+  }
+
   doc.setTextColor('#FFFFFF');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(17);
-  doc.text(business?.businessName || 'Your Business', margin, 16);
+  doc.text(business?.businessName || 'Your Business', textX, 16);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
@@ -388,8 +443,8 @@ async function exportQuotationPdf({ quotation, business, baseCurrency }) {
   // dark teal band instead.
   doc.setTextColor(214, 233, 240);
   const contactBits = [business?.email, business?.phoneNumber, baseCurrency?.code].filter(Boolean);
-  if (contactBits.length) doc.text(contactBits.join('   •   '), margin, 23);
-  if (q.branchName) doc.text(`Store: ${q.branchName}`, margin, 29);
+  if (contactBits.length) doc.text(contactBits.join('   •   '), textX, 23);
+  if (q.branchName) doc.text(`Store: ${q.branchName}`, textX, 29);
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(20);
@@ -479,6 +534,12 @@ async function exportQuotationPdf({ quotation, business, baseCurrency }) {
   // ── Totals box ────────────────────────────────────────────────────────
   const totalsWidth = 78;
   const totalsX = pageWidth - margin - totalsWidth;
+  // Keep the totals box together: if it won't fit under the table, start a new page.
+  const FOOTER_RESERVE = 24; // space kept clear for the page footer
+  if (finalY + 8 + 34 > pageHeight - FOOTER_RESERVE) {
+    doc.addPage();
+    finalY = margin - 8;
+  }
   let ty = finalY + 8;
 
   const totalsLine = (label, value, opts = {}) => {
@@ -511,35 +572,61 @@ async function exportQuotationPdf({ quotation, business, baseCurrency }) {
   ty += 14;
 
   // ── Notes & Terms ─────────────────────────────────────────────────────
-  let noteY = Math.max(ty + 6, finalY + 40);
+  // Custom terms can be long, so text is written line-by-line and flows onto
+  // extra pages instead of running off the bottom of the sheet.
+  let noteY = ty + 6;
+  const LINE_H = 4.6;
+  const bottomLimit = pageHeight - FOOTER_RESERVE;
   const writeBlock = (title, text) => {
-    if (!text) return;
+    if (!text || !String(text).trim()) return;
+    const lines = doc.splitTextToSize(String(text).trim(), pageWidth - margin * 2);
+
+    // Heading + at least 2 lines must fit together, otherwise move to a new page.
+    if (noteY + 5 + LINE_H * Math.min(lines.length, 2) > bottomLimit) {
+      doc.addPage();
+      noteY = margin + 4;
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(TEAL);
     doc.text(title, margin, noteY);
     noteY += 5;
+
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(SLATE);
-    const lines = doc.splitTextToSize(text, pageWidth - margin * 2);
-    doc.text(lines, margin, noteY);
-    noteY += lines.length * 4.6 + 6;
+    for (const line of lines) {
+      if (noteY + LINE_H > bottomLimit) {
+        doc.addPage();
+        noteY = margin + 4;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(SLATE);
+      }
+      doc.text(line, margin, noteY);
+      noteY += LINE_H;
+    }
+    noteY += 6;
   };
   writeBlock('Notes', q.notes);
   writeBlock('Terms & Conditions', q.terms);
 
-  // ── Footer ────────────────────────────────────────────────────────────
-  doc.setDrawColor(BORDER);
-  doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(10);
-  doc.setTextColor(TEAL_DARK);
-  doc.text('Thank you for your business.', pageWidth / 2, pageHeight - 12, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor('#94A3B8');
-  doc.text(`Generated ${new Date().toLocaleDateString()} · This quotation is not a tax invoice.`, pageWidth / 2, pageHeight - 7, { align: 'center' });
+  // ── Footer (drawn on every page) ──────────────────────────────────────
+  const totalPages = doc.getNumberOfPages();
+  for (let pg = 1; pg <= totalPages; pg++) {
+    doc.setPage(pg);
+    doc.setDrawColor(BORDER);
+    doc.line(margin, pageHeight - 18, pageWidth - margin, pageHeight - 18);
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(10);
+    doc.setTextColor(TEAL_DARK);
+    doc.text('Thank you for your business.', pageWidth / 2, pageHeight - 12, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor('#94A3B8');
+    doc.text(`Generated ${new Date().toLocaleDateString()} · This quotation is not a tax invoice.`, pageWidth / 2, pageHeight - 7, { align: 'center' });
+    if (totalPages > 1) doc.text(`Page ${pg} of ${totalPages}`, pageWidth - margin, pageHeight - 7, { align: 'right' });
+  }
 
   doc.save(`quotation_${q.quoteNumber}.pdf`);
 }
@@ -562,6 +649,11 @@ export default function Quotations() {
 
   const [business, setBusiness] = useState(null);
 
+  // Branch logo (same image used on receipts) + the store's saved default terms.
+  const [branchLogo, setBranchLogo] = useState(null);
+  const [defaultTerms, setDefaultTerms] = useState('');
+  const [savingDefaultTerms, setSavingDefaultTerms] = useState(false);
+
   const [storePopoverOpen, setStorePopoverOpen] = useState(false);
   useEffect(() => {
     if (!selectedBranchId && branches?.length) setSelectedBranchId(branches[0].branchId);
@@ -572,6 +664,20 @@ export default function Quotations() {
     if (!businessId) return;
     apiFetch(`/business/${businessId}`).then(setBusiness).catch(() => {});
   }, [apiFetch, businessId]);
+
+  // Load the store's logo + saved default terms whenever the store changes.
+  useEffect(() => {
+    if (!businessId || !selectedBranchId) { setBranchLogo(null); setDefaultTerms(''); return; }
+    let cancelled = false;
+    apiFetch(`/business/${businessId}/branches/${selectedBranchId}/settings`)
+      .then((s) => {
+        if (cancelled) return;
+        setBranchLogo(s?.receiptLogo || null);
+        setDefaultTerms(typeof s?.quotationTerms === 'string' ? s.quotationTerms : '');
+      })
+      .catch(() => { if (!cancelled) { setBranchLogo(null); setDefaultTerms(''); } });
+    return () => { cancelled = true; };
+  }, [apiFetch, businessId, selectedBranchId]);
 
   const fetchQuotes = useCallback(async () => {
     if (!businessId || !selectedBranchId) return;
@@ -777,7 +883,7 @@ export default function Quotations() {
     setProductSearch('');
     setVisibleProductCount(RENDER_PAGE_SIZE);
     setNotes('');
-    setTerms('50% deposit required before work begins.');
+    setTerms(defaultTerms || '50% deposit required before work begins.');
     setValidityDays('7');
     setDiscountType('amount');
     setDiscountValue('0');
@@ -974,10 +1080,38 @@ export default function Quotations() {
     }
   };
 
+  const saveTermsAsDefault = async () => {
+    if (!selectedBranchId) return;
+    setSavingDefaultTerms(true);
+    try {
+      await apiFetch(`/business/${businessId}/branches/${selectedBranchId}/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({ quotationTerms: terms.trim(), staffId }),
+      });
+      setDefaultTerms(terms.trim());
+      showToast(terms.trim() ? 'Saved as the default terms for this store' : 'Default terms cleared', 'success');
+    } catch (e) {
+      showToast(e.message || 'Could not save default terms', 'error');
+    } finally {
+      setSavingDefaultTerms(false);
+    }
+  };
+
+  const addTermsPreset = (text) => {
+    setTerms((prev) => {
+      const current = (prev || '').trim();
+      if (current.includes(text)) return prev; // already there
+      const next = current ? `${current}\n${text}` : text;
+      return next.slice(0, TERMS_MAX_LENGTH);
+    });
+  };
+
   const downloadPdf = async (q) => {
     setExportingPdf(true);
     try {
-      await exportQuotationPdf({ quotation: q, business, baseCurrency });
+      // Use the quotation's own store for the logo (it may differ from the store currently selected).
+      const logo = await fetchLogoDataUrl(apiFetch, businessId, q.branchId || selectedBranchId);
+      await exportQuotationPdf({ quotation: q, business, baseCurrency, logo });
     } catch (e) {
       console.error('PDF export error:', e);
       showToast('Could not generate the PDF', 'error');
@@ -1138,7 +1272,57 @@ export default function Quotations() {
               <textarea style={fieldInput({ minHeight: 50, resize: 'vertical' })} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional — shown on the PDF" />
 
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#475569', margin: '16px 0 8px' }}>Terms & Conditions</label>
-              <textarea style={fieldInput({ minHeight: 50, resize: 'vertical' })} value={terms} onChange={(e) => setTerms(e.target.value)} placeholder="Optional — shown on the PDF" />
+              <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 8 }}>
+                Type your own terms below, or tap a clause to add it. Everything is editable.
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {TERMS_PRESETS.map((pr) => {
+                  const active = (terms || '').includes(pr.text);
+                  return (
+                    <button
+                      key={pr.label}
+                      type="button"
+                      onClick={() => addTermsPreset(pr.text)}
+                      disabled={active}
+                      title={pr.text}
+                      style={{
+                        padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+                        border: `1px solid ${active ? '#BBF7D0' : '#BAE6FD'}`,
+                        background: active ? '#F0FDF4' : '#F0F9FF',
+                        color: active ? '#16A34A' : '#0891B2',
+                        cursor: active ? 'default' : 'pointer',
+                      }}
+                    >
+                      {active ? '✓ ' : '+ '}{pr.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <textarea
+                style={fieldInput({ minHeight: 120, resize: 'vertical', lineHeight: 1.5 })}
+                value={terms}
+                maxLength={TERMS_MAX_LENGTH}
+                onChange={(e) => setTerms(e.target.value)}
+                placeholder="e.g. Payment within 7 days. Goods remain our property until paid in full…"
+              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={saveTermsAsDefault}
+                    disabled={savingDefaultTerms || (terms || '').trim() === (defaultTerms || '').trim()}
+                    style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer', opacity: (terms || '').trim() === (defaultTerms || '').trim() ? 0.5 : 1 }}
+                  >
+                    {savingDefaultTerms ? 'Saving…' : 'Save as default for this store'}
+                  </button>
+                  {(terms || '').length > 0 && (
+                    <button type="button" onClick={() => setTerms('')} style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', fontSize: 12, fontWeight: 600, color: '#64748B', cursor: 'pointer' }}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <span style={{ fontSize: 11, color: '#94A3B8' }}>{(terms || '').length}/{TERMS_MAX_LENGTH}</span>
+              </div>
             </div>
 
             <div style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: 16 }}>
@@ -1259,6 +1443,14 @@ export default function Quotations() {
         {toast && <Toast {...toast} onClose={() => setToast(null)} />}
         <div className="reports-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <button className="reports-header-back" onClick={() => setView('list')}><ChevronLeft size={18} /></button>
+          {branchLogo && (
+            <img
+              src={branchLogo}
+              alt="Store logo"
+              style={{ width: 44, height: 44, objectFit: 'contain', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', padding: 3 }}
+              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+            />
+          )}
           <div style={{ flex: 1 }}>
             <h1 style={{ margin: 0, fontSize: 20, display: 'flex', alignItems: 'center', gap: 10 }}>{q.quoteNumber} <StatusPill status={q.status} /></h1>
             <div style={{ fontSize: 13, color: '#64748B', display: 'flex', alignItems: 'center', gap: 8, marginTop: 2 }}>
@@ -1331,7 +1523,7 @@ export default function Quotations() {
             {q.terms && (
               <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 8, padding: 12, fontSize: 13, color: '#475569' }}>
                 <div style={{ fontWeight: 700, fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', marginBottom: 4 }}>Terms & Conditions</div>
-                {q.terms}
+                <div style={{ whiteSpace: 'pre-wrap' }}>{q.terms}</div>
               </div>
             )}
           </div>

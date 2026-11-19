@@ -16,23 +16,33 @@
 //     </CommunityUnreadProvider>
 //   </AppProvider>
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { subscribeToNewPostsCount } from "../services/community";
 import { useAppContext } from "./AppContext";
 
 const CommunityUnreadContext = createContext({
   unreadCount: 0,
   markCommunitySeen: () => {},
+  newPostToast: null,
+  dismissNewPostToast: () => {},
 });
 
 function storageKey(uid) {
   return `community_last_seen_${uid}`;
 }
 
+// The newest post we already popped a toast for, so a reload (or a re-subscribe) doesn't show the
+// same post again. A genuinely newer post always gets its own toast.
+function toastedKey(uid) {
+  return `community_last_toasted_${uid}`;
+}
+
 export function CommunityUnreadProvider({ children }) {
   const { uid } = useAppContext();
   const [lastSeen, setLastSeen] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [newPostToast, setNewPostToast] = useState(null); // { count, latest } | null
+  const lastToastedRef = useRef(null);
 
   // Load (or seed) this user's last-seen timestamp whenever uid changes
   // (login, or switch-user on a shared device).
@@ -40,8 +50,11 @@ export function CommunityUnreadProvider({ children }) {
     if (!uid) {
       setLastSeen(null);
       setUnreadCount(0);
+      setNewPostToast(null);
+      lastToastedRef.current = null;
       return;
     }
+    lastToastedRef.current = localStorage.getItem(toastedKey(uid));
     const raw = localStorage.getItem(storageKey(uid));
     if (raw) {
       setLastSeen(new Date(raw));
@@ -58,8 +71,24 @@ export function CommunityUnreadProvider({ children }) {
   useEffect(() => {
     if (!uid || !lastSeen) return;
     const unsubscribe = subscribeToNewPostsCount(lastSeen, {
-      onChange: setUnreadCount,
-      onError: () => setUnreadCount(0),
+      excludeAuthorId: uid,
+      onChange: (count, latest) => {
+        setUnreadCount(count);
+        if (count === 0 || !latest) {
+          setNewPostToast(null);
+          return;
+        }
+        if (latest.id !== lastToastedRef.current) {
+          // A post we haven't announced yet: pop the toast.
+          lastToastedRef.current = latest.id;
+          try { localStorage.setItem(toastedKey(uid), latest.id); } catch (e) { /* storage full/blocked */ }
+          setNewPostToast({ count, latest });
+        } else {
+          // Same newest post, count moved (e.g. an older one arrived/was removed): keep an open toast accurate.
+          setNewPostToast((t) => (t ? { ...t, count } : t));
+        }
+      },
+      onError: () => { setUnreadCount(0); setNewPostToast(null); },
     });
     return () => unsubscribe();
   }, [uid, lastSeen]);
@@ -70,10 +99,14 @@ export function CommunityUnreadProvider({ children }) {
     localStorage.setItem(storageKey(uid), now.toISOString());
     setLastSeen(now);
     setUnreadCount(0);
+    setNewPostToast(null);
   }, [uid]);
 
+  // Dismiss hides the toast only. The badge/bounce stay until the user actually opens Community.
+  const dismissNewPostToast = useCallback(() => setNewPostToast(null), []);
+
   return (
-    <CommunityUnreadContext.Provider value={{ unreadCount, markCommunitySeen }}>
+    <CommunityUnreadContext.Provider value={{ unreadCount, markCommunitySeen, newPostToast, dismissNewPostToast }}>
       {children}
     </CommunityUnreadContext.Provider>
   );

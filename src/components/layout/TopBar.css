@@ -348,3 +348,25 @@
   }
   .topbar-intel-sparks { display: none; }
 }
+/* ── Community button: bounce while there are unseen posts ────────────────── */
+.topbar-community-btn--alert svg {
+  animation: topbar-community-bounce 1.8s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+.topbar-community-btn--alert .topbar-badge {
+  animation: topbar-community-pulse 1.8s ease-in-out infinite;
+}
+@keyframes topbar-community-bounce {
+  0%, 55%, 100% { transform: translateY(0); }
+  15%           { transform: translateY(-6px); }
+  30%           { transform: translateY(0); }
+  42%           { transform: translateY(-3px); }
+}
+@keyframes topbar-community-pulse {
+  0%, 55%, 100% { transform: scale(1); }
+  15%           { transform: scale(1.25); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .topbar-community-btn--alert svg,
+  .topbar-community-btn--alert .topbar-badge { animation: none; }
+}

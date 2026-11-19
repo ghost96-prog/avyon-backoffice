@@ -44,6 +44,13 @@ function fmtDateTime(ts) {
   return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+// "12 → 7" — before/after stock figures. Shows an em dash when either side
+// is unknown (e.g. transfer still in transit, or very old records).
+function stockChange(before, after) {
+  if (before === null || before === undefined || after === null || after === undefined) return '—';
+  return `${before} → ${after}`;
+}
+
 const Toast = ({ message, type, onClose, onClick }) => {
   useEffect(() => {
     const timer = setTimeout(onClose, 5000);
@@ -517,6 +524,16 @@ useEffect(() => {
                           onChange={(productId) => setMapping((prev) => ({ ...prev, [item.productId]: productId }))}
                           disabled={productsLoading}
                         />
+                        {isMapped && (() => {
+                          const dest = destProducts.find((p) => p.productId === mapping[item.productId]);
+                          if (!dest) return null;
+                          const before = Number(dest.currentStock ?? dest.stock ?? 0);
+                          return (
+                            <div style={{ fontSize: 11, color: '#16A34A', marginTop: 4, fontWeight: 600 }}>
+                              Stock: {before} → {before + Number(item.quantity || 0)}
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   );
@@ -624,6 +641,21 @@ export default function StockTransfers() {
     setToast({ message, type, transfer });
   }, []);
 
+  // The list endpoint returns the stored record only; the single-transfer
+  // endpoint also fills in before/after stock for older transfers. Show the
+  // row we already have instantly, then swap in the full record.
+  const hydrateTransfer = useCallback(async (t) => {
+    if (!t?.transferId || !businessId) return;
+    try {
+      const full = await apiFetch(`/business/${businessId}/stock-transfers/${t.transferId}`);
+      if (full?.transferId) {
+        setSelectedTransfer((cur) => (cur && cur.transferId === full.transferId ? { ...cur, ...full } : cur));
+      }
+    } catch (e) {
+      console.warn('Could not load full transfer record:', e?.message);
+    }
+  }, [apiFetch, businessId]);
+
   const navigateToTransfer = useCallback((t) => {
     if (!t) return;
     setViewBranchId(t.toBranchId);
@@ -631,7 +663,8 @@ export default function StockTransfers() {
     setView('detail');
     setShowModal(t.status === 'in_transit');
     setToast(null);
-  }, [setViewBranchId]);
+    hydrateTransfer(t);
+  }, [setViewBranchId, hydrateTransfer]);
 
   const viewBranchName = branches?.find((b) => b.branchId === viewBranchId)?.name || 'Select Store';
 
@@ -811,6 +844,7 @@ export default function StockTransfers() {
   const openDetail = (t) => {
     setSelectedTransfer(t);
     setView('detail');
+    hydrateTransfer(t);
     
     if (t.toBranchId === viewBranchId && t.status === 'in_transit') {
       setShowModal(true);
@@ -829,6 +863,8 @@ export default function StockTransfers() {
       showToast('Transfer accepted successfully!', 'success');
       setShowModal(false);
       setView('list');
+      // keep the record fresh so reopening it shows the new before/after stock
+      hydrateTransfer(selectedTransfer);
       setPendingIncoming((prev) => prev.filter((p) => p.transferId !== selectedTransfer.transferId));
       await fetchTransfers();
     } catch (e) {
@@ -850,6 +886,7 @@ export default function StockTransfers() {
       showToast('Transfer rejected', 'warning');
       setShowModal(false);
       setView('list');
+      hydrateTransfer(selectedTransfer);
       setPendingIncoming((prev) => prev.filter((p) => p.transferId !== selectedTransfer.transferId));
       await fetchTransfers();
     } catch (e) {
@@ -871,6 +908,7 @@ export default function StockTransfers() {
       });
       showToast('Transfer cancelled', 'warning');
       setView('list');
+      hydrateTransfer(selectedTransfer);
       await fetchTransfers();
     } catch (e) {
       showToast(e.message || 'Failed to cancel transfer', 'error');
@@ -883,7 +921,8 @@ export default function StockTransfers() {
     if (!guardAction('advanced_inventory')) return;
     if (!selectedTransfer) return;
     const t = selectedTransfer;
-    const doc = new jsPDF('portrait', 'mm', 'a4');
+    // Landscape so the before/after columns for both stores fit comfortably.
+    const doc = new jsPDF('landscape', 'mm', 'a4');
     const pageWidth = doc.internal.pageSize.getWidth();
 
     doc.setFontSize(16);
@@ -907,12 +946,44 @@ export default function StockTransfers() {
     if (t.notes) line('Notes:', t.notes);
     if (t.rejectionReason) line('Rejection Reason:', t.rejectionReason);
 
+    const returned = t.status === 'rejected' || t.status === 'cancelled';
+    const rows = t.items.map((it) => {
+      const sent = `${it.productName}${it.sku ? `\n${it.sku}` : ''}`;
+      let received;
+      if (t.status === 'completed') {
+        received = it.receivedProductName
+          ? `${it.receivedProductName}${it.receivedSku ? `\n${it.receivedSku}` : ''}`
+          : '—';
+      } else if (returned) {
+        received = `Not received - returned to ${t.fromBranchName}`;
+      } else {
+        received = 'Awaiting receipt';
+      }
+      const sourceCell = returned && it.returnStockBefore !== undefined
+        ? `${stockChange(it.sourceStockBefore, it.sourceStockAfter)}\nReturned: ${stockChange(it.returnStockBefore, it.returnStockAfter)}`
+        : stockChange(it.sourceStockBefore, it.sourceStockAfter);
+      return [
+        sent,
+        String(it.quantity),
+        sourceCell,
+        received,
+        t.status === 'completed' ? stockChange(it.destStockBefore, it.destStockAfter) : '—',
+      ];
+    });
+
     autoTable(doc, {
       startY: y + 4,
-      head: [['Product', 'SKU', 'Quantity', 'Unit']],
-      body: t.items.map((it) => [it.productName, it.sku, String(it.quantity), it.unit]),
-      styles: { fontSize: 9 },
+      head: [[
+        'Product Sent',
+        'Qty',
+        `${t.fromBranchName} stock\n(before -> after)`,
+        'Received As (receiving product)',
+        `${t.toBranchName} stock\n(before -> after)`,
+      ]],
+      body: rows,
+      styles: { fontSize: 9, cellPadding: 3 },
       headStyles: { fillColor: '#F1F5F9', textColor: '#0F172A', fontStyle: 'bold' },
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'center' }, 4: { halign: 'center' } },
     });
 
     doc.save(`transfer_${t.transferId}.pdf`);
@@ -1846,29 +1917,72 @@ export default function StockTransfers() {
           )}
         </div>
 
-        {/* Items table */}
-        <div className="reports-list-card" style={{ padding: 20, maxWidth: 700, marginTop: 16 }}>
-          <h4 style={{ marginBottom: 12 }}>Items ({t.items.length})</h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>SKU</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Quantity</th>
-                <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {t.items.map((it) => (
-                <tr key={it.productId} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                  <td style={{ padding: '8px 6px', fontWeight: 600 }}>{it.productName}</td>
-                  <td style={{ padding: '8px 6px', color: '#94A3B8' }}>{it.sku}</td>
-                  <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
-                  <td style={{ padding: '8px 6px', color: '#64748B' }}>{it.unit}</td>
+        {/* Items table — what was sent, what received it, and stock before/after on BOTH stores */}
+        <div className="reports-list-card" style={{ padding: 20, maxWidth: 1000, marginTop: 16 }}>
+          <h4 style={{ marginBottom: 4 }}>Items ({t.items.length})</h4>
+          <div style={{ fontSize: 12, color: '#94A3B8', marginBottom: 12 }}>
+            {t.status === 'completed' && 'Stock figures show each store’s count before and after this transfer.'}
+            {t.status === 'in_transit' && `Stock has left ${t.fromBranchName}. ${t.toBranchName} will see its before/after figures once the transfer is received.`}
+            {(t.status === 'rejected' || t.status === 'cancelled') && `Nothing was added to ${t.toBranchName}. Stock was returned to ${t.fromBranchName}.`}
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: 760 }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product Sent</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Qty</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>
+                    {t.fromBranchName}<div style={{ fontSize: 10, fontWeight: 600, textTransform: 'none' }}>stock before → after</div>
+                  </th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Received As</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>
+                    {t.toBranchName}<div style={{ fontSize: 10, fontWeight: 600, textTransform: 'none' }}>stock before → after</div>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {t.items.map((it) => {
+                  const returned = t.status === 'rejected' || t.status === 'cancelled';
+                  return (
+                    <tr key={it.productId} style={{ borderBottom: '1px solid #F1F5F9', verticalAlign: 'top' }}>
+                      <td style={{ padding: '10px 6px' }}>
+                        <div style={{ fontWeight: 600 }}>{it.productName}</div>
+                        {it.sku && <div style={{ fontSize: 11, color: '#94A3B8' }}>{it.sku}</div>}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center' }}>
+                        <div style={{ fontWeight: 700, color: '#EF4444' }}>{stockChange(it.sourceStockBefore, it.sourceStockAfter)}</div>
+                        {returned && it.returnStockBefore !== undefined && (
+                          <div style={{ fontSize: 11, color: '#16A34A', marginTop: 2 }}>
+                            Returned: {stockChange(it.returnStockBefore, it.returnStockAfter)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 6px' }}>
+                        {t.status === 'completed' ? (
+                          it.receivedProductName ? (
+                            <>
+                              <div style={{ fontWeight: 600 }}>{it.receivedProductName}</div>
+                              {it.receivedSku && <div style={{ fontSize: 11, color: '#94A3B8' }}>{it.receivedSku}</div>}
+                            </>
+                          ) : <span style={{ color: '#94A3B8' }}>—</span>
+                        ) : returned ? (
+                          <span style={{ color: '#64748B', fontSize: 12 }}>Not received — returned to {t.fromBranchName}</span>
+                        ) : (
+                          <span style={{ color: '#0891B2', fontSize: 12, fontWeight: 600 }}>Awaiting receipt</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '10px 6px', textAlign: 'center' }}>
+                        {t.status === 'completed'
+                          ? <span style={{ fontWeight: 700, color: '#16A34A' }}>{stockChange(it.destStockBefore, it.destStockAfter)}</span>
+                          : <span style={{ color: '#94A3B8' }}>—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* ✅ Module gate modal */}

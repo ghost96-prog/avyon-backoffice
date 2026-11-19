@@ -1,0 +1,70 @@
+/* New-community-post toast. Sits under the TopBar, near the Community button. */
+.cpt {
+  position: fixed;
+  top: 72px;
+  right: 20px;
+  z-index: 2001;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+  box-sizing: border-box;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-left: 3px solid var(--accent, #357abd);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  animation: cpt-in 0.25s ease-out;
+}
+.cpt-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft, #eaf1fa);
+  color: var(--accent, #357abd);
+}
+.cpt-main { flex: 1; min-width: 0; }
+.cpt-title { font-size: 13px; font-weight: 700; color: var(--ink, #16202b); }
+.cpt-body {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-soft, #57667a);
+  overflow-wrap: anywhere;
+}
+.cpt-body strong { color: var(--ink, #16202b); font-weight: 600; }
+.cpt-actions { display: flex; gap: 14px; margin-top: 8px; }
+.cpt-link {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint, #8b97a7);
+}
+.cpt-link-primary { color: var(--accent, #357abd); }
+.cpt-link:hover { text-decoration: underline; }
+.cpt-x {
+  flex-shrink: 0;
+  padding: 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--ink-faint, #8b97a7);
+}
+.cpt-x:hover { color: var(--ink, #16202b); }
+
+@keyframes cpt-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cpt { animation: none; }
+}

@@ -183,7 +183,7 @@ export function subscribeToPosts({ category, take = 50, onChange, onError }) {
 // NOTE: like subscribeToPosts, this needs a composite index
 // (status ASC, createdAt ASC) — Firestore will log a console link to
 // auto-create it the first time this runs against real data.
-export function subscribeToNewPostsCount(sinceDate, { onChange, onError }) {
+export function subscribeToNewPostsCount(sinceDate, { onChange, onError, excludeAuthorId }) {
   const postsRef = collection(db, COMMUNITY_COLLECTION);
   const constraints = [where("status", "==", "published")];
 
@@ -197,7 +197,20 @@ export function subscribeToNewPostsCount(sinceDate, { onChange, onError }) {
 
   return onSnapshot(
     q,
-    (snapshot) => onChange(snapshot.size),
+    (snapshot) => {
+      // Posts I wrote myself are never "new" to me: leave them out of the count and the toast.
+      const others = snapshot.docs.filter((d) => !excludeAuthorId || d.data().authorId !== excludeAuthorId);
+      const first = others[0];
+      const latest = first
+        ? {
+            id: first.id,
+            authorName: first.data().anonymous ? null : first.data().authorName || null,
+            body: first.data().body || "",
+            hasMedia: Array.isArray(first.data().media) && first.data().media.length > 0,
+          }
+        : null;
+      onChange(others.length, latest);
+    },
     (error) => {
       console.error("subscribeToNewPostsCount error:", error);
       onError?.(error);
