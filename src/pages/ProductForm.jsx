@@ -660,7 +660,8 @@ const executeManualTransfer = useCallback(async () => {
     if (stockAdjustType === 'subtract') {
       const currentStock = parseInt(form.currentStock) || 0;
       if (val > currentStock) {
-        setError(`Cannot subtract ${val} ${form.unit}(s). Only ${currentStock} available.`);
+        setError(`Cannot subtract ${val} ${form.unit}(s). Only ${currentStock} ${form.unit}(s) available.`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
     }
@@ -745,6 +746,17 @@ const executeManualTransfer = useCallback(async () => {
     if (validationError) { 
       setError(validationError); 
       return; 
+    }
+
+    // Can't subtract more than we have (same message/banner as the convert & break flows).
+    if (isEdit && form.trackInventory && stockAdjustType === 'subtract') {
+      const available = parseInt(originalStock) || 0;
+      const requested = parseInt(adjustmentValue, 10) || 0;
+      if (requested > available) {
+        setError(`Cannot subtract ${requested} ${form.unit}(s). Only ${available} ${form.unit}(s) available.`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
     }
 
     savingRef.current = true;
