@@ -1348,27 +1348,28 @@ export default function StockTake() {
               <span style={{ color: '#64748B' }}>Counted Value:</span>{' '}
               <strong>{formatMoney(detailTotals.totalCountedValue, baseCurrency)}</strong>
             </div>
-            <div style={{ color: detailTotals.totalVarianceCost !== 0 ? '#D97706' : '#16A34A' }}>
-              <span style={{ color: '#64748B' }}>Variance (Cost):</span>{' '}
-              <strong>{formatMoney(detailTotals.totalVarianceCost, baseCurrency)}</strong>
-            </div>
             <div style={{ color: detailTotals.totalVarianceSell !== 0 ? '#D97706' : '#16A34A' }}>
               <span style={{ color: '#64748B' }}>Variance (Sell):</span>{' '}
               <strong>{formatMoney(detailTotals.totalVarianceSell, baseCurrency)}</strong>
             </div>
+            <div style={{ color: detailTotals.totalVarianceCost !== 0 ? '#D97706' : '#16A34A' }}>
+              <span style={{ color: '#64748B' }}>Variance (Cost):</span>{' '}
+              <strong>{formatMoney(detailTotals.totalVarianceCost, baseCurrency)}</strong>
+            </div>
           </div>
 
           <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '500px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, minWidth: '760px' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase' }}>Product</th>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>System</th>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>Counted</th>
                   <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'center' }}>Variance</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Cost Price</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Variance (Cost)</th>
-                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>Variance (Sell)</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Sell Price</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Variance (Sell)</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Cost Price</th>
+                  <th style={{ padding: '8px 6px', fontSize: 11, color: '#94A3B8', textTransform: 'uppercase', textAlign: 'right' }}>Variance (Cost)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1419,24 +1420,23 @@ export default function StockTake() {
                       }}>
                         {variance === null ? '—' : (variance > 0 ? `+${variance}` : variance)}
                       </td>
-                      <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B', display: 'none', '@media (min-width: 481px)': { display: 'table-cell' } }}>{formatMoney(costPrice, baseCurrency)}</td>
-                      <td style={{ 
-                        padding: '8px 6px', 
-                        textAlign: 'right', 
-                        fontWeight: 600,
-                        color: varianceCost === null ? '#CBD5E1' : varianceCost === 0 ? '#64748B' : varianceCost > 0 ? '#16A34A' : '#EF4444',
-                        display: 'none', '@media (min-width: 481px)': { display: 'table-cell' }
-                      }}>
-                        {varianceCost !== null ? formatMoney(varianceCost, baseCurrency) : '—'}
-                      </td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B' }}>{formatMoney(sellPrice, baseCurrency)}</td>
                       <td style={{ 
                         padding: '8px 6px', 
                         textAlign: 'right', 
                         fontWeight: 600,
                         color: varianceSell === null ? '#CBD5E1' : varianceSell === 0 ? '#64748B' : varianceSell > 0 ? '#16A34A' : '#EF4444',
-                        display: 'none', '@media (min-width: 481px)': { display: 'table-cell' }
                       }}>
                         {varianceSell !== null ? formatMoney(varianceSell, baseCurrency) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 6px', textAlign: 'right', color: '#64748B' }}>{formatMoney(costPrice, baseCurrency)}</td>
+                      <td style={{ 
+                        padding: '8px 6px', 
+                        textAlign: 'right', 
+                        fontWeight: 600,
+                        color: varianceCost === null ? '#CBD5E1' : varianceCost === 0 ? '#64748B' : varianceCost > 0 ? '#16A34A' : '#EF4444',
+                      }}>
+                        {varianceCost !== null ? formatMoney(varianceCost, baseCurrency) : '—'}
                       </td>
                     </tr>
                   );
